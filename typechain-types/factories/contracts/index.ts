@@ -8,3 +8,4 @@ export { FortuneTiger__factory } from "./FortuneTiger__factory";
 export { PublicSale__factory } from "./PublicSale__factory";
 export { RewardBoosterNFT__factory } from "./RewardBoosterNFT__factory";
 export { RewardManager__factory } from "./RewardManager__factory";
+export { SimpleBKCFaucet__factory } from "./SimpleBKCFaucet__factory";

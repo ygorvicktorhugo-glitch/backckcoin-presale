@@ -2,34 +2,70 @@
 
 const ethers = window.ethers;
 
+// --- NOVA IMPORTAÇÃO DO WEB3MODAL via CDN ESM ---
+import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
+
 import { State } from '../state.js';
-import { DOMElements } from '../dom-elements.js';
-// CORREÇÃO: Importa renderLoading de utils.js, não de ui-feedback.js
-import { showToast, openModal } from '../ui-feedback.js';
-import { formatBigNumber, formatAddress, renderLoading } from '../utils.js'; // <= renderLoading importado aqui
+import { showToast } from '../ui-feedback.js';
+// REMOVIDO: formatAddress (não é mais usado aqui)
 import {
     addresses, sepoliaRpcUrl, sepoliaChainId,
     bkcTokenABI, delegationManagerABI, rewardManagerABI,
-    rewardBoosterABI, nftBondingCurveABI, actionsManagerABI, publicSaleABI
+    rewardBoosterABI, nftBondingCurveABI, actionsManagerABI, publicSaleABI,
+    faucetABI
 } from '../config.js';
 import { loadPublicData, loadUserData } from './data.js';
 import { signIn } from './firebase-auth-service.js';
 
+// --- CONFIGURAÇÃO DO WEB3MODAL ---
+const WALLETCONNECT_PROJECT_ID = 'cd4bdedee7a7e909ebd3df8bbc502aed';
+
+const sepolia = {
+    chainId: Number(sepoliaChainId), // 11155111
+    name: 'Sepolia',
+    currency: 'ETH',
+    explorerUrl: 'https://sepolia.etherscan.io',
+    rpcUrl: sepoliaRpcUrl
+};
+
+const metadata = {
+    name: 'Backchain dApp',
+    description: 'Backchain - Decentralized Actions & Staking',
+    url: window.location.origin,
+    icons: [window.location.origin + '/assets/bkc_logo_3d.png']
+};
+
+const ethersConfig = defaultConfig({
+    metadata,
+    enableEIP6963: true,
+    enableInjected: true,
+    enableCoinbase: true,
+    rpcUrl: sepoliaRpcUrl,
+    defaultChainId: Number(sepoliaChainId)
+});
+
+// AVISO: Não exporte 'web3modal' diretamente se o app.js for importá-lo,
+// pois o app.js pode carregar antes desta linha.
+// A função disconnectWallet() é o wrapper seguro.
+const web3modal = createWeb3Modal({
+    ethersConfig,
+    chains: [sepolia],
+    projectId: WALLETCONNECT_PROJECT_ID,
+    enableAnalytics: false,
+    themeMode: 'dark',
+    themeVariables: {
+        '--w3m-accent': '#f59e0b', // --accent
+        '--w3m-color-mix': '#3f3f46', // --bg-card
+        '--w3m-color-mix-strength': 20,
+        '--w3m-font-family': 'Inter, sans-serif',
+        '--w3m-border-radius-master': '0.375rem', // rounded-md
+        '--w3m-z-index': 100 // Garante que fique acima de outros elementos
+    }
+});
+
 // --- Funções Auxiliares Internas ---
 
-function updateConnectionStatusUI(status, message) {
-    const statuses = {
-        disconnected: { bg: 'bg-red-500/20', text: 'text-red-400', icon: 'fa-circle' },
-        connecting: { bg: 'bg-amber-500/20', text: 'text-amber-400', icon: 'fa-spinner fa-spin' },
-        connected: { bg: 'bg-green-500/20', text: 'text-green-400', icon: 'fa-circle' },
-    };
-    const { bg, text, icon } = statuses[status];
-    const statusEl = document.getElementById('connectionStatus');
-    if (statusEl) {
-        statusEl.className = `hidden sm:inline-flex items-center gap-2 py-1.5 px-3 rounded-full text-sm font-medium ${bg} ${text}`;
-        statusEl.innerHTML = `<i class="fa-solid ${icon} text-xs"></i><span>${message}</span>`;
-    }
-}
+// REMOVIDO: updateConnectionStatusUI (Agora é 100% responsabilidade do app.js)
 
 function instantiateContracts(signerOrProvider) {
     try {
@@ -50,36 +86,34 @@ function instantiateContracts(signerOrProvider) {
          if (addresses.publicSale) {
              State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
          }
+         if (addresses.faucet && !addresses.faucet.startsWith('0x...')) {
+             State.faucetContract = new ethers.Contract(addresses.faucet, faucetABI, signerOrProvider);
+         }
     } catch (e) {
          console.error("Error instantiating contracts:", e);
          showToast("Error setting up contracts. Check console.", "error");
     }
 }
 
-async function setupSignerAndLoadData() {
+async function setupSignerAndLoadData(provider, address) {
     try {
-        if (!State.provider) {
-             console.error("Provider not initialized before setting up signer.");
-             showToast("Connection error. Please try connecting again.", "error");
-             disconnectWallet();
-             return false;
-        }
-        State.signer = await State.provider.getSigner();
-        State.userAddress = await State.signer.getAddress();
+        State.provider = provider;
+        State.signer = await provider.getSigner();
+        State.userAddress = address;
 
-        await signIn(State.userAddress);
+        await signIn(State.userAddress); // Autentica no Firebase
 
         instantiateContracts(State.signer);
         await loadUserData();
         State.isConnected = true;
-        updateConnectionStatusUI('connected', formatAddress(State.userAddress));
+        // REMOVIDO: updateConnectionStatusUI
         return true;
     } catch (error) {
          console.error("Error during setupSignerAndLoadData:", error);
          if (error.code === 'ACTION_REJECTED') { showToast("Operation rejected by user.", "info"); }
          else if (error.message.includes("Firebase")) { showToast("Firebase authentication failed.", "error"); }
          else { showToast(`Connection failed: ${error.message || 'Unknown error'}`, "error"); }
-         disconnectWallet();
+         // Não chama disconnectWallet() para evitar loop. Apenas retorna false.
          return false;
     }
 }
@@ -90,140 +124,97 @@ async function setupSignerAndLoadData() {
 export async function initPublicProvider() {
      try {
         State.publicProvider = new ethers.JsonRpcProvider(sepoliaRpcUrl);
-        instantiateContracts(State.publicProvider);
+        instantiateContracts(State.publicProvider); 
         await loadPublicData();
-        // Não configura listeners aqui, faz no app.js init
+        console.log("Public provider and Web3Modal initialized.");
     } catch (e) {
         console.error("Failed to initialize public provider:", e);
         showToast("Could not connect to the blockchain network.", "error");
     }
 }
 
-export async function checkInitialConnection() {
-    if (typeof window.ethereum === 'undefined' || !window.ethereum.isMetaMask) {
-        console.log("MetaMask not detected.");
-        return false;
-    }
-    try {
-        State.provider = new ethers.BrowserProvider(window.ethereum);
-        const accounts = await State.provider.send("eth_accounts", []);
-        if (accounts.length > 0) {
-            console.log("Existing connection found. Auto-connecting...");
-            const network = await State.provider.getNetwork();
-            if (network.chainId !== sepoliaChainId) {
-                showToast('Wrong Network. Please switch to Sepolia in MetaMask.', 'error');
-                 disconnectWallet();
-                return false;
+/**
+ * Assina as mudanças de estado do Web3Modal.
+ * @param {function} callback - A função em app.js que lidará com as mudanças.
+ */
+export function subscribeToWalletChanges(callback) {
+    // REMOVIDO: updateConnectionStatusUI('connecting', 'Initializing...');
+    
+    let wasPreviouslyConnected = web3modal.getIsConnected(); // Checa estado inicial
+
+    web3modal.subscribeProvider(async ({ provider, address, chainId, isConnected }) => {
+        console.log("Web3Modal State Change:", { isConnected, address, chainId });
+
+        if (isConnected) {
+            // Conectado
+            if (chainId !== Number(sepoliaChainId)) {
+                showToast(`Wrong Network. Please switch to Sepolia.`, 'error');
+                await web3modal.disconnect();
+                return; // O evento de desconexão será disparado
             }
-            return await setupSignerAndLoadData();
-        }
-        console.log("No existing authorized accounts found.");
-        return false;
-    } catch (error) {
-        console.error("Could not check initial connection:", error);
-        disconnectWallet();
-        return false;
-    }
-}
-
-export async function connectWallet() {
-    if (typeof window.ethereum === 'undefined' || !window.ethereum.isMetaMask) {
-         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-         const message = isMobile
-            ? 'Please use the browser inside your MetaMask app or another Web3 enabled browser.'
-            : 'Please install the MetaMask extension to connect your wallet.';
-        openModal('MetaMask Not Detected', `<p class="text-center">${message}</p>`, 'Install MetaMask', 'https://metamask.io/download/');
-        return false;
-    }
-
-    if (DOMElements.connectButton.disabled) return false;
-
-    DOMElements.connectButton.disabled = true;
-    const tempLoaderSpan = document.createElement('span');
-    tempLoaderSpan.classList.add('inline-block'); // Garante layout
-    renderLoading(tempLoaderSpan); // Usa a função importada de utils.js
-    DOMElements.connectButton.innerHTML = '';
-    DOMElements.connectButton.appendChild(tempLoaderSpan);
-    updateConnectionStatusUI('connecting', 'Connecting...');
-
-    try {
-        State.provider = new ethers.BrowserProvider(window.ethereum);
-        await State.provider.send("eth_requestAccounts", []);
-
-        const network = await State.provider.getNetwork();
-        if (network.chainId !== sepoliaChainId) {
-            showToast('Switching network to Sepolia...', 'info');
-            try {
-                await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${sepoliaChainId.toString(16)}` }] });
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                State.provider = new ethers.BrowserProvider(window.ethereum);
-            } catch (switchError) {
-                 if (switchError.code === 4001) { showToast('Network switch rejected.', 'error'); }
-                 else { showToast('Failed to switch network. Please do it manually.', 'error'); }
-                disconnectWallet();
-                return false;
+            
+            const ethersProvider = new ethers.BrowserProvider(provider);
+            const success = await setupSignerAndLoadData(ethersProvider, address);
+            
+            if (success) {
+                // Passa o novo estado para o app.js
+                callback({ 
+                    isConnected: true, 
+                    address, 
+                    chainId,
+                    isNewConnection: !wasPreviouslyConnected // Sinaliza se é uma nova conexão
+                });
+                wasPreviouslyConnected = true;
+            } else {
+                // Falha no setup (ex: Firebase)
+                await web3modal.disconnect();
+                // O evento de desconexão será disparado
             }
-        }
 
-        const success = await setupSignerAndLoadData();
-        if(success) {
-            showToast('Wallet connected successfully!', 'success');
-        }
-        return success;
+        } else {
+            // --- CORREÇÃO ESTÁ AQUI ---
+            // Desconectado. Esta é a fonte da verdade.
+            console.log("Web3Modal reports disconnection. Clearing app state.");
+            
+            const wasConnected = State.isConnected; // Verifica se o app *achava* que estava conectado
 
-    } catch (error) {
-        console.error('Error connecting wallet:', error);
-         if (error.code === 4001) { showToast('Connection request rejected.', 'info'); }
-         else if (error.code === -32002) { showToast('Connection request already pending. Check MetaMask.', 'info'); }
-         else { showToast(`Error connecting: ${error.message || 'Unknown error.'}`, 'error'); }
-        disconnectWallet();
-        return false;
-    } finally {
-        DOMElements.connectButton.disabled = false;
-        DOMElements.connectButton.innerHTML = '<i class="fa-solid fa-wallet mr-2"></i>Connect Wallet';
-    }
+            // Limpa o estado do App AQUI e EM NENHUM OUTRO LUGAR
+            State.provider = null; State.signer = null; State.userAddress = null;
+            State.isConnected = false;
+            State.currentUserBalance = 0n;
+            State.userDelegations = [];
+            State.activityHistory = [];
+            State.myCertificates = [];
+            State.myBoosters = [];
+            State.userTotalPStake = 0n;
+        
+            // Re-instancia contratos com o provider público (somente leitura)
+            if(State.publicProvider) {
+                instantiateContracts(State.publicProvider);
+            }
+            
+            // Chama o callback do app.js
+            callback({ 
+                isConnected: false,
+                wasConnected: wasConnected // Sinaliza que uma desconexão ocorreu
+            });
+            wasPreviouslyConnected = false;
+        }
+    });
 }
 
-export function disconnectWallet() {
-    console.log("Disconnecting wallet state...");
-    State.provider = null; State.signer = null; State.userAddress = null;
-    State.isConnected = false;
-    State.currentUserBalance = 0n;
-    State.userDelegations = [];
-    State.activityHistory = [];
-    State.myCertificates = [];
-    State.myBoosters = [];
-    State.userTotalPStake = 0n;
-
-    if(State.publicProvider) {
-        instantiateContracts(State.publicProvider);
-    } else {
-         console.warn("Public provider not available during disconnect.");
-    }
-    updateConnectionStatusUI('disconnected', 'Disconnected');
+/**
+ * Abre o modal de conexão.
+ */
+export function openConnectModal() {
+    web3modal.open();
 }
 
-
-export function setupMetaMaskListeners(
-    handleAccountsChanged,
-    handleDisconnect,
-    handleChainChanged
-) {
-     if (window.ethereum && window.ethereum.isMetaMask) {
-         console.log("Setting up MetaMask listeners...");
-         window.ethereum.on('accountsChanged', (accounts) => {
-             console.log('MetaMask event: accountsChanged', accounts);
-             handleAccountsChanged(accounts);
-         });
-         window.ethereum.on('disconnect', (error) => {
-             console.error('MetaMask event: disconnect', error);
-             handleDisconnect();
-         });
-         window.ethereum.on('chainChanged', (chainIdHex) => {
-             console.log('MetaMask event: chainChanged', chainIdHex);
-             handleChainChanged(chainIdHex);
-         });
-     } else {
-          console.warn("Cannot set up MetaMask listeners: window.ethereum is not available or not MetaMask.");
-     }
+/**
+ * Pede ao Web3Modal para desconectar.
+ * O subscription (acima) vai lidar com a limpeza do estado.
+ */
+export async function disconnectWallet() {
+    console.log("Telling Web3Modal to disconnect...");
+    await web3modal.disconnect();
 }

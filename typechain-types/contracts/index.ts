@@ -9,3 +9,4 @@ export type { FortuneTiger } from "./FortuneTiger";
 export type { PublicSale } from "./PublicSale";
 export type { RewardBoosterNFT } from "./RewardBoosterNFT";
 export type { RewardManager } from "./RewardManager";
+export type { SimpleBKCFaucet } from "./SimpleBKCFaucet";

@@ -36,8 +36,8 @@ export type { ERC165 } from "./@openzeppelin/contracts/utils/introspection/ERC16
 export { ERC165__factory } from "./factories/@openzeppelin/contracts/utils/introspection/ERC165__factory";
 export type { IERC165 } from "./@openzeppelin/contracts/utils/introspection/IERC165";
 export { IERC165__factory } from "./factories/@openzeppelin/contracts/utils/introspection/IERC165__factory";
-export type { Math } from "./@openzeppelin/contracts/utils/math/Math";
-export { Math__factory } from "./factories/@openzeppelin/contracts/utils/math/Math__factory";
+export type { SafeCast } from "./@openzeppelin/contracts/utils/math/SafeCast";
+export { SafeCast__factory } from "./factories/@openzeppelin/contracts/utils/math/SafeCast__factory";
 export type { ReentrancyGuard } from "./@openzeppelin/contracts/utils/ReentrancyGuard";
 export { ReentrancyGuard__factory } from "./factories/@openzeppelin/contracts/utils/ReentrancyGuard__factory";
 export type { Strings } from "./@openzeppelin/contracts/utils/Strings";
@@ -60,3 +60,5 @@ export type { RewardBoosterNFT } from "./contracts/RewardBoosterNFT";
 export { RewardBoosterNFT__factory } from "./factories/contracts/RewardBoosterNFT__factory";
 export type { RewardManager } from "./contracts/RewardManager";
 export { RewardManager__factory } from "./factories/contracts/RewardManager__factory";
+export type { SimpleBKCFaucet } from "./contracts/SimpleBKCFaucet";
+export { SimpleBKCFaucet__factory } from "./factories/contracts/SimpleBKCFaucet__factory";

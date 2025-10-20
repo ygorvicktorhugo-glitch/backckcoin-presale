@@ -41,7 +41,7 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\access\\Ownable.sol": {
-      "lastModificationDate": 1760119009788,
+      "lastModificationDate": 1760966556873,
       "contentHash": "d3c790edc9ccf808a17c5a6cd13614fd",
       "sourceName": "@openzeppelin/contracts/access/Ownable.sol",
       "solcConfig": {
@@ -79,8 +79,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\ERC20.sol": {
-      "lastModificationDate": 1760119007820,
-      "contentHash": "c6375ef25e84c90b3d15f9ec4eef218f",
+      "lastModificationDate": 1760966555341,
+      "contentHash": "59dfce11284f2636db261df9b6a18f81",
       "sourceName": "@openzeppelin/contracts/token/ERC20/ERC20.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -120,7 +120,7 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\Context.sol": {
-      "lastModificationDate": 1760119007604,
+      "lastModificationDate": 1760966554037,
       "contentHash": "67bfbc07588eb8683b3fd8f6f909563e",
       "sourceName": "@openzeppelin/contracts/utils/Context.sol",
       "solcConfig": {
@@ -156,8 +156,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\IERC20.sol": {
-      "lastModificationDate": 1760119009124,
-      "contentHash": "5517c8678c18eb1a8ba58810e7ca39ca",
+      "lastModificationDate": 1760966555755,
+      "contentHash": "9261adf6457863de3e9892f51317ec89",
       "sourceName": "@openzeppelin/contracts/token/ERC20/IERC20.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -185,15 +185,15 @@
       },
       "imports": [],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.4.16"
       ],
       "artifacts": [
         "IERC20"
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\interfaces\\draft-IERC6093.sol": {
-      "lastModificationDate": 1760119007698,
-      "contentHash": "4aefc698f77ecbace7f401257dfe182d",
+      "lastModificationDate": 1760966554325,
+      "contentHash": "5041977bbe908de2e6ed0270447f79ad",
       "sourceName": "@openzeppelin/contracts/interfaces/draft-IERC6093.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -221,7 +221,7 @@
       },
       "imports": [],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.8.4"
       ],
       "artifacts": [
         "IERC1155Errors",
@@ -230,8 +230,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\extensions\\IERC20Metadata.sol": {
-      "lastModificationDate": 1760119009162,
-      "contentHash": "4c02fa6f7ae7b6c289cef80424f0c875",
+      "lastModificationDate": 1760966555761,
+      "contentHash": "513778b30d2750f5d2b9b19bbcf748a5",
       "sourceName": "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -261,7 +261,7 @@
         "../IERC20.sol"
       ],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.6.2"
       ],
       "artifacts": [
         "IERC20Metadata"
@@ -350,8 +350,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\ReentrancyGuard.sol": {
-      "lastModificationDate": 1760119009842,
-      "contentHash": "a92331adac11b453a4de0323fc948119",
+      "lastModificationDate": 1760966556938,
+      "contentHash": "190613e556d509d9e9a0ea43dc5d891d",
       "sourceName": "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -386,8 +386,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\extensions\\ERC721Enumerable.sol": {
-      "lastModificationDate": 1760119008265,
-      "contentHash": "6f49fe93ad40dc0bd4cac0cc124d0415",
+      "lastModificationDate": 1760966555435,
+      "contentHash": "1e4b432e9069bd6f5935e071b74d180c",
       "sourceName": "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -426,8 +426,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\ERC721.sol": {
-      "lastModificationDate": 1760119008202,
-      "contentHash": "1e64e2ad597dc5b2dae11346502baad4",
+      "lastModificationDate": 1760966555407,
+      "contentHash": "522ec023bce510c30dfbf61584f5a190",
       "sourceName": "@openzeppelin/contracts/token/ERC721/ERC721.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -455,8 +455,8 @@
       },
       "imports": [
         "./IERC721.sol",
-        "./IERC721Receiver.sol",
         "./extensions/IERC721Metadata.sol",
+        "./utils/ERC721Utils.sol",
         "../../utils/Context.sol",
         "../../utils/Strings.sol",
         "../../utils/introspection/ERC165.sol",
@@ -470,8 +470,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\introspection\\ERC165.sol": {
-      "lastModificationDate": 1760119007791,
-      "contentHash": "6a55c353946e471d9792965d06208295",
+      "lastModificationDate": 1760966555313,
+      "contentHash": "0906d06dca25210d4696dcef6dad2909",
       "sourceName": "@openzeppelin/contracts/utils/introspection/ERC165.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -508,8 +508,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\extensions\\IERC721Enumerable.sol": {
-      "lastModificationDate": 1760119009441,
-      "contentHash": "3fdc14aab706458ae99314f6f7f529a2",
+      "lastModificationDate": 1760966555923,
+      "contentHash": "09d80d577d5abfc679455e7b67c5b537",
       "sourceName": "@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -539,15 +539,15 @@
         "../IERC721.sol"
       ],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.6.2"
       ],
       "artifacts": [
         "IERC721Enumerable"
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\Strings.sol": {
-      "lastModificationDate": 1760119009975,
-      "contentHash": "ba57ff4ddf1d9cae9d2009792795b7f6",
+      "lastModificationDate": 1760966557019,
+      "contentHash": "d8f70caf0e0c77dc908176ed44812fb7",
       "sourceName": "@openzeppelin/contracts/utils/Strings.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -575,6 +575,7 @@
       },
       "imports": [
         "./math/Math.sol",
+        "./math/SafeCast.sol",
         "./math/SignedMath.sol"
       ],
       "versionPragmas": [
@@ -585,8 +586,8 @@
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\IERC721.sol": {
-      "lastModificationDate": 1760119009403,
-      "contentHash": "5df8fdb527e563085847cad29e3c5f2e",
+      "lastModificationDate": 1760966555902,
+      "contentHash": "f62e11dbd302e17a5621a1438f4e054c",
       "sourceName": "@openzeppelin/contracts/token/ERC721/IERC721.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -616,51 +617,15 @@
         "../../utils/introspection/IERC165.sol"
       ],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.6.2"
       ],
       "artifacts": [
         "IERC721"
       ]
     },
-    "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\IERC721Receiver.sol": {
-      "lastModificationDate": 1760119009531,
-      "contentHash": "fc8a9841f4bdd6329c26a00d5e75f4b3",
-      "sourceName": "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol",
-      "solcConfig": {
-        "version": "0.8.28",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 200
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.20"
-      ],
-      "artifacts": [
-        "IERC721Receiver"
-      ]
-    },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\extensions\\IERC721Metadata.sol": {
-      "lastModificationDate": 1760119009491,
-      "contentHash": "12c206f185cb951213799561fdcaa40d",
+      "lastModificationDate": 1760966555931,
+      "contentHash": "136c64eca25bcb8a68f43ac6605559f9",
       "sourceName": "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -690,16 +655,16 @@
         "../IERC721.sol"
       ],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.6.2"
       ],
       "artifacts": [
         "IERC721Metadata"
       ]
     },
-    "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\math\\Math.sol": {
-      "lastModificationDate": 1760119009702,
-      "contentHash": "718fa8ba0ff269c92e364c1429d9de57",
-      "sourceName": "@openzeppelin/contracts/utils/math/Math.sol",
+    "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\utils\\ERC721Utils.sol": {
+      "lastModificationDate": 1760966555466,
+      "contentHash": "4cefad279a37c895b709bce2b901816e",
+      "sourceName": "@openzeppelin/contracts/token/ERC721/utils/ERC721Utils.sol",
       "solcConfig": {
         "version": "0.8.28",
         "settings": {
@@ -724,17 +689,20 @@
           }
         }
       },
-      "imports": [],
+      "imports": [
+        "../IERC721Receiver.sol",
+        "../../../interfaces/draft-IERC6093.sol"
+      ],
       "versionPragmas": [
         "^0.8.20"
       ],
       "artifacts": [
-        "Math"
+        "ERC721Utils"
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\math\\SignedMath.sol": {
-      "lastModificationDate": 1760119009928,
-      "contentHash": "b6c6bdc7aaca4fe5b680760a72e09d3e",
+      "lastModificationDate": 1760966556971,
+      "contentHash": "ae3528afb8bdb0a7dcfba5b115ee8074",
       "sourceName": "@openzeppelin/contracts/utils/math/SignedMath.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -760,7 +728,9 @@
           }
         }
       },
-      "imports": [],
+      "imports": [
+        "./SafeCast.sol"
+      ],
       "versionPragmas": [
         "^0.8.20"
       ],
@@ -768,9 +738,120 @@
         "SignedMath"
       ]
     },
+    "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\math\\Math.sol": {
+      "lastModificationDate": 1760966556838,
+      "contentHash": "5ec781e33d3a9ac91ffdc83d94420412",
+      "sourceName": "@openzeppelin/contracts/utils/math/Math.sol",
+      "solcConfig": {
+        "version": "0.8.28",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "../Panic.sol",
+        "./SafeCast.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Math"
+      ]
+    },
+    "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\math\\SafeCast.sol": {
+      "lastModificationDate": 1760966556962,
+      "contentHash": "2adca1150f58fc6f3d1f0a0f22ee7cca",
+      "sourceName": "@openzeppelin/contracts/utils/math/SafeCast.sol",
+      "solcConfig": {
+        "version": "0.8.28",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "SafeCast"
+      ]
+    },
+    "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\Panic.sol": {
+      "lastModificationDate": 1760966556904,
+      "contentHash": "2133dc13536b4a6a98131e431fac59e1",
+      "sourceName": "@openzeppelin/contracts/utils/Panic.sol",
+      "solcConfig": {
+        "version": "0.8.28",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Panic"
+      ]
+    },
     "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\utils\\introspection\\IERC165.sol": {
-      "lastModificationDate": 1760119009036,
-      "contentHash": "de0163561b417b800d01749cbbe2147e",
+      "lastModificationDate": 1760966555733,
+      "contentHash": "7074c93b1ea0a122063f26ddd1db1032",
       "sourceName": "@openzeppelin/contracts/utils/introspection/IERC165.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -798,10 +879,86 @@
       },
       "imports": [],
       "versionPragmas": [
-        "^0.8.20"
+        ">=0.4.16"
       ],
       "artifacts": [
         "IERC165"
+      ]
+    },
+    "D:\\backcoin\\Aplicativos\\backchain-final\\node_modules\\@openzeppelin\\contracts\\token\\ERC721\\IERC721Receiver.sol": {
+      "lastModificationDate": 1760966555943,
+      "contentHash": "d61660a41ce200e99816e4734f7fd202",
+      "sourceName": "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol",
+      "solcConfig": {
+        "version": "0.8.28",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        ">=0.5.0"
+      ],
+      "artifacts": [
+        "IERC721Receiver"
+      ]
+    },
+    "D:\\backcoin\\Aplicativos\\backchain-final\\contracts\\SimpleBKCFaucet.sol": {
+      "lastModificationDate": 1760966927194,
+      "contentHash": "82e8d7b6bdfe680dbba438bdb07920a0",
+      "sourceName": "contracts/SimpleBKCFaucet.sol",
+      "solcConfig": {
+        "version": "0.8.28",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "SimpleBKCFaucet"
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\contracts\\NFTLiquidityPool.sol": {
@@ -846,6 +1003,46 @@
         "IDelegationManager",
         "IRewardBoosterNFT",
         "NFTLiquidityPool"
+      ]
+    },
+    "D:\\backcoin\\Aplicativos\\backchain-final\\contracts\\PublicSale.sol": {
+      "lastModificationDate": 1760563777694,
+      "contentHash": "04e583ffdb1fae9b12f312dbfbb60519",
+      "sourceName": "contracts/PublicSale.sol",
+      "solcConfig": {
+        "version": "0.8.28",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC721/IERC721.sol",
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.28"
+      ],
+      "artifacts": [
+        "PublicSale"
       ]
     },
     "D:\\backcoin\\Aplicativos\\backchain-final\\contracts\\RewardBoosterNFT.sol": {
@@ -927,46 +1124,6 @@
       ],
       "artifacts": [
         "FortuneTiger"
-      ]
-    },
-    "D:\\backcoin\\Aplicativos\\backchain-final\\contracts\\PublicSale.sol": {
-      "lastModificationDate": 1760563777694,
-      "contentHash": "04e583ffdb1fae9b12f312dbfbb60519",
-      "sourceName": "contracts/PublicSale.sol",
-      "solcConfig": {
-        "version": "0.8.28",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 200
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "@openzeppelin/contracts/token/ERC721/IERC721.sol",
-        "@openzeppelin/contracts/access/Ownable.sol",
-        "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol"
-      ],
-      "versionPragmas": [
-        "^0.8.28"
-      ],
-      "artifacts": [
-        "PublicSale"
       ]
     }
   }

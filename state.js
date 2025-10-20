@@ -14,7 +14,8 @@ export const State = {
     rewardManagerContract: null,
     rewardBoosterContract: null,
     nftBondingCurveContract: null,
-    actionsManagerContract: null, // Incluído
+    actionsManagerContract: null, 
+    faucetContract: null, // <-- NOVO
 
     // User Data
     currentUserBalance: 0n,

@@ -30,6 +30,7 @@ export const DOMElements = {
     rewards: document.getElementById('rewards'),
     actions: document.getElementById('actions'), // Incluído
     presale: document.getElementById('presale'), // Adicionado
+    faucet: document.getElementById('faucet'), // <-- NOVO
     
     // Dashboard Stats (Public)
     statTotalSupply: document.getElementById('statTotalSupply'),

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-g">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Backchain | Dashboard</title>
 
@@ -199,6 +199,9 @@
                     </a>
                     <a data-target="dao" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700">
                         <i class="fa-solid fa-landmark w-5 text-center"></i><span>DAO</span>
+                    </a>
+                    <a data-target="faucet" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-cyan-400 hover:text-white hover:bg-zinc-700">
+                        <i class="fa-solid fa-faucet w-5 text-center"></i><span>Testnet Faucet</span>
                     </a>
                 </div>
 
@@ -425,8 +428,10 @@
                     </section>
                     
                     <section id="dao" class="hidden">
-                        <!-- Conteúdo da DAO será renderizado aqui -->
-                    </section>
+                        </section>
+
+                    <section id="faucet" class="hidden">
+                        </section>
 
                     <section id="about" class="hidden"></section>
                     <section id="admin" class="hidden"></section>
@@ -443,4 +448,3 @@
     <script type="module" src="./app.js"></script>
 </body>
 </html>
-

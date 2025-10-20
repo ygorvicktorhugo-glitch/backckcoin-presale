@@ -74,9 +74,9 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IERC165__factory>;
     getContractFactory(
-      name: "Math",
+      name: "SafeCast",
       signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.Math__factory>;
+    ): Promise<Contracts.SafeCast__factory>;
     getContractFactory(
       name: "ReentrancyGuard",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -121,6 +121,10 @@ declare module "hardhat/types/runtime" {
       name: "RewardManager",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.RewardManager__factory>;
+    getContractFactory(
+      name: "SimpleBKCFaucet",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.SimpleBKCFaucet__factory>;
 
     getContractAt(
       name: "Ownable",
@@ -198,10 +202,10 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.IERC165>;
     getContractAt(
-      name: "Math",
+      name: "SafeCast",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
-    ): Promise<Contracts.Math>;
+    ): Promise<Contracts.SafeCast>;
     getContractAt(
       name: "ReentrancyGuard",
       address: string | ethers.Addressable,
@@ -257,6 +261,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.RewardManager>;
+    getContractAt(
+      name: "SimpleBKCFaucet",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.SimpleBKCFaucet>;
 
     deployContract(
       name: "Ownable",
@@ -319,9 +328,9 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC165>;
     deployContract(
-      name: "Math",
+      name: "SafeCast",
       signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.Math>;
+    ): Promise<Contracts.SafeCast>;
     deployContract(
       name: "ReentrancyGuard",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -366,6 +375,10 @@ declare module "hardhat/types/runtime" {
       name: "RewardManager",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RewardManager>;
+    deployContract(
+      name: "SimpleBKCFaucet",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SimpleBKCFaucet>;
 
     deployContract(
       name: "Ownable",
@@ -443,10 +456,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC165>;
     deployContract(
-      name: "Math",
+      name: "SafeCast",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.Math>;
+    ): Promise<Contracts.SafeCast>;
     deployContract(
       name: "ReentrancyGuard",
       args: any[],
@@ -502,6 +515,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RewardManager>;
+    deployContract(
+      name: "SimpleBKCFaucet",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SimpleBKCFaucet>;
 
     // default types
     getContractFactory(

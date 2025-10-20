@@ -4,12 +4,10 @@ const ethers = window.ethers;
 
 import { DOMElements } from './dom-elements.js';
 import { State } from './state.js';
-// Adiciona setupMetaMaskListeners
-import { connectWallet, disconnectWallet, initPublicProvider, checkInitialConnection, setupMetaMaskListeners } from './modules/wallet.js';
+// Importa as funções corretas
+import { initPublicProvider, subscribeToWalletChanges, disconnectWallet, openConnectModal } from './modules/wallet.js';
 import { showToast, showShareModal } from './ui-feedback.js';
-// Importa formatAddress de utils.js
 import { formatBigNumber, formatAddress } from './utils.js';
-import { sepoliaChainId } from './config.js'; // Importa sepoliaChainId
 
 // Importações das Páginas
 import { DashboardPage } from './pages/DashboardPage.js';
@@ -21,7 +19,8 @@ import { AboutPage } from './pages/AboutPage.js';
 import { AirdropPage } from './pages/AirdropPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { PresalePage } from './pages/PresalePage.js';
-import { DaoPage } from './pages/DaoPage.js'; // Importa a nova página DAO
+import { DaoPage } from './pages/DaoPage.js'; 
+import { FaucetPage } from './pages/FaucetPage.js'; 
 
 
 const routes = {
@@ -34,7 +33,8 @@ const routes = {
     'airdrop': AirdropPage,
     'admin': AdminPage,
     'presale': PresalePage,
-    'dao': DaoPage, // Adiciona a rota DAO
+    'dao': DaoPage, 
+    'faucet': FaucetPage, 
 };
 let activePageId = 'dashboard';
 const ADMIN_WALLET = "0x03aC69873293cD6ddef7625AfC91E3Bd5434562a";
@@ -136,15 +136,17 @@ function updateUIState() {
         DOMElements.connectButton?.classList.add('hidden');
         DOMElements.userInfo?.classList.remove('hidden');
         DOMElements.userInfo?.classList.add('flex');
-        if (DOMElements.walletAddressEl) {
-             // Use imported formatAddress
-             DOMElements.walletAddressEl.textContent = formatAddress(State.userAddress);
-        }
+        
+        // --- CORREÇÃO AQUI ---
+        // Esconde os elementos duplicados, mantendo o botão de desconectar
+        if (DOMElements.walletAddressEl) DOMElements.walletAddressEl.classList.add('hidden'); 
+        if (DOMElements.userBalanceEl) DOMElements.userBalanceEl.classList.add('hidden');
+        // --- FIM DA CORREÇÃO ---
 
         const balanceNum = formatBigNumber(State.currentUserBalance);
         const balanceString = `${balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $BKC`;
 
-        if (DOMElements.userBalanceEl) DOMElements.userBalanceEl.textContent = balanceString;
+        // (Manter a lógica do balance do dashboard)
         if (statUserBalanceEl) statUserBalanceEl.textContent = balanceString;
 
         // Ensure Earn tabs elements exist before accessing style
@@ -156,13 +158,20 @@ function updateUIState() {
         } else if (adminLinkContainer) {
             adminLinkContainer.style.display = 'none';
         }
-        // Use imported formatAddress
+        // Esta função agora controla o único indicador (o verde)
         updateConnectionStatus('connected', formatAddress(State.userAddress));
+        
     } else {
         // UI Disconnected
         DOMElements.connectButton?.classList.remove('hidden');
         DOMElements.userInfo?.classList.add('hidden');
         DOMElements.userInfo?.classList.remove('flex');
+
+        // --- GARANTIA DE RESET ---
+        // Garante que eles reapareçam se a lógica mudar
+        if (DOMElements.walletAddressEl) DOMElements.walletAddressEl.classList.remove('hidden');
+        if (DOMElements.userBalanceEl) DOMElements.userBalanceEl.classList.remove('hidden');
+        // --- FIM DA GARANTIA ---
 
         if (DOMElements.popMiningTab) DOMElements.popMiningTab.style.display = 'none';
         if (DOMElements.validatorSectionTab) DOMElements.validatorSectionTab.style.display = 'none';
@@ -189,56 +198,37 @@ function updateUIState() {
 }
 
 
-// --- MetaMask Event Handlers ---
+// --- ATUALIZADO: Handler de Mudança do Web3Modal ---
 
-async function handleAccountsChanged(accounts) {
-    console.log("Handler: accountsChanged", accounts);
-    if (accounts.length === 0) {
-        // User disconnected all accounts from site
-        if (State.isConnected) {
-            showToast("Wallet disconnected from site.", "info");
-            disconnectWallet();
-            updateUIState();
+/**
+ * Esta função é o *único* ponto de entrada para todas as atualizações de estado da carteira.
+ * Ela é chamada pelo wallet.js sempre que o Web3Modal relata uma mudança.
+ * @param {object} newState - O novo estado vindo do Web3Modal
+ */
+async function onWalletStateChange(newState) {
+    console.log("onWalletStateChange:", newState);
+    
+    // newState é apenas um sinal. O 'State' (global) já foi limpo/preenchido pelo wallet.js
+    
+    if (!newState.isConnected) {
+        // O estado já foi limpo em wallet.js.
+        // Apenas mostre o toast (se relevante) e ATUALIZE A UI.
+        
+        // 'wasConnected' é o flag que definimos em wallet.js
+        if (newState.wasConnected) { 
+            showToast("Wallet disconnected.", "info");
         }
-    } else if (!State.isConnected || accounts[0].toLowerCase() !== State.userAddress?.toLowerCase()) {
-        // Switched to a different account OR connected first account via MetaMask UI
-        showToast("Account changed. Re-connecting...", "info");
-        if (State.isConnected) {
-            disconnectWallet();
-            updateUIState(); // Show disconnected briefly
+        updateUIState(); // Isso irá renderizar o estado desconectado
+    } else {
+        // O estado já foi preenchido em wallet.js.
+        // Apenas mostre o toast (se relevante) e ATUALIZE A UI.
+        
+        // 'isNewConnection' é o flag que definimos
+        if (newState.isNewConnection) { 
+            showToast("Wallet connected successfully!", "success");
         }
-        await new Promise(resolve => setTimeout(resolve, 100)); // Short delay
-        const success = await connectWallet(); // Attempt connection with new account
-        updateUIState(); // Update based on connection result
+        updateUIState(); // Isso irá renderizar o estado conectado
     }
-}
-
-function handleDisconnect() {
-    console.log("Handler: disconnect event received");
-    if (State.isConnected) {
-        showToast("Wallet disconnected. Please reconnect.", "warning");
-        disconnectWallet();
-        updateUIState();
-    }
-}
-
-function handleChainChanged(chainIdHex) {
-     console.log("Handler: chainChanged", chainIdHex);
-     const newChainId = BigInt(chainIdHex);
-     if (newChainId !== sepoliaChainId) {
-         showToast(`Incorrect Network. Please switch back to Sepolia (ID: ${sepoliaChainId}).`, "error");
-         if (State.isConnected) {
-             disconnectWallet();
-             updateUIState();
-         }
-     } else if (!State.isConnected) {
-          showToast("Switched back to Sepolia. Please connect your wallet.", "info");
-          // No automatic connection, user needs to click connect
-     } else {
-          // Correct network, already connected - reload for safety
-          showToast("Network corrected. Reloading application...", "info");
-          window.location.reload();
-     }
 }
 
 
@@ -264,14 +254,14 @@ function setupGlobalListeners() {
         }
     });
 
-    DOMElements.connectButton?.addEventListener('click', async () => {
-        const success = await connectWallet();
-        // updateUIState will be called implicitly by listeners or within connectWallet success
+    DOMElements.connectButton?.addEventListener('click', () => {
+        openConnectModal();
     });
 
     DOMElements.disconnectButton?.addEventListener('click', () => {
+        // CORRETO: Apenas pede para desconectar.
+        // O subscription (wallet.js) e o onWalletStateChange (aqui) farão o resto.
         disconnectWallet();
-        updateUIState();
     });
 
     // Global modal close listener
@@ -305,22 +295,21 @@ async function init() {
         return;
     }
 
-    // Setup listeners that don't depend on provider first
+    // Setup listeners que não dependem de provider first
     setupGlobalListeners();
 
-    // Initialize public provider and load public data
+    // Initialize public provider (leitura) e Web3Modal (escrita/conexão)
     await initPublicProvider();
 
-    // Setup MetaMask specific listeners AFTER ensuring window.ethereum exists
-    setupMetaMaskListeners(handleAccountsChanged, handleDisconnect, handleChainChanged);
-
-    // Attempt to connect if previously authorized
-    const wasConnected = await checkInitialConnection();
-    console.log("Initial connection check result:", wasConnected);
-
-    // Initial UI update and navigation
-    updateUIState(); // Update based on connection status
-    navigateTo(activePageId); // Navigate to default or last active page
+    // Assina as mudanças do Web3Modal. Esta é a nova "fonte da verdade".
+    subscribeToWalletChanges(onWalletStateChange);
+    
+    // O Web3Modal (configurado no wallet.js) tentará reconectar automaticamente.
+    // O callback `onWalletStateChange` será acionado se for bem-sucedido.
+    
+    // Atualização inicial da UI (estado desconectado)
+    updateUIState(); 
+    navigateTo(activePageId); // Navega para a página padrão
 
     console.log("Application initialized.");
 }

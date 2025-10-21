@@ -143,7 +143,7 @@ function updateUIState() {
         // ------------------------------------------
 
         const balanceNum = formatBigNumber(State.currentUserBalance);
-        // AJUSTE: Remove $BKC do valor para a caixa de estatísticas
+        // AJUSTE CRUCIAL: Remove $BKC do valor para a caixa de estatísticas (RESOLVE O BUG)
         const balanceString = `${balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
         if (DOMElements.userBalanceEl) DOMElements.userBalanceEl.textContent = balanceString;

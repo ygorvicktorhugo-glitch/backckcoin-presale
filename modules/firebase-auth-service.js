@@ -68,7 +68,7 @@ function ensureAuthenticated() {
 
 
 // =======================================================
-//  FUNÇÕES DE DADOS PÚBLICOS
+//  FUNÇÕES DE DADOS PÚBLICOS (COM CORREÇÃO)
 // =======================================================
 export async function getPublicAirdropData() {
     const dataRef = doc(db, "airdrop_public_data", "data_v1");
@@ -77,20 +77,29 @@ export async function getPublicAirdropData() {
     if (dataSnap.exists()) {
         const data = dataSnap.data();
 
+        // 1. Converte Timestamps para objetos Date (Isto está correto)
         const tasks = (data.dailyTasks || []).map(task => ({
             ...task,
-            // Certifica que IDs existam (importante para a correção do erro indexOf)
-            id: task.id || null, // Adiciona id: null se não existir
+            id: task.id || null,
             startDate: task.startDate?.toDate ? task.startDate.toDate() : (task.startDate ? new Date(task.startDate) : null),
             endDate: task.endDate?.toDate ? task.endDate.toDate() : (task.endDate ? new Date(task.endDate) : null),
         }));
 
         const now = Date.now();
-        // Filtra tarefas sem ID também
+        
+        // 2. Filtra tarefas ativas
         const activeTasks = tasks.filter(task => {
              if (!task.id) return false; // Pula tarefas sem ID
-             const endDate = task.endDate ? new Date(task.endDate).getTime() : Infinity;
-             const startDate = task.startDate ? new Date(task.startDate).getTime() : 0;
+             
+             // *** A CORREÇÃO ESTÁ AQUI ***
+             // O bug era: new Date(task.endDate).getTime()
+             // A correção é: task.endDate.getTime()
+             // Não devemos criar um 'new Date()' a partir de um objeto Date já existente.
+             
+             const endDate = task.endDate ? task.endDate.getTime() : Infinity;
+             const startDate = task.startDate ? task.startDate.getTime() : 0;
+             
+             // A lógica de filtro correta
              return endDate > now && startDate <= now;
         });
 
@@ -101,7 +110,7 @@ export async function getPublicAirdropData() {
                 top100ByPosts: [],
                 lastUpdated: null
             },
-            dailyTasks: activeTasks
+            dailyTasks: activeTasks // Retorna a lista CORRETAMENTE filtrada
         };
     } else {
         console.warn("System data document 'airdrop_public_data/data_v1' not found. Returning defaults.");
@@ -136,32 +145,46 @@ export async function getAirdropUser(walletAddress) {
         const userData = userSnap.data();
         let needsUpdate = false;
         const updates = {};
-        // Garante referralCode
+        
         if (!userData.referralCode) {
             updates.referralCode = generateReferralCode();
             needsUpdate = true;
         }
-        // Garante approvedSubmissionsCount iniciado
         if (userData.approvedSubmissionsCount === undefined) {
              updates.approvedSubmissionsCount = 0;
+             needsUpdate = true;
+        }
+        if (userData.rejectedCount === undefined) {
+             updates.rejectedCount = 0;
+             needsUpdate = true;
+        }
+        if (userData.isBanned === undefined) {
+             updates.isBanned = false;
              needsUpdate = true;
         }
 
         if (needsUpdate) {
              await updateDoc(userRef, updates);
-             // Retorna os dados merged com as atualizações
              return { id: userSnap.id, ...userData, ...updates };
         }
-        // Garante que o retorno tenha approvedSubmissionsCount mesmo se for 0 e não precisar de update
-        return { id: userSnap.id, approvedSubmissionsCount: 0, ...userData };
+        
+        return { 
+            id: userSnap.id, 
+            approvedSubmissionsCount: 0, 
+            rejectedCount: 0,
+            isBanned: false,
+            ...userData 
+        };
     } else {
         const referralCode = generateReferralCode();
         const newUser = {
             walletAddress: walletAddress,
             referralCode: referralCode,
             totalPoints: 0,
-            pointsMultiplier: 1.0, // Multiplicador inicial (pode ser ajustado)
-            approvedSubmissionsCount: 0, // Inicia contagem
+            pointsMultiplier: 1.0, 
+            approvedSubmissionsCount: 0,
+            rejectedCount: 0,
+            isBanned: false,
             createdAt: serverTimestamp()
         };
         await setDoc(userRef, newUser);
@@ -172,13 +195,10 @@ export async function getAirdropUser(walletAddress) {
 
 export async function isTaskEligible(taskId, cooldownHours) {
     ensureAuthenticated();
-    // *** CORREÇÃO ERRO INDEXOF ***
-    // Adiciona verificação se taskId é válido ANTES de fazer a query
     if (!taskId || typeof taskId !== 'string' || taskId.trim() === '') {
         console.warn(`isTaskEligible called with invalid taskId: ${taskId}`);
-        return { eligible: false, timeLeft: 0 }; // Não elegível se ID inválido
+        return { eligible: false, timeLeft: 0 };
     }
-    // *** FIM DA CORREÇÃO ***
 
     const lastClaimRef = doc(db, "airdrop_users", currentUser.uid, "task_claims", taskId);
     const lastClaimSnap = await getDoc(lastClaimRef);
@@ -216,11 +236,9 @@ export async function isTaskEligible(taskId, cooldownHours) {
 export async function recordDailyTaskCompletion(task, currentMultiplier) {
     ensureAuthenticated();
 
-    // Garante que a tarefa tenha um ID válido
     if (!task || !task.id) {
          throw new Error("Invalid task data provided.");
     }
-
 
     const eligibility = await isTaskEligible(task.id, task.cooldownHours);
     if (!eligibility.eligible) {
@@ -234,18 +252,16 @@ export async function recordDailyTaskCompletion(task, currentMultiplier) {
         throw new Error("User profile not found.");
     }
     const userData = userSnap.data();
-    // Usa o multiplicador ATUAL do usuário para calcular os pontos da tarefa diária
     const actualMultiplier = userData.pointsMultiplier || 1.0;
 
-    // Pontos da tarefa diária NÃO são multiplicados pelo UGC Multiplier (conforme interpretação)
-    const pointsToAdd = Math.round(task.points); // Usa apenas os pontos base da tarefa
+    const pointsToAdd = Math.round(task.points); 
 
     await updateDoc(userRef, { totalPoints: increment(pointsToAdd) });
 
     const claimRef = doc(db, "airdrop_users", currentUser.uid, "task_claims", task.id);
     await setDoc(claimRef, {
         timestamp: new Date().toISOString(),
-        points: pointsToAdd // Salva os pontos base concedidos
+        points: pointsToAdd
     });
 
     return pointsToAdd;
@@ -262,12 +278,11 @@ export async function addSubmission(url, platform) {
         throw new Error("Invalid platform specified.");
     }
 
-    // Validação básica de URL (MELHORAR CONFORME NECESSÁRIO)
     let isValidUrl = false;
     if (platform === 'YouTube' && (normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be'))) isValidUrl = true;
     else if (platform === 'Instagram' && normalizedUrl.includes('instagram.com')) isValidUrl = true;
     else if (platform === 'X/Twitter' && (normalizedUrl.includes('twitter.com') || normalizedUrl.includes('x.com'))) isValidUrl = true;
-    else if (platform === 'Other') isValidUrl = true; // Aceita qualquer URL para 'Other'
+    else if (platform === 'Other') isValidUrl = true; 
 
     if (!isValidUrl) {
          throw new Error(`The provided URL does not seem to be a valid ${platform} link.`);
@@ -292,12 +307,11 @@ export async function addSubmission(url, platform) {
     await addDoc(submissionsCol, {
         url: normalizedUrl,
         platform: platform,
-        status: 'pending', // Status inicial
+        status: 'pending',
         basePoints: basePoints,
         pointsAwarded: 0,
         submittedAt: serverTimestamp(),
         resolvedAt: null,
-        // isFlagged: false // Não precisamos mais deste campo explícito, usamos o status
     });
 }
 
@@ -322,7 +336,6 @@ export async function getUserSubmissions() {
 export async function getUserFlaggedSubmissions() {
     ensureAuthenticated();
     const submissionsCol = collection(db, "airdrop_users", currentUser.uid, "submissions");
-    // A query agora usa o índice composto criado
     const q = query(submissionsCol, where("status", "==", "flagged_suspicious"), orderBy("submittedAt", "desc"));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => {
@@ -353,33 +366,79 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
         const userSnap = await getDoc(userRef);
         if (!userSnap.exists()) throw new Error("User profile not found.");
         const userData = userSnap.data();
-        // Calcula o multiplicador com base na CONTAGEM ATUAL + 1 (esta que está sendo aprovada)
         const newApprovedCount = (userData.approvedSubmissionsCount || 0) + 1;
-        const multiplier = Math.min(10.0, newApprovedCount * 0.1); // Calcula multiplicador APLICÁVEL a ESTE post
+        const multiplier = Math.min(10.0, newApprovedCount * 0.1); 
 
-        // Calcula pontos finais (base * multiplicador do momento da aprovação)
         const pointsAwarded = Math.round(submissionData.basePoints * multiplier);
 
-        // Atualiza submissão e usuário
         await updateDoc(submissionRef, {
             status: newStatus,
-            pointsAwarded: pointsAwarded, // Salva pontos concedidos
-            multiplierApplied: multiplier, // Salva qual multiplicador foi usado
+            pointsAwarded: pointsAwarded,
+            multiplierApplied: multiplier, 
             resolvedAt: serverTimestamp()
         });
         await updateDoc(userRef, {
-            totalPoints: increment(pointsAwarded), // Adiciona pontos finais ao total
-            approvedSubmissionsCount: increment(1) // Incrementa a contagem de aprovados
+            totalPoints: increment(pointsAwarded),
+            approvedSubmissionsCount: increment(1)
         });
 
-    } else { // 'rejected'
+    } else { 
         await updateDoc(submissionRef, {
             status: newStatus,
             pointsAwarded: 0,
             resolvedAt: serverTimestamp()
-            // Não incrementa approvedSubmissionsCount nem totalPoints
         });
     }
+}
+
+
+export async function autoApproveSubmission(submissionId) {
+    ensureAuthenticated();
+    const userRef = doc(db, "airdrop_users", currentUser.uid);
+    const submissionRef = doc(db, "airdrop_users", currentUser.uid, "submissions", submissionId);
+
+    const submissionSnap = await getDoc(submissionRef);
+    if (!submissionSnap.exists()) {
+        throw new Error("Submission not found.");
+    }
+    const submissionData = submissionSnap.data();
+
+    if (submissionData.status !== 'pending') {
+         console.warn(`Submission ${submissionId} is no longer pending. Skipping auto-approval.`);
+         return; 
+    }
+    
+    const submittedAt = submissionData.submittedAt?.toDate ? submissionData.submittedAt.toDate() : null;
+    if (!submittedAt) {
+         throw new Error("Submission has no timestamp.");
+    }
+
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    if (submittedAt > twoHoursAgo) {
+         console.warn(`Submission ${submissionId} is not old enough for auto-approval.`);
+         return;
+    }
+    
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) throw new Error("User profile not found.");
+    const userData = userSnap.data();
+    
+    const newApprovedCount = (userData.approvedSubmissionsCount || 0) + 1;
+    const multiplierApplied = Math.min(10.0, newApprovedCount * 0.1);
+    
+    const pointsAwarded = Math.round(submissionData.basePoints * multiplierApplied);
+
+    await updateDoc(userRef, {
+        totalPoints: increment(pointsAwarded),
+        approvedSubmissionsCount: increment(1)
+    });
+
+    await updateDoc(submissionRef, {
+        status: 'approved',
+        pointsAwarded: pointsAwarded,
+        multiplierApplied: multiplierApplied,
+        resolvedAt: serverTimestamp()
+    });
 }
 
 
@@ -388,12 +447,11 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
 // =======================================================
 export async function getAllTasksForAdmin() {
     const tasksCol = collection(db, "daily_tasks");
-    const q = query(tasksCol, orderBy("endDate")); // Ordena para admin ver
+    const q = query(tasksCol, orderBy("endDate")); 
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        // Converte timestamps
         startDate: doc.data().startDate?.toDate ? doc.data().startDate.toDate() : null,
         endDate: doc.data().endDate?.toDate ? doc.data().endDate.toDate() : null,
     }));
@@ -401,23 +459,21 @@ export async function getAllTasksForAdmin() {
 
 export async function addOrUpdateDailyTask(taskData) {
      const dataToSave = { ...taskData };
-    // Converte Date para Timestamp
     if (dataToSave.startDate instanceof Date) {
         dataToSave.startDate = Timestamp.fromDate(dataToSave.startDate);
     }
      if (dataToSave.endDate instanceof Date) {
         dataToSave.endDate = Timestamp.fromDate(dataToSave.endDate);
     }
-     // Garante que ID não seja undefined
      if (taskData.id === undefined) delete dataToSave.id;
 
 
     if (taskData.id) {
         const taskRef = doc(db, "daily_tasks", taskData.id);
-        const { id, ...data } = dataToSave; // Remove id antes de salvar
-        await setDoc(taskRef, data, { merge: true }); // Usa merge
+        const { id, ...data } = dataToSave; 
+        await setDoc(taskRef, data, { merge: true }); 
     } else {
-         delete dataToSave.id; // Garante que não tem ID ao adicionar
+         delete dataToSave.id; 
         await addDoc(collection(db, "daily_tasks"), dataToSave);
     }
 }
@@ -434,8 +490,8 @@ export async function getAllSubmissionsForAdmin() {
         const userId = userDoc.id;
         const userData = userDoc.data();
         const submissionsCol = collection(db, "airdrop_users", userId, "submissions");
-        // Filtra por status 'pending' ou 'auditing' para o admin
-        const q = query(submissionsCol, where("status", "in", ["pending", "auditing"]), orderBy("submittedAt", "desc"));
+        
+        const q = query(submissionsCol, where("status", "in", ["pending", "auditing", "flagged_suspicious"]), orderBy("submittedAt", "desc"));
         const submissionsSnapshot = await getDocs(q);
 
         submissionsSnapshot.forEach(subDoc => {
@@ -450,50 +506,59 @@ export async function getAllSubmissionsForAdmin() {
             });
         });
     }
-    return allSubmissions; // Retorna apenas as pendentes
+    return allSubmissions;
 }
 
-// Admin aprova/rejeita uma submissão 'pending' ou 'auditing'
+
 export async function updateSubmissionStatus(userId, submissionId, status, points, newMultiplier) {
     const userRef = doc(db, "airdrop_users", userId);
     const submissionRef = doc(db, "airdrop_users", userId, "submissions", submissionId);
 
-    const submissionSnap = await getDoc(submissionRef);
-    if (!submissionSnap.exists()) {
-        throw new Error("Submission not found.");
-    }
+    const [userSnap, submissionSnap] = await Promise.all([
+         getDoc(userRef),
+         getDoc(submissionRef)
+    ]);
+    
+    if (!submissionSnap.exists()) throw new Error("Submission not found.");
+    if (!userSnap.exists()) throw new Error("User profile not found.");
+    
     const submissionData = submissionSnap.data();
+    const userData = userSnap.data();
+    
+    const userUpdates = {}; 
 
-    // Calcula os pontos finais com base no multiplicador ATUAL do usuário
     let pointsAwarded = 0;
-    let multiplierApplied = 0; // Guarda qual multiplicador foi aplicado
+    let multiplierApplied = 0;
+
     if (status === 'approved') {
-         const userSnap = await getDoc(userRef);
-         if (!userSnap.exists()) throw new Error("User profile not found.");
-         const userData = userSnap.data();
          const currentApprovedCount = userData.approvedSubmissionsCount || 0;
-         // Multiplicador calculado com base na contagem + 1 (incluindo esta aprovação)
          multiplierApplied = Math.min(10.0, (currentApprovedCount + 1) * 0.1);
-         // Pontos finais = Base da submissão * Multiplicador calculado
          pointsAwarded = Math.round(submissionData.basePoints * multiplierApplied);
 
-         // Atualiza o perfil do usuário
-         const userUpdates = {
-             totalPoints: increment(pointsAwarded),
-             approvedSubmissionsCount: increment(1)
-         };
-         // Opcional: Atualiza o multiplicador base do usuário se o `newMultiplier` for maior
+         userUpdates.totalPoints = increment(pointsAwarded);
+         userUpdates.approvedSubmissionsCount = increment(1);
+
           if (newMultiplier && typeof newMultiplier === 'number' && newMultiplier > (userData.pointsMultiplier || 1.0)) {
                 userUpdates.pointsMultiplier = newMultiplier;
-            }
-         await updateDoc(userRef, userUpdates);
+          }
+         
+    } else if (status === 'rejected') {
+        const currentRejectedCount = userData.rejectedCount || 0;
+        userUpdates.rejectedCount = increment(1);
+        
+        if (currentRejectedCount + 1 >= 3) {
+            userUpdates.isBanned = true;
+        }
+    }
+    
+    if (Object.keys(userUpdates).length > 0) {
+        await updateDoc(userRef, userUpdates);
     }
 
-    // Atualiza a submissão
     await updateDoc(submissionRef, {
         status: status,
-        pointsAwarded: pointsAwarded, // Salva os pontos concedidos (0 se rejeitado)
-        multiplierApplied: multiplierApplied, // Salva o multiplicador usado (0 se rejeitado)
+        pointsAwarded: pointsAwarded,
+        multiplierApplied: multiplierApplied,
         resolvedAt: serverTimestamp()
     });
 }

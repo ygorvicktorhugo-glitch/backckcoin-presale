@@ -51,9 +51,6 @@ const featuredWallets = [
     { name: 'WalletConnect', id: 'walletConnect' } // Garante que o WC também esteja lá
 ];
 
-// AVISO: Não exporte 'web3modal' diretamente se o app.js for importá-lo,
-// pois o app.js pode carregar antes desta linha.
-// A função disconnectWallet() é o wrapper seguro.
 const web3modal = createWeb3Modal({
     ethersConfig,
     chains: [sepolia],
@@ -68,13 +65,18 @@ const web3modal = createWeb3Modal({
         '--w3m-border-radius-master': '0.375rem', // rounded-md
         '--w3m-z-index': 100 // Garante que fique acima de outros elementos
     },
-    // Adiciona o destaque de carteiras para o modal de seleção
     featuredWalletIds: featuredWallets.map(w => w.id),
-    // Adiciona as carteiras para o modal mobile (MetaMask e Binance)
     mobileWallets: [
         'metamask',
         'binance'
-    ]
+    ],
+
+    // --- *** CORREÇÃO ADICIONADA AQUI *** ---
+    // Habilita a funcionalidade "Onramp" (Buy Crypto)
+    // Isso fará com que o modal busque os provedores (Coinbase, MoonPay)
+    // que você ativou no seu painel do WalletConnect Cloud.
+    enableOnramp: true
+    // --- *** FIM DA CORREÇÃO *** ---
 });
 
 // --- Funções Auxiliares Internas ---
@@ -166,10 +168,7 @@ export function subscribeToWalletChanges(callback) {
             
             if (success) {
                 // --- AJUSTE DE RECONEXÃO: PEQUENO DELAY APÓS O LOADUserData ---
-                // Isso garante que a UI do Dashboard tenha tempo de carregar os saldos e o pStake
-                // antes que o app.js renderize. Essencial para reconexão em F5.
-                await new Promise(resolve => setTimeout(resolve, 500)); // Espera 500ms
-                // -------------------------------------------------------------
+                // *** CORREÇÃO: Delay de 500ms REMOVIDO para consertar o "flicker" do F5 ***
                 
                 callback({ 
                     isConnected: true, 

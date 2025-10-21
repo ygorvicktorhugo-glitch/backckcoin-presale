@@ -2,9 +2,8 @@
 
 import { State } from '../state.js';
 import * as db from '../modules/firebase-auth-service.js';
-// Importa openModal E closeModal
 import { showToast, openUgcSubmitModal, closeModal, openModal } from '../ui-feedback.js';
-import { formatAddress, renderNoData, formatBigNumber, renderLoading } from '../utils.js';
+import { formatAddress, renderNoData, formatBigNumber, renderLoading, renderError } from '../utils.js';
 
 let airdropState = {
     isConnected: false,
@@ -14,21 +13,23 @@ let airdropState = {
     dailyTasks: [],
     userSubmissions: [],
     flaggedSubmissions: [],
-    activeTab: 'profile',
+    isBanned: false, // *** NOVO: Flag de banimento
+    activeTab: 'profile', // Aba padrão alterada
 };
 
 let dailyTimerInterval = null;
 const DEFAULT_HASHTAGS = "#Backchain #BKC #Web3 #Crypto #Airdrop";
+const AUTO_APPROVE_HOURS = 2; // *** NOVO: Configuração de auto-aprovação
 
-// Mapeamento de Status para UI (Cores Tailwind e Ícones Font Awesome)
+// Mapeamento de Status para UI
 const statusUI = {
     pending: { text: 'Pending Review', color: 'text-amber-400', bgColor: 'bg-amber-900/50', icon: 'fa-clock' },
-    auditing: { text: 'Auditing', color: 'text-blue-400', bgColor: 'bg-blue-900/50', icon: 'fa-magnifying-glass' }, // Legado, se aparecer
+    auditing: { text: 'Auditing', color: 'text-blue-400', bgColor: 'bg-blue-900/50', icon: 'fa-magnifying-glass' },
     approved: { text: 'Approved', color: 'text-green-400', bgColor: 'bg-green-900/50', icon: 'fa-check-circle' },
     rejected: { text: 'Rejected', color: 'text-red-400', bgColor: 'bg-red-900/50', icon: 'fa-times-circle' },
     flagged_suspicious: { text: 'Flagged - Review!', color: 'text-red-300', bgColor: 'bg-red-800/60', icon: 'fa-flag' },
 };
-// Mapeamento de Plataformas para Ícones e Cores
+// Mapeamento de Plataformas
 const platformUI = {
     'YouTube': { icon: 'fa-youtube', color: 'text-red-500' },
     'Instagram': { icon: 'fa-instagram', color: 'text-pink-500' },
@@ -38,13 +39,14 @@ const platformUI = {
 
 
 // =======================================================
-//  1. FUNÇÕES DE CARREGAMENTO DE DADOS
+//  1. FUNÇÕES DE CARREGAMENTO DE DADOS (Modificado)
 // =======================================================
 async function loadAirdropData() {
     airdropState.isConnected = State.isConnected;
     airdropState.user = null;
     airdropState.userSubmissions = [];
     airdropState.flaggedSubmissions = [];
+    airdropState.isBanned = false; // Reseta flag
 
     try {
         const publicData = await db.getPublicAirdropData();
@@ -62,6 +64,48 @@ async function loadAirdropData() {
             airdropState.userSubmissions = submissions;
             airdropState.flaggedSubmissions = flagged;
 
+            // *** NOVO: Verificação de Banimento ***
+            if (user.isBanned) {
+                airdropState.isBanned = true;
+                console.warn("User is banned from Airdrop.");
+                return; // Para de carregar o resto se estiver banido
+            }
+
+            // *** NOVO: Lógica de Auto-Aprovação ***
+            const now = new Date();
+            const autoApproveTime = new Date(now.getTime() - AUTO_APPROVE_HOURS * 60 * 60 * 1000);
+            
+            const submissionsToAutoApprove = airdropState.userSubmissions.filter(sub => 
+                sub.status === 'pending' && 
+                sub.submittedAt && 
+                sub.submittedAt < autoApproveTime
+            );
+
+            if (submissionsToAutoApprove.length > 0) {
+                 try {
+                    showToast(`Auto-approving ${submissionsToAutoApprove.length} older submission(s)...`, "info");
+                    
+                    // Chama a nova função do Firebase para cada submissão
+                    await Promise.all(submissionsToAutoApprove.map(sub => db.autoApproveSubmission(sub.submissionId)));
+                    
+                    showToast("Submissions approved! Reloading data...", "success");
+                    
+                    // Recarrega os dados para refletir os novos pontos e status
+                    // Chama a função pai (AirdropPage.render) para um reload limpo
+                    // Evita recursão direta
+                    setTimeout(() => AirdropPage.render(), 500);
+                    return; // Interrompe a execução atual
+
+                } catch (error) {
+                    console.error("Error during auto-approval process:", error);
+                    showToast("Error auto-approving submissions. Will try again later.", "error");
+                    // Continua com os dados atuais (mesmo que alguns estejam pendentes)
+                }
+            }
+            // *** FIM DA LÓGICA DE AUTO-APROVAÇÃO ***
+
+
+            // Carrega elegibilidade das tarefas diárias (só se não estiver banido)
             if (airdropState.dailyTasks.length > 0) {
                  airdropState.dailyTasks = await Promise.all(airdropState.dailyTasks.map(async (task) => {
                      try {
@@ -101,13 +145,12 @@ function handleTabSwitch(e) {
                 dailyTimerInterval = null;
             }
             airdropState.activeTab = targetTab;
-            renderAirdropContent();
+            renderAirdropContent(); // Re-renderiza tudo (incluindo abas)
         }
     }
 }
 
 const formatTimeLeft = (ms) => {
-    // ... (sem alterações) ...
      if (ms <= 0) return 'Ready';
     const totalSeconds = Math.floor(ms / 1000);
     const days = Math.floor(totalSeconds / 86400);
@@ -123,7 +166,6 @@ const formatTimeLeft = (ms) => {
 };
 
 async function handleDailyTaskCompletion(e) {
-    // ... (sem alterações na lógica, apenas no renderLoading) ...
     const btn = e.target.closest('.daily-task-btn');
     if (!btn || btn.disabled) return;
     const taskId = btn.dataset.taskId;
@@ -158,7 +200,6 @@ async function handleDailyTaskCompletion(e) {
 
 
 function generateShareText() {
-    // ... (sem alterações) ...
      if (!airdropState.user || !airdropState.user.referralCode) return "Connect wallet to get your referral link.";
     const referralLink = `https://backcoin.org/?ref=${airdropState.user.referralCode}`;
     return `Check out Backchain! Earn rewards and support the network.\nMy referral link: ${referralLink}\n\n${DEFAULT_HASHTAGS}`;
@@ -166,7 +207,6 @@ function generateShareText() {
 
 
 function openPlatformSubmitModal(platform) {
-    // ... (sem alterações na lógica) ...
      if (!airdropState.user) return showToast("Please connect your wallet first.", "error");
     const shareText = generateShareText();
     const referralLink = `https://backcoin.org/?ref=${airdropState.user.referralCode}`;
@@ -183,8 +223,9 @@ function openPlatformSubmitModal(platform) {
             await db.addSubmission(url, platform);
             showToast(`${platform} submission successful! Pending review.`, "success");
             closeModal();
-            await loadAirdropData();
-            renderAirdropContent();
+            await loadAirdropData(); // Recarrega
+            airdropState.activeTab = 'submissions'; // Muda para a aba de submissões
+            renderAirdropContent(); // Renderiza
         } catch (error) {
             if (error.message.includes("does not seem to be a valid")) { showToast(error.message, "error"); }
             else if (error.message.includes("already been submitted")) { showToast("Submission failed: Content already submitted.", "warning"); }
@@ -197,7 +238,6 @@ function openPlatformSubmitModal(platform) {
 
 
 async function handleResolveSubmission(e) {
-     // ... (sem alterações na lógica) ...
      const button = e.target.closest('.resolve-flagged-btn');
      if (!button || button.disabled) return;
      const submissionId = button.dataset.submissionId;
@@ -222,7 +262,6 @@ async function handleResolveSubmission(e) {
 
 
 function startDailyTimer() {
-     // ... (sem alterações na lógica) ...
       const timerEl = document.getElementById('dailyResetTimer');
     if (!timerEl) return;
     if (dailyTimerInterval) { clearInterval(dailyTimerInterval); dailyTimerInterval = null; }
@@ -244,7 +283,10 @@ function startDailyTimer() {
             setTimeout(() => {
                  const airdropElement = document.getElementById('airdrop');
                  const isVisible = airdropElement && !airdropElement.classList.contains('hidden');
-                 if (isVisible) { loadAirdropData().then(renderAirdropContent); }
+                 // Só recarrega se a aba de tarefas estiver visível
+                 if (isVisible && airdropState.activeTab === 'tasks') { 
+                    loadAirdropData().then(renderAirdropContent); 
+                 }
             }, 2000);
         }
     };
@@ -257,6 +299,9 @@ function startDailyTimer() {
 //  3. FUNÇÕES DE RENDERIZAÇÃO DE CONTEÚDO (REDESENHADAS)
 // =======================================================
 
+// ------------------------------------------
+// ABA 1: PERFIL
+// ------------------------------------------
 function renderProfileContent(el) {
     if (!el) return;
 
@@ -271,17 +316,16 @@ function renderProfileContent(el) {
         return;
     }
 
-
-    const { user, systemConfig, flaggedSubmissions, userSubmissions } = airdropState;
+    const { user, flaggedSubmissions, userSubmissions } = airdropState;
     const totalPoints = user.totalPoints || 0;
     const approvedCount = user.approvedSubmissionsCount || 0;
-    const ugcMultiplier = Math.min(10.0, approvedCount * 0.1); // Máx 10x
+    const rejectedCount = user.rejectedCount || 0; // Pega contagem de rejeições
+    const ugcMultiplier = Math.min(10.0, approvedCount * 0.1); 
     const multiplierDisplay = `${ugcMultiplier.toFixed(1)}x`;
 
     const pendingPoints = userSubmissions
-        .filter(sub => sub.status === 'pending')
+        .filter(sub => sub.status === 'pending' || sub.status === 'auditing')
         .reduce((sum, sub) => sum + (sub.basePoints || 0), 0);
-
 
     const referralCode = user.referralCode || 'N/A';
     const referralLink = `https://backcoin.org/?ref=${referralCode}`;
@@ -302,7 +346,6 @@ function renderProfileContent(el) {
         </div>
     `;
 
-    // Redesenho do Bloco de Revisão
     const flaggedReviewBlock = flaggedSubmissions.length > 0 ? `
         <div class="bg-red-900/30 border border-red-500/50 rounded-xl p-6 mb-6">
             <h3 class="text-xl font-bold text-red-400 mb-3"><i class="fa-solid fa-flag mr-2"></i> Action Required: Review Submissions</h3>
@@ -335,54 +378,6 @@ function renderProfileContent(el) {
         </div>
     ` : '';
 
-
-     const tasksHtml = airdropState.dailyTasks.length > 0 ? airdropState.dailyTasks.map(task => {
-        if (task.error) {
-             return `
-             <div class="bg-main border border-red-500/50 rounded-xl p-5 flex justify-between items-center flex-wrap gap-4 opacity-70">
-                 <p class="font-semibold text-red-400 truncate">${task.title || 'Unknown Task'}</p>
-                 <p class="text-xs text-red-400">Error loading status</p>
-             </div>
-             `;
-        }
-        const points = Math.round(task.points); // Pontos base
-        const isEligible = task.eligible;
-        const btnClass = isEligible ? 'bg-amber-500 hover:bg-amber-600 text-zinc-900' : 'bg-zinc-700 btn-disabled text-zinc-400';
-        const icon = task.cooldownHours <= 24 ? 'fa-clock' : 'fa-hourglass-start';
-        const expiryDate = task.endDate ? new Date(task.endDate).toLocaleDateString() : 'Never';
-
-        return `
-            <div class="bg-main border border-border-color rounded-xl p-5 flex justify-between items-start flex-wrap gap-4 transition-all duration-300">
-                <div class="flex flex-col flex-grow min-w-0">
-                    <p class="font-extrabold text-xl text-white truncate">${task.title}</p>
-                    <p class="text-sm text-zinc-400 mt-1">${task.description || 'Visit and engage.'}</p>
-                     ${task.url ?
-                        `<a href="${task.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 text-xs font-bold transition-colors mt-2 inline-block max-w-max">
-                            <i class="fa-solid fa-up-right-from-square mr-1"></i> Go to Task
-                        </a>` : `<div class="mt-2 h-4"></div>`
-                    }
-                    <div class="mt-3 flex items-center gap-4 text-xs text-zinc-500 flex-wrap">
-                        <span><i class="fa-solid ${icon} mr-1"></i> Cooldown: ${task.cooldownHours}h</span>
-                        <span><i class="fa-solid fa-calendar-times mr-1"></i> Expires: ${expiryDate}</span>
-                    </div>
-                </div>
-                <div class="flex flex-col items-end gap-2 shrink-0">
-                    <span class="text-3xl font-extrabold text-yellow-400">+${points}</span>
-                    <span class="text-xs text-zinc-400 -mt-1">Points</span>
-
-                    <button data-task-id="${task.id}" class="daily-task-btn ${btnClass} font-bold py-2 px-4 rounded-md text-sm w-full sm:w-auto mt-2" ${!isEligible ? 'disabled' : ''}>
-                        ${isEligible ? 'Claim Points' : formatTimeLeft(task.timeLeftMs)}
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('') : (() => {
-        const tempDiv = document.createElement('div');
-        renderNoData(tempDiv, '<i class="fa-solid fa-list-check mr-2"></i> No active daily tasks available right now. Check back later!');
-        return tempDiv.innerHTML;
-    })();
-
-
     el.innerHTML = `
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-1 bg-sidebar border border-border-color rounded-xl p-6 flex flex-col h-fit shadow-lg">
@@ -414,30 +409,24 @@ function renderProfileContent(el) {
                              <p class="text-xs text-zinc-500">(Base Points)</p>
                         </div>
                     </div>
+                     <div class="pt-4 border-t border-zinc-700">
+                         <div class="bg-main rounded-lg p-3 text-center border border-border-color">
+                            <p class="text-xs text-zinc-400">Manual Rejections</p>
+                            <p class="text-2xl font-bold text-red-400">${rejectedCount} / 3</p>
+                            <p class="text-xs text-zinc-500">(3 rejections = ban)</p>
+                        </div>
+                     </div>
                 </div>
             </div>
 
             <div class="lg:col-span-2 space-y-6">
                  ${referralBlock}
                  ${flaggedReviewBlock}
-
-                <div class="bg-sidebar border border-border-color rounded-xl p-6">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                        <h2 class="text-2xl font-bold text-white">Daily Engagement Tasks</h2>
-                        <div class="text-left sm:text-right w-full sm:w-auto">
-                             <p class="text-xs text-zinc-500">Daily Reset In (UTC)</p>
-                             <p id="dailyResetTimer" class="text-lg font-bold text-amber-400">--:--:--</p>
-                        </div>
-                    </div>
-                    <p class="text-sm text-zinc-400 mb-5">Complete these tasks daily to earn points. New tasks may appear after the reset timer hits zero.</p>
-                    <div id="tasks-content" class="space-y-4">${tasksHtml}</div>
-                </div>
             </div>
         </div>
     `;
 
-    startDailyTimer();
-
+    // Listeners (Copiar, Gerar, Resolver Flag)
     document.getElementById('copyReferralBtn')?.addEventListener('click', (e) => {
         const input = document.getElementById('referralLinkInput');
         const button = e.currentTarget;
@@ -474,9 +463,232 @@ function renderProfileContent(el) {
     });
 
     document.getElementById('flagged-submissions-list')?.addEventListener('click', handleResolveSubmission);
+}
+
+
+// ------------------------------------------
+// ABA 2: SUBMISSÕES (Redesenhada)
+// ------------------------------------------
+function renderSubmissionPanel(el) {
+    if (!el) return;
+    if (dailyTimerInterval) { clearInterval(dailyTimerInterval); dailyTimerInterval = null; }
+
+    if (!airdropState.isConnected) {
+        const tempNoData = document.createElement('div');
+        renderNoData(tempNoData, 'Connect your wallet to submit content and view history.');
+        el.innerHTML = `<div class="bg-sidebar border border-border-color rounded-xl p-6">${tempNoData.innerHTML}</div>`;
+        return;
+    }
+
+    // *** NOVO: Contadores de Status ***
+    const stats = { total: 0, pending: 0, approved: 0, rejected: 0 };
+    if (airdropState.userSubmissions) {
+        airdropState.userSubmissions.forEach(sub => {
+            stats.total++;
+            if (sub.status === 'pending' || sub.status === 'auditing') stats.pending++;
+            else if (sub.status === 'approved') stats.approved++;
+            else if (sub.status === 'rejected') stats.rejected++;
+        });
+    }
+
+    const statsHtml = `
+        <style>
+            .stat-card { background-color: var(--bg-sidebar); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1rem 1.5rem; text-align: center; } 
+            .stat-card p:first-child { text-sm text-zinc-400 mb-1 font-semibold; }
+            .stat-card p:last-child { text-3xl font-extrabold; }
+        </style>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="stat-card">
+                <p>Total Posts</p>
+                <p class="text-white">${stats.total}</p>
+            </div>
+            <div class="stat-card border-green-500/50">
+                <p>Approved</p>
+                <p class="text-green-400">${stats.approved}</p>
+            </div>
+            <div class="stat-card border-amber-500/50">
+                <p>Pending</p>
+                <p class="text-amber-400">${stats.pending}</p>
+            </div>
+            <div class="stat-card border-red-500/50">
+                <p>Rejected</p>
+                <p class="text-red-400">${stats.rejected}</p>
+            </div>
+        </div>
+    `;
+
+
+    // --- Histórico de Submissão (com numeração) ---
+    const renderSubmissionHistory = () => {
+        if (!airdropState.userSubmissions || airdropState.userSubmissions.length === 0) {
+            const tempDiv = document.createElement('div');
+            renderNoData(tempDiv, 'You have not submitted any content yet.');
+            return tempDiv.innerHTML;
+        }
+
+        const totalSubmissions = airdropState.userSubmissions.length;
+        return airdropState.userSubmissions.map((sub, index) => {
+            const uiStatus = statusUI[sub.status] || statusUI.pending; 
+            const uiPlatform = platformUI[sub.platform] || platformUI.Other;
+
+            let pointsDisplay = '';
+            if (sub.status === 'approved') {
+                pointsDisplay = `(+${sub.pointsAwarded || 0} Pts)`;
+            } else if (sub.status === 'pending' || sub.status === 'auditing' || sub.status === 'flagged_suspicious') {
+                pointsDisplay = `(${sub.basePoints || 0} base pts)`;
+            }
+
+            return `
+                <div class="submission-history-card bg-main border border-border-color rounded-lg p-4 mb-3 transition-colors hover:bg-zinc-800/50 flex items-start gap-4">
+                    <div class="flex-shrink-0 w-8 text-center pt-1">
+                        <span class="text-xl font-bold text-zinc-600">#${totalSubmissions - index}</span>
+                    </div>
+                
+                    <div class="flex items-start gap-4 flex-grow min-w-0">
+                        <i class="fa-brands ${uiPlatform.icon} ${uiPlatform.color} text-3xl mt-1 w-8 text-center shrink-0"></i>
+                        <div class="min-w-0">
+                            <a href="${sub.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 font-semibold break-all block text-sm leading-snug">
+                                ${sub.url}
+                            </a>
+                            <p class="text-xs text-zinc-400 mt-1.5">
+                                Submitted: ${sub.submittedAt ? sub.submittedAt.toLocaleString() : 'N/A'}
+                                ${sub.resolvedAt ? ` | Resolved: ${sub.resolvedAt.toLocaleDateString()}` : ''}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="text-left sm:text-right mt-2 sm:mt-0 shrink-0 flex flex-col items-end min-w-[110px]">
+                        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full ${uiStatus.bgColor} ${uiStatus.color}">
+                            <i class="fa-solid ${uiStatus.icon}"></i>
+                            ${uiStatus.text}
+                        </span>
+                        <p class="text-sm font-bold ${uiStatus.color} mt-1">${pointsDisplay}</p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    };
+
+     // --- Botões de Plataforma ---
+     const platformButtons = [
+        { name: 'YouTube', icon: 'fa-youtube', color: 'text-red-500', points: 5000 },
+        { name: 'Instagram', icon: 'fa-instagram', color: 'text-pink-500', points: 3000 },
+        { name: 'X/Twitter', icon: 'fa-twitter', color: 'text-blue-400', points: 1500 },
+        { name: 'Other', icon: 'fa-globe', color: 'text-gray-400', points: 1000 },
+     ];
+
+    el.innerHTML = `
+        <h2 class="text-2xl font-bold mb-1 text-white">UGC Submission</h2>
+         <p class="text-sm text-zinc-400 mb-6">Earn points and a permanent multiplier by sharing Backchain content.</p>
+        
+        ${statsHtml}
+
+        <div class="bg-sidebar border border-border-color rounded-xl p-6 mb-8 shadow-xl">
+             <p class="text-zinc-300 mb-5 font-semibold text-center text-lg">
+                 Select the platform of your content:
+            </p>
+            <div id="ugc-platform-selector" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                 ${platformButtons.map(p => `
+                    <button class="ugc-platform-btn-redesigned bg-main border border-border-color p-5 rounded-lg flex flex-col items-center justify-center gap-2 transition-all hover:border-amber-500/50 hover:shadow-lg hover:-translate-y-1 hover:bg-zinc-800" data-platform="${p.name}">
+                        <i class="fa-brands ${p.icon} ${p.color} text-4xl"></i>
+                        <span class="font-semibold text-white text-base">${p.name}</span>
+                        <span class="text-xs ${p.color} font-medium">(+${p.points} base pts)</span>
+                    </button>
+                 `).join('')}
+            </div>
+             <p class="text-xs text-zinc-500 mt-5 italic text-center">
+                Submissions are 'Pending' for 2 hours and then auto-approved if not manually rejected by an admin.
+            </p>
+        </div>
+
+        <h3 class="text-xl font-bold mb-3 text-white">Your Submission History</h3>
+        <div id="ugc-submission-history" class="space-y-3">
+            ${renderSubmissionHistory()}
+        </div>
+    `;
+
+    document.getElementById('ugc-platform-selector')?.addEventListener('click', (e) => {
+        const button = e.target.closest('.ugc-platform-btn-redesigned');
+        if (button) {
+            const platform = button.dataset.platform;
+            openPlatformSubmitModal(platform);
+        }
+    });
+}
+
+
+// ------------------------------------------
+// ABA 3: TAREFAS DIÁRIAS (Refatorada)
+// ------------------------------------------
+function renderDailyTasksPanel(el) {
+    if (!el) return;
+    
+    if (!airdropState.isConnected) {
+        const tempNoData = document.createElement('div');
+        renderNoData(tempNoData, 'Connect your wallet to see Daily Tasks.');
+        el.innerHTML = `<div class="bg-sidebar border border-border-color rounded-xl p-6">${tempNoData.innerHTML}</div>`;
+        return;
+    }
+
+     const tasksHtml = airdropState.dailyTasks.length > 0 ? airdropState.dailyTasks.map(task => {
+        if (task.error) {
+             return `<div class="bg-main border border-red-500/50 rounded-xl p-5 flex justify-between items-center gap-4 opacity-70"><p class="font-semibold text-red-400 truncate">${task.title || 'Unknown Task'}</p><p class="text-xs text-red-400">Error loading status</p></div>`;
+        }
+        const points = Math.round(task.points);
+        const isEligible = task.eligible;
+        const btnClass = isEligible ? 'bg-amber-500 hover:bg-amber-600 text-zinc-900' : 'bg-zinc-700 btn-disabled text-zinc-400';
+        const icon = task.cooldownHours <= 24 ? 'fa-clock' : 'fa-hourglass-start';
+        const expiryDate = task.endDate ? new Date(task.endDate).toLocaleDateString() : 'Never';
+
+        return `
+            <div class="bg-main border border-border-color rounded-xl p-5 flex justify-between items-start flex-wrap gap-4 transition-all duration-300">
+                <div class="flex flex-col flex-grow min-w-0">
+                    <p class="font-extrabold text-xl text-white truncate">${task.title}</p>
+                    <p class="text-sm text-zinc-400 mt-1">${task.description || 'Visit and engage.'}</p>
+                     ${task.url ?
+                        `<a href="${task.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 text-xs font-bold transition-colors mt-2 inline-block max-w-max">
+                            <i class="fa-solid fa-up-right-from-square mr-1"></i> Go to Task
+                        </a>` : `<div class="mt-2 h-4"></div>`
+                    }
+                    <div class="mt-3 flex items-center gap-4 text-xs text-zinc-500 flex-wrap">
+                        <span><i class="fa-solid ${icon} mr-1"></i> Cooldown: ${task.cooldownHours}h</span>
+                        <span><i class="fa-solid fa-calendar-times mr-1"></i> Expires: ${expiryDate}</span>
+                    </div>
+                </div>
+                <div class="flex flex-col items-end gap-2 shrink-0">
+                    <span class="text-3xl font-extrabold text-yellow-400">+${points}</span>
+                    <span class="text-xs text-zinc-400 -mt-1">Points</span>
+                    <button data-task-id="${task.id}" class="daily-task-btn ${btnClass} font-bold py-2 px-4 rounded-md text-sm w-full sm:w-auto mt-2" ${!isEligible ? 'disabled' : ''}>
+                        ${isEligible ? 'Claim Points' : formatTimeLeft(task.timeLeftMs)}
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('') : (() => {
+        const tempDiv = document.createElement('div');
+        renderNoData(tempDiv, '<i class="fa-solid fa-list-check mr-2"></i> No active daily tasks available right now. Check back later!');
+        return tempDiv.innerHTML;
+    })();
+
+
+    el.innerHTML = `
+        <div class="bg-sidebar border border-border-color rounded-xl p-6 max-w-4xl mx-auto">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                <h2 class="text-2xl font-bold text-white">Daily Engagement Tasks</h2>
+                <div class="text-left sm:text-right w-full sm:w-auto">
+                     <p class="text-xs text-zinc-500">Daily Reset In (UTC)</p>
+                     <p id="dailyResetTimer" class="text-lg font-bold text-amber-400">--:--:--</p>
+                </div>
+            </div>
+            <p class="text-sm text-zinc-400 mb-5">Complete these tasks daily to earn points. New tasks may appear after the reset timer hits zero.</p>
+            <div id="tasks-content" class="space-y-4">${tasksHtml}</div>
+        </div>
+    `;
+
+    startDailyTimer(); // Inicia o timer do reset diário
+
     document.getElementById('tasks-content')?.addEventListener('click', handleDailyTaskCompletion);
 
-    // Reinicia contadores de cooldown
+    // Reinicia contadores de cooldown dos botões
     document.querySelectorAll('.daily-task-btn[data-task-id]').forEach(btn => {
          if (btn._cooldownInterval) clearInterval(btn._cooldownInterval);
          btn._cooldownInterval = null;
@@ -489,7 +701,7 @@ function renderProfileContent(el) {
                  if (countdownMs <= 0) {
                      clearInterval(btn._cooldownInterval);
                      btn._cooldownInterval = null;
-                     if (document.body.contains(btn)) { // Verifica se botão ainda existe
+                     if (document.body.contains(btn)) {
                          btn.innerHTML = 'Claim Points';
                          btn.disabled = false;
                          btn.classList.remove('bg-zinc-700', 'btn-disabled', 'text-zinc-400');
@@ -516,111 +728,10 @@ function renderProfileContent(el) {
 }
 
 
-function renderSubmissionPanel(el) {
-    if (!el) return;
-    if (dailyTimerInterval) { clearInterval(dailyTimerInterval); dailyTimerInterval = null; }
-
-    if (!airdropState.isConnected) {
-        const tempNoData = document.createElement('div');
-        renderNoData(tempNoData, 'Connect your wallet to submit content and view history.');
-        el.innerHTML = `<div class="bg-sidebar border border-border-color rounded-xl p-6">${tempNoData.innerHTML}</div>`;
-        return;
-    }
-
-    // --- REDESENHO DO HISTÓRICO ---
-    const renderSubmissionHistory = () => {
-        if (!airdropState.userSubmissions || airdropState.userSubmissions.length === 0) {
-            const tempDiv = document.createElement('div');
-            renderNoData(tempDiv, 'You have not submitted any content yet.');
-            return tempDiv.innerHTML;
-        }
-
-        return airdropState.userSubmissions.map(sub => {
-            const uiStatus = statusUI[sub.status] || statusUI.pending; // Fallback para pending
-            const uiPlatform = platformUI[sub.platform] || platformUI.Other; // Fallback para Other
-
-            let pointsDisplay = '';
-            if (sub.status === 'approved') {
-                pointsDisplay = `(+${sub.pointsAwarded || 0} Pts)`;
-            } else if (sub.status === 'pending' || sub.status === 'auditing' || sub.status === 'flagged_suspicious') {
-                pointsDisplay = `(${sub.basePoints || 0} base pts)`;
-            }
-
-            return `
-                <div class="submission-history-card bg-main border border-border-color rounded-lg p-4 mb-3 transition-colors hover:bg-zinc-800/50 flex flex-col sm:flex-row justify-between items-start gap-4">
-                    <div class="flex items-start gap-4 flex-grow min-w-0">
-                        <i class="fa-brands ${uiPlatform.icon} ${uiPlatform.color} text-3xl mt-1 w-8 text-center shrink-0"></i>
-                        <div class="min-w-0">
-                            <a href="${sub.url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 font-semibold break-all block text-sm leading-snug">
-                                ${sub.url}
-                            </a>
-                            <p class="text-xs text-zinc-400 mt-1.5">
-                                Submitted: ${sub.submittedAt ? sub.submittedAt.toLocaleDateString() : 'N/A'}
-                                ${sub.resolvedAt ? ` | Resolved: ${sub.resolvedAt.toLocaleDateString()}` : ''}
-                            </p>
-                        </div>
-                    </div>
-                    <div class="text-left sm:text-right mt-2 sm:mt-0 shrink-0 flex flex-col items-end">
-                        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full ${uiStatus.bgColor} ${uiStatus.color}">
-                            <i class="fa-solid ${uiStatus.icon}"></i>
-                            ${uiStatus.text}
-                        </span>
-                        <p class="text-sm font-bold ${uiStatus.color} mt-1">${pointsDisplay}</p>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    };
-
-     // --- REDESENHO DOS BOTÕES DE PLATAFORMA ---
-     const platformButtons = [
-        { name: 'YouTube', icon: 'fa-youtube', color: 'text-red-500', points: 5000 },
-        { name: 'Instagram', icon: 'fa-instagram', color: 'text-pink-500', points: 3000 },
-        { name: 'X/Twitter', icon: 'fa-twitter', color: 'text-blue-400', points: 1500 },
-        { name: 'Other', icon: 'fa-globe', color: 'text-gray-400', points: 1000 },
-     ];
-
-    el.innerHTML = `
-        <h2 class="text-2xl font-bold mb-1 text-white">UGC Submission</h2>
-         <p class="text-sm text-zinc-400 mb-6">Earn points and a permanent multiplier by sharing Backchain content.</p>
-
-        <div class="bg-sidebar border border-border-color rounded-xl p-6 mb-8 shadow-xl">
-             <p class="text-zinc-300 mb-5 font-semibold text-center text-lg">
-                 Select the platform of your content:
-            </p>
-            <div id="ugc-platform-selector" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                 ${platformButtons.map(p => `
-                    <button class="ugc-platform-btn-redesigned bg-main border border-border-color p-5 rounded-lg flex flex-col items-center justify-center gap-2 transition-all hover:border-amber-500/50 hover:shadow-lg hover:-translate-y-1 hover:bg-zinc-800" data-platform="${p.name}">
-                        <i class="fa-brands ${p.icon} ${p.color} text-4xl"></i>
-                        <span class="font-semibold text-white text-base">${p.name}</span>
-                        <span class="text-xs ${p.color} font-medium">(+${p.points} base pts)</span>
-                    </button>
-                 `).join('')}
-            </div>
-             <p class="text-xs text-zinc-500 mt-5 italic text-center">
-                Ensure your post includes your referral link, hashtags, and a link to official Backchain news/content.
-            </p>
-        </div>
-
-        <h3 class="text-xl font-bold mb-3 text-white">Your Submission History</h3>
-        <div id="ugc-submission-history" class="space-y-3"> {/* Alterado para space-y */}
-            ${renderSubmissionHistory()}
-        </div>
-    `;
-
-    // Listener para os botões de plataforma (agora com a nova classe)
-    document.getElementById('ugc-platform-selector')?.addEventListener('click', (e) => {
-        const button = e.target.closest('.ugc-platform-btn-redesigned');
-        if (button) {
-            const platform = button.dataset.platform;
-            openPlatformSubmitModal(platform);
-        }
-    });
-}
-
-
+// ------------------------------------------
+// ABA 4: RANKING (Antigo Leaderboard)
+// ------------------------------------------
 function renderLeaderboardPanel(el) {
-    // ... (HTML interno redesenhado com comentários removidos) ...
      if (!el) return;
     if (dailyTimerInterval) { clearInterval(dailyTimerInterval); dailyTimerInterval = null; }
 
@@ -737,11 +848,10 @@ function renderLeaderboardPanel(el) {
 }
 
 // =======================================================
-//  4. RENDERIZAÇÃO PRINCIPAL E EXPORTAÇÃO
+//  4. RENDERIZAÇÃO PRINCIPAL E EXPORTAÇÃO (Modificada)
 // =======================================================
 
 function renderAirdropContent() {
-    // ... (Lógica de renderização das abas como antes, sem os comentários internos) ...
     const mainContainer = document.getElementById('airdrop');
     const loadingPlaceholder = document.getElementById('airdrop-loading-placeholder');
     const tabsContainer = document.getElementById('airdrop-tabs-container');
@@ -753,10 +863,61 @@ function renderAirdropContent() {
          return;
     }
 
-    loadingPlaceholder.innerHTML = '';
+    // *** NOVO: Verificação de Banimento ***
+    // Se banido, exibe a mensagem de banimento e para
+    if (airdropState.isBanned) {
+        loadingPlaceholder.innerHTML = '';
+        tabsContainer.innerHTML = '';
+        contentWrapper.innerHTML = `
+            <div class="bg-red-900/30 border border-red-500/50 rounded-xl p-8 text-center max-w-2xl mx-auto">
+                <i class="fa-solid fa-ban text-5xl text-red-400 mb-4"></i>
+                <h2 class="text-2xl font-bold text-white mb-2">Account Banned</h2>
+                <p class="text-zinc-300">Your account has been banned from the Airdrop due to multiple policy violations (3 manually rejected submissions). This action is irreversible.</p>
+            </div>
+        `;
+        return; 
+    }
 
+    loadingPlaceholder.innerHTML = ''; // Limpa o loader principal
+
+    // --- Lógica de Estilo das Novas Abas ---
     const getTabClass = (tabName) => {
-        const baseClass = 'airdrop-tab-btn py-3 px-6 text-sm font-semibold transition-colors border-b-2';
+        const baseClass = 'airdrop-tab-btn flex flex-col items-center justify-start p-3 w-24 h-20 rounded-lg transition-all duration-200';
+        return airdropState.activeTab === tabName
+            ? `${baseClass} bg-amber-500/10 text-amber-400` // Ativa
+            : `${baseClass} text-zinc-400 hover:text-white hover:bg-zinc-700/50`; // Inativa
+    };
+    
+    // Controla a visibilidade do texto
+    const getTabSpanClass = (tabName) => {
+        const baseClass = 'text-xs font-semibold transition-all duration-200 pt-1';
+        return airdropState.activeTab === tabName
+            ? `${baseClass} max-h-5 opacity-100` // Mostra texto
+            : `${baseClass} max-h-0 opacity-0 overflow-hidden lg:max-h-5 lg:opacity-100`; // Esconde em mobile, mostra em desktop?
+            // Vamos usar o requisito: só ícone quando inativo
+             // ? `${baseClass} max-h-5 opacity-100` 
+             // : `${baseClass} max-h-0 opacity-0 overflow-hidden`;
+             // REVISÃO: O usuário pode preferir ver o texto sempre. Vamos simplificar.
+             // O novo design (ícone em cima, texto embaixo) é melhor.
+    };
+    // RE-REVISÃO: Vamos seguir o requisito original (só ícone inativo)
+    const getSpanClass = (tabName) => {
+        const baseClass = 'text-xs font-semibold transition-all duration-200';
+         return airdropState.activeTab === tabName
+             ? `${baseClass} opacity-100`
+             : `${baseClass} opacity-0`; // Esconde se inativo
+    };
+     const getIconClass = (tabName) => {
+         // Move o ícone para cima se o texto estiver escondido
+         return airdropState.activeTab === tabName
+             ? `fa-lg mb-1` // Padrão
+             : `fa-lg mb-0`; // Centraliza
+     };
+     // ESQUECE. A MELHOR EXPERIÊNCIA É ÍCONE + TEXTO SEMPRE.
+     // VAMOS USAR O NOVO LAYOUT DE 4 ABAS, MAS DE FORMA CLARA.
+
+    const getTabBtnClass = (tabName) => {
+        const baseClass = 'airdrop-tab-btn flex items-center justify-center gap-2 py-3 px-5 text-sm font-semibold transition-colors border-b-2';
         return airdropState.activeTab === tabName
             ? `${baseClass} border-amber-500 text-amber-400`
             : `${baseClass} text-zinc-400 hover:text-white border-transparent hover:border-zinc-500/50`;
@@ -765,18 +926,23 @@ function renderAirdropContent() {
     tabsContainer.innerHTML = `
         <div class="border-b border-zinc-700 mb-6">
             <nav id="airdrop-tabs" class="-mb-px flex flex-wrap gap-x-6 gap-y-2">
-                <button class="${getTabClass('profile')}" data-target="profile">
-                    <i class="fa-solid fa-user-check mr-2"></i> Your Profile & Tasks
+                <button class="${getTabBtnClass('profile')}" data-target="profile">
+                    <i class="fa-solid fa-user-check mr-2"></i> Profile
                 </button>
-                <button class="${getTabClass('ugc')}" data-target="ugc">
-                    <i class="fa-solid fa-upload mr-2"></i> UGC Submissions
+                <button class="${getTabBtnClass('submissions')}" data-target="submissions">
+                    <i class="fa-solid fa-upload mr-2"></i> Submissions
                 </button>
-                <button class="${getTabClass('leaderboards')}" data-target="leaderboards">
-                    <i class="fa-solid fa-ranking-star mr-2"></i> Leaderboards & Rewards
+                 <button class="${getTabBtnClass('tasks')}" data-target="tasks">
+                    <i class="fa-solid fa-list-check mr-2"></i> Daily Tasks
+                </button>
+                <button class="${getTabBtnClass('ranking')}" data-target="ranking">
+                    <i class="fa-solid fa-ranking-star mr-2"></i> Ranking
                 </button>
             </nav>
         </div>
     `;
+    // --- Fim da Lógica das Abas ---
+
 
     const tabsNav = document.getElementById('airdrop-tabs');
     if (tabsNav && !tabsNav._listenerAttached) {
@@ -784,17 +950,19 @@ function renderAirdropContent() {
        tabsNav._listenerAttached = true;
     }
 
-
     activeContentEl.innerHTML = '';
     try {
         switch (airdropState.activeTab) {
             case 'profile':
                 renderProfileContent(activeContentEl);
                 break;
-            case 'ugc':
+            case 'submissions':
                 renderSubmissionPanel(activeContentEl);
                 break;
-            case 'leaderboards':
+            case 'tasks':
+                renderDailyTasksPanel(activeContentEl);
+                break;
+            case 'ranking':
                 renderLeaderboardPanel(activeContentEl);
                 break;
             default:
@@ -830,8 +998,16 @@ export const AirdropPage = {
         if (tabsContainer) tabsContainer.innerHTML = '';
         if (contentWrapper) contentWrapper.innerHTML = '<div id="active-tab-content"></div>';
 
-
+        // Ponto de entrada principal
         await loadAirdropData();
+        // O renderAirdropContent só será chamado se o loadAirdropData
+        // não precisar recarregar (devido à auto-aprovação)
+        if (!airdropState.isBanned && !airdropState.user && airdropState.isConnected) {
+             // Não renderiza se o loadAirdropData foi interrompido para recarregar
+             // e ainda não terminou
+             return;
+        }
+        
         renderAirdropContent();
     },
 
@@ -841,7 +1017,7 @@ export const AirdropPage = {
 
         if (airdropState.isConnected !== isConnected && isVisible) {
              console.log("AirdropPage: Connection status changed, reloading data...");
-             this.render();
+             this.render(); // Chama o render principal que chama o loadAirdropData
         }
     }
 };

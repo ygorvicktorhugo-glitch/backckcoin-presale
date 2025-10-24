@@ -14,8 +14,10 @@ export const addresses = {
     publicSale: "0xbD544F8F954Dd7b82B6d0f406a375F80AAD27793",
 
     // --- ENDEREÇO DO CONTRATO FAUCET ---
-    // !!! SUBSTITUA PELO ENDEREÇO REAL DO SEU CONTRATO FAUCET APÓS O DEPLOY !!!
-    faucet: "0x33811433E5DB3952Cf34Fadaef88bc8b1eDA184B" // <-- Cole o endereço correto aqui
+    faucet: "0x33811433E5DB3952Cf34Fadaef88bc8b1eDA184B",
+    
+    // --- NOVO CONTRATO: DECENTRALIZED NOTARY ---
+    decentralizedNotary: "0x8DB100284F2304dc8958c4d58ECA00A1d341656C" // <-- ENDEREÇO ATUALIZADO
 };
 
 // --- Constante do Faucet ---
@@ -35,7 +37,7 @@ export const boosterTiers = [
 ];
 
 
-// --- ABIs ---
+// --- ABIs --- 
 
 export const bkcTokenABI = [
     "function totalSupply() view returns (uint256)",
@@ -45,7 +47,7 @@ export const bkcTokenABI = [
     "function name() view returns (string)",
     "function symbol() view returns (string)",
     "function allowance(address owner, address spender) view returns (uint256)",
-    "function mint(address to, uint256 amount)" // Apenas se precisar mintar via frontend (geralmente não)
+    "function mint(address to, uint256 amount)"
 ];
 
 export const delegationManagerABI = [
@@ -97,11 +99,11 @@ export const rewardBoosterABI = [
     "function tokenURI(uint256 tokenId) view returns (string)",
     "function ownerOf(uint256 tokenId) view returns (address)",
     "function approve(address to, uint256 tokenId)",
-    "function getHighestBoost(address user) view returns (uint256)" // Pode não existir, verifique seu contrato
+    "function getHighestBoost(address user) view returns (uint256)"
 ];
 
 export const nftBondingCurveABI = [ // NFTLiquidityPool ABI
-    "function pools(uint256 boostBips) view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)", // Ajustado
+    "function pools(uint256 boostBips) view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)",
     "function getBuyPrice(uint256 _boostBips) view returns (uint256)",
     "function getSellPrice(uint256 _boostBips) view returns (uint256)",
     "function buyNFT(uint256 _boostBips, uint256 _tokenId)",
@@ -121,6 +123,31 @@ export const actionsManagerABI = [ // FortuneTiger ABI
 
 export const publicSaleABI = [{"inputs":[{"internalType":"address","name":"_nftContractAddress","type":"address"},{"internalType":"address","name":"_initialOwner","type":"address"},{"internalType":"address","name":"_treasury","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[],"name":"OwnableInvalidOwner","type":"error"},{"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"OwnableUnauthorizedAccount","type":"error"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"uint256","name":"tierId","type":"uint256"},{"indexed":true,"internalType":"uint256","name":"tokenId","type":"uint256"}],"name":"NFTRescued","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"buyer","type":"address"},{"indexed":true,"internalType":"uint256","name":"tierId","type":"uint256"},{"indexed":true,"internalType":"uint256","name":"tokenId","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"price","type":"uint256"}],"name":"NFTSold","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},{"inputs":[{"internalType":"uint256","name":"_tierId","type":"uint256"}],"name":"buyNFT","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_tierId","type":"uint256"},{"internalType":"uint256","name":"_quantity","type":"uint256"}],"name":"buyMultipleNFTs","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"nftContract","outputs":[{"internalType":"contract IERC721","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"address","name":"","type":"address"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"bytes","name":"","type":"bytes"}],"name":"onERC721Received","outputs":[{"internalType":"bytes4","name":"","type":"bytes4"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_tierId","type":"uint256"},{"internalType":"uint256","name":"_tokenId","type":"uint256"}],"name":"rescueNFT","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_tierId","type":"uint256"},{"internalType":"uint256","name":"_priceInWei","type":"uint256"},{"internalType":"uint256[]","name":"_tokenIds","type":"uint256[]"}],"name":"setTier","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"tiers","outputs":[{"internalType":"uint256","name":"priceInWei","type":"uint256"},{"internalType":"uint256","name":"nextTokenIndex","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"withdrawFunds","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"_tierId","type":"uint256"}],"name":"withdrawUnsoldNFTs","outputs":[],"stateMutability":"nonpayable","type":"function"}];
 
+// --- NOVO ABI: DecentralizedNotary (CORRIGIDO) ---
+export const decentralizedNotaryABI = [
+  // Construtor
+  "constructor(address _bkcTokenAddress, address _delegationManagerAddress, address _treasuryAddress, address _initialOwner)",
+  
+  // Eventos
+  "event DocumentNotarized(address indexed user, uint256 indexed tokenId, string documentURI, uint256 feePaid)",
+  "event NotarySettingsChanged(uint256 newMinPStake, uint256 newFee, uint256 newTreasuryBips)",
+  
+  // Funções de Leitura (View)
+  "function minimumPStakeRequired() view returns (uint256)",
+  "function notarizeFeeBKC() view returns (uint256)",
+  "function treasuryFeeBips() view returns (uint256)",
+  
+  // Funções ERC721Enumerable (Leitura)
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+  "function tokenURI(uint256 tokenId) view returns (string)",
+  
+  // Funções de Escrita (Write)
+  "function notarizeDocument(string calldata _documentURI)",
+  "function setNotarySettings(uint256 _newMinPStake, uint256 _newFeeBKC, uint256 _newTreasuryBips)",
+  "function setBaseURI(string calldata newBaseURI)"
+];
+
 // --- ABI do Faucet (SimpleBKCFaucet) ---
 export const faucetABI = [
   "constructor(address _tokenAddress)",
@@ -133,6 +160,6 @@ export const faucetABI = [
   "function renounceOwnership()",
   "function token() view returns (address)",
   "function transferOwnership(address newOwner)",
-  "function withdrawETH()", // Adicionado caso precise resgatar ETH enviado por engano
+  "function withdrawETH()",
   "function withdrawRemainingTokens()"
 ];

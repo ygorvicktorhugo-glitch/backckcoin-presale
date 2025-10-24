@@ -16,6 +16,7 @@ export const State = {
     nftBondingCurveContract: null,
     actionsManagerContract: null, 
     faucetContract: null, // <-- NOVO
+    decentralizedNotaryContract: null, // <-- NOVO
 
     // User Data
     currentUserBalance: 0n,

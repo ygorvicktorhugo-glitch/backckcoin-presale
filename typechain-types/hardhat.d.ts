@@ -90,6 +90,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.BKCToken__factory>;
     getContractFactory(
+      name: "DecentralizedNotary",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.DecentralizedNotary__factory>;
+    getContractFactory(
       name: "DelegationManager",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.DelegationManager__factory>;
@@ -222,6 +226,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.BKCToken>;
     getContractAt(
+      name: "DecentralizedNotary",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.DecentralizedNotary>;
+    getContractAt(
       name: "DelegationManager",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -344,6 +353,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.BKCToken>;
     deployContract(
+      name: "DecentralizedNotary",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.DecentralizedNotary>;
+    deployContract(
       name: "DelegationManager",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.DelegationManager>;
@@ -475,6 +488,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.BKCToken>;
+    deployContract(
+      name: "DecentralizedNotary",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.DecentralizedNotary>;
     deployContract(
       name: "DelegationManager",
       args: any[],

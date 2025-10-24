@@ -3,6 +3,7 @@
 /* eslint-disable */
 export * as nftLiquidityPoolSol from "./NFTLiquidityPool.sol";
 export { BKCToken__factory } from "./BKCToken__factory";
+export { DecentralizedNotary__factory } from "./DecentralizedNotary__factory";
 export { DelegationManager__factory } from "./DelegationManager__factory";
 export { FortuneTiger__factory } from "./FortuneTiger__factory";
 export { PublicSale__factory } from "./PublicSale__factory";

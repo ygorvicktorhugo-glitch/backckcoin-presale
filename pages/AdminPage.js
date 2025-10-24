@@ -4,7 +4,8 @@ import { showToast } from '../ui-feedback.js';
 // CORREÇÃO: Importa renderError também, caso necessário
 import { renderPaginatedList, renderNoData, formatAddress, renderLoading, renderError } from '../utils.js';
 import { State } from '../state.js';
-import * as db from '../modules/firebase-auth-service.js'; // Import Firebase service
+// ATUALIZADO: Importa tudo de 'db', pois usaremos mais funções
+import * as db from '../modules/firebase-auth-service.js';
 
 // The administrator wallet address (security key)
 const ADMIN_WALLET = "0x03aC69873293cD6ddef7625AfC91E3Bd5434562a";
@@ -22,11 +23,12 @@ const statusUI = {
 let adminState = {
     allSubmissions: [], // Submissões pendentes/auditing
     dailyTasks: [],     // Todas as tarefas (ativas e inativas)
+    ugcBasePoints: null, // <-- NOVO: Para salvar os pontos base do UGC
     editingTask: null, // Tarefa sendo editada no formulário
-    activeTab: 'manage-tasks' // Aba ativa no painel admin
+    activeTab: 'manage-ugc-points' // <-- ATUALIZADO: Nova aba padrão
 };
 
-// --- ADMIN DATA LOADING ---
+// --- ADMIN DATA LOADING (ATUALIZADO) ---
 const loadAdminData = async () => {
     const adminContent = document.getElementById('admin-content-wrapper');
     // Mostra loader ANTES de buscar os dados
@@ -38,15 +40,25 @@ const loadAdminData = async () => {
 
 
     try {
-        const [submissions, tasks] = await Promise.all([
-            // Usa a função correta que filtra por 'pending'/'auditing'
+        // ATUALIZADO: Busca 3 fontes de dados em paralelo
+        const [submissions, tasks, publicData] = await Promise.all([
             db.getAllSubmissionsForAdmin(),
-            db.getAllTasksForAdmin()      // Pega todas as tarefas (ativas/inativas)
+            db.getAllTasksForAdmin(),
+            db.getPublicAirdropData() // <-- NOVO: Busca dados públicos
         ]);
 
         // A função getAllSubmissionsForAdmin já deve retornar apenas pendentes/auditing
         adminState.allSubmissions = submissions;
         adminState.dailyTasks = tasks;
+        
+        // NOVO: Salva os pontos base do UGC no estado, com padrões caso não existam
+        adminState.ugcBasePoints = publicData.config?.ugcBasePoints || {
+            'YouTube': 5000,
+            'Instagram': 3000,
+            'X/Twitter': 1500,
+            'Other': 1000
+        };
+
 
         // Se estava editando, atualiza os dados da tarefa sendo editada
         if (adminState.editingTask) {
@@ -70,63 +82,58 @@ const loadAdminData = async () => {
 // --- ADMIN ACTION HANDLERS ---
 
 const handleAdminAction = async (e) => {
-    const btn = e.target.closest('button[data-action]'); // Seleciona o botão mais próximo com data-action
-    if (!btn || btn.disabled) return; // Sai se não for um botão de ação ou estiver desabilitado
+    // ... (Esta função permanece exatamente a mesma) ...
+    const btn = e.target.closest('button[data-action]');
+    if (!btn || btn.disabled) return;
 
     const action = btn.dataset.action;
     const submissionId = btn.dataset.submissionId;
-    const userId = btn.dataset.userId; // Firebase UID
+    const userId = btn.dataset.userId;
 
     if (!action || !submissionId || !userId) {
         console.warn("Missing data attributes for admin action:", btn.dataset);
         return;
     }
 
-    // Desabilita botões da linha
     const buttonCell = btn.closest('td');
     const actionButtons = buttonCell ? buttonCell.querySelectorAll('button') : [];
     actionButtons.forEach(b => b.disabled = true);
-    // Adiciona loader ao botão clicado
     const originalContent = btn.innerHTML;
     const tempLoaderSpan = document.createElement('span');
-    tempLoaderSpan.classList.add('inline-block'); // Para o loader ficar contido
-    renderLoading(tempLoaderSpan); // Cria loader
-    btn.innerHTML = ''; // Limpa
-    btn.appendChild(tempLoaderSpan); // Adiciona loader
+    tempLoaderSpan.classList.add('inline-block');
+    renderLoading(tempLoaderSpan);
+    btn.innerHTML = '';
+    btn.appendChild(tempLoaderSpan);
 
 
     try {
         if (action === 'approve' || action === 'reject') {
-            // Lógica para determinar pontos e multiplicador (pode vir do admin UI no futuro)
-            // Por agora, vamos usar valores fixos baseados na submissão
              const submission = adminState.allSubmissions.find(s => s.submissionId === submissionId && s.userId === userId);
-             const basePoints = submission?.basePoints || 0; // Pega pontos base da submissão
-             const points = action === 'approve' ? basePoints : 0; // Usa base points se aprovar
-             const multiplier = null; // Admin não define multiplicador base aqui
+             const basePoints = submission?.basePoints || 0;
+             const points = action === 'approve' ? basePoints : 0;
+             const multiplier = null;
 
             await db.updateSubmissionStatus(userId, submissionId, action, points, multiplier);
             showToast(`Submission ${action === 'approve' ? 'APPROVED' : 'REJECTED'}!`, 'success');
-            loadAdminData(); // Recarrega e re-renderiza a lista
+            loadAdminData();
         }
-        // Adicionar outras ações (ex: ban user) aqui se necessário
     } catch(error) {
         showToast(`Failed to ${action} submission: ${error.message}`, 'error');
         console.error(error);
-        // Reabilita botões e restaura texto se falhar
         actionButtons.forEach(b => b.disabled = false);
-        btn.innerHTML = originalContent; // Restaura o botão clicado
+        btn.innerHTML = originalContent;
     }
 };
 
 const handleTaskFormSubmit = async (e) => {
+    // ... (Esta função permanece exatamente a mesma) ...
     e.preventDefault();
     const form = e.target;
 
     let startDate, endDate;
     try {
-        // Valida e converte datas
-        startDate = new Date(form.startDate.value + 'T00:00:00Z'); // Assume UTC start of day
-        endDate = new Date(form.endDate.value + 'T23:59:59Z');   // Assume UTC end of day
+        startDate = new Date(form.startDate.value + 'T00:00:00Z');
+        endDate = new Date(form.endDate.value + 'T23:59:59Z');
         if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
             throw new Error("Invalid date format.");
         }
@@ -141,15 +148,14 @@ const handleTaskFormSubmit = async (e) => {
     const taskData = {
         title: form.title.value.trim(),
         url: form.url.value.trim(),
-        description: form.description.value.trim(), // Pega a descrição
+        description: form.description.value.trim(),
         points: parseInt(form.points.value, 10),
         cooldownHours: parseInt(form.cooldown.value, 10),
         startDate: startDate,
         endDate: endDate
     };
 
-    // Validações básicas
-    if (!taskData.title || !taskData.description) { // URL agora é opcional
+    if (!taskData.title || !taskData.description) {
         showToast("Please fill in Title and Description.", "error");
         return;
     }
@@ -157,7 +163,6 @@ const handleTaskFormSubmit = async (e) => {
         showToast("Points and Cooldown must be positive numbers.", "error");
         return;
     }
-     // Valida URL se preenchida
      if (taskData.url && !taskData.url.startsWith('http')) {
          showToast("URL must start with http:// or https://", "error");
          return;
@@ -165,7 +170,7 @@ const handleTaskFormSubmit = async (e) => {
 
 
     if (adminState.editingTask && adminState.editingTask.id) {
-        taskData.id = adminState.editingTask.id; // Inclui ID se estiver editando
+        taskData.id = adminState.editingTask.id;
     }
 
     const submitButton = form.querySelector('button[type="submit"]');
@@ -180,32 +185,74 @@ const handleTaskFormSubmit = async (e) => {
 
     try {
         await db.addOrUpdateDailyTask(taskData);
-        showToast(`Task ${taskData.id ? 'updated' : 'created'} successfully!`, "success");
+        showToast(`Task ${taskData.id ? 'updated' : 'created'} successfully!`, 'success');
         form.reset();
-        adminState.editingTask = null; // Limpa estado de edição
-        loadAdminData(); // Recarrega tudo
+        adminState.editingTask = null;
+        loadAdminData();
     } catch (error) {
         showToast(`Failed to save task: ${error.message}`, "error");
         console.error(error);
-         submitButton.disabled = false; // Reabilita em caso de erro
+         submitButton.disabled = false;
          submitButton.innerHTML = originalButtonText;
     }
 };
 
+// --- NOVO HANDLER PARA SALVAR PONTOS UGC ---
+const handleUgcPointsSubmit = async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const newPoints = {
+        'YouTube': parseInt(form.youtubePoints.value, 10),
+        'Instagram': parseInt(form.instagramPoints.value, 10),
+        'X/Twitter': parseInt(form.xTwitterPoints.value, 10),
+        'Other': parseInt(form.otherPoints.value, 10)
+    };
+    
+    // Validação simples
+    if (Object.values(newPoints).some(p => isNaN(p) || p <= 0)) {
+        showToast("All points must be positive numbers.", "error");
+        return;
+    }
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalButtonText = submitButton.innerHTML;
+    submitButton.disabled = true;
+    const tempLoaderSpan = document.createElement('span');
+    tempLoaderSpan.classList.add('inline-block');
+    renderLoading(tempLoaderSpan);
+    submitButton.innerHTML = '';
+    submitButton.appendChild(tempLoaderSpan);
+
+    try {
+        // Esta é a função que precisaremos criar no firebase-auth-service.js
+        await db.updateUgcBasePoints(newPoints);
+        showToast("UGC Base Points updated successfully!", "success");
+        adminState.ugcBasePoints = newPoints; // Atualiza o estado local
+    } catch (error) {
+        showToast(`Failed to update points: ${error.message}`, "error");
+        console.error(error);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.innerHTML = originalButtonText;
+    }
+};
+
+
 const handleEditTask = (taskId) => {
+    // ... (Esta função permanece exatamente a mesma) ...
     const task = adminState.dailyTasks.find(t => t.id === taskId);
     if (!task) return;
     adminState.editingTask = task;
-    renderManageTasksPanel(); // Re-renderiza o painel de tarefas com o formulário preenchido
+    renderManageTasksPanel();
 };
 
 const handleDeleteTask = async (taskId) => {
-    // Usar modal customizado seria melhor aqui
+    // ... (Esta função permanece exatamente a mesma) ...
     if (!window.confirm("Are you sure you want to delete this task permanently?")) return;
     try {
         await db.deleteDailyTask(taskId);
         showToast("Task deleted.", "success");
-        adminState.editingTask = null; // Cancela edição se estiver editando a tarefa deletada
+        adminState.editingTask = null;
         loadAdminData();
     } catch (error) {
         showToast(`Failed to delete task: ${error.message}`, "error");
@@ -215,14 +262,67 @@ const handleDeleteTask = async (taskId) => {
 
 // --- ADMIN RENDER FUNCTIONS ---
 
+// --- NOVA FUNÇÃO DE RENDERIZAÇÃO PARA PONTOS UGC ---
+const renderUgcPointsPanel = () => {
+    const container = document.getElementById('manage-ugc-points-content');
+    if (!container) return;
+
+    const points = adminState.ugcBasePoints;
+    if (!points) {
+        renderLoading(container);
+        return;
+    }
+
+    // Define os valores padrão caso não estejam no banco
+    const defaults = {
+        'YouTube': 5000,
+        'Instagram': 3000,
+        'X/Twitter': 1500,
+        'Other': 1000
+    };
+
+    container.innerHTML = `
+        <h2 class="text-2xl font-bold mb-6">Manage UGC Base Points</h2>
+        <p class="text-sm text-zinc-400 mb-6 max-w-2xl mx-auto">
+            Defina os pontos base concedidos para cada plataforma de divulgação (UGC). 
+            Este valor será "exportado" para a página do airdrop e é o valor usado 
+            <strong>antes</strong> do multiplicador do usuário ser aplicado.
+        </p>
+        <form id="ugcPointsForm" class="bg-zinc-800 p-6 rounded-xl space-y-4 border border-border-color max-w-lg mx-auto">
+            <div>
+                <label class="block text-sm font-medium mb-1 text-zinc-300">YouTube Base Points:</label>
+                <input type="number" name="youtubePoints" class="form-input" value="${points['YouTube'] || defaults['YouTube']}" required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1 text-zinc-300">Instagram Base Points:</label>
+                <input type="number" name="instagramPoints" class="form-input" value="${points['Instagram'] || defaults['Instagram']}" required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1 text-zinc-300">X/Twitter Base Points:</label>
+                <input type="number" name="xTwitterPoints" class="form-input" value="${points['X/Twitter'] || defaults['X/Twitter']}" required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1 text-zinc-300">Other Platform Base Points:</label>
+                <input type="number" name="otherPoints" class="form-input" value="${points['Other'] || defaults['Other']}" required>
+            </div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-md transition-colors shadow-md">
+                <i class="fa-solid fa-save mr-2"></i>Save Base Points
+            </button>
+        </form>
+    `;
+    
+    document.getElementById('ugcPointsForm')?.addEventListener('submit', handleUgcPointsSubmit);
+};
+
+
 const renderManageTasksPanel = () => {
+    // ... (Esta função permanece exatamente a mesma) ...
     const container = document.getElementById('manage-tasks-content');
     if (!container) return;
 
     const task = adminState.editingTask;
     const isEditing = !!task;
 
-    // Helper para formatar Date ou Timestamp para input YYYY-MM-DD
     const formatDate = (dateValue) => {
         if (!dateValue) return '';
         try {
@@ -231,7 +331,6 @@ const renderManageTasksPanel = () => {
         } catch (e) { return ''; }
     }
 
-    // Renderiza formulário e lista de tarefas
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-6">${isEditing ? 'Edit Daily Task' : 'Create New Daily Task'}</h2>
 
@@ -278,17 +377,15 @@ const renderManageTasksPanel = () => {
                     </div>
                 </div>
             `).join('') :
-            // CORREÇÃO do renderNoData
             (() => {
                 const tempDiv = document.createElement('div');
-                renderNoData(tempDiv, "No tasks created yet."); // Passa o elemento temporário
-                return tempDiv.innerHTML; // Retorna o HTML gerado dentro dele
+                renderNoData(tempDiv, "No tasks created yet.");
+                return tempDiv.innerHTML;
             })()
             }
         </div>
     `;
 
-    // Adiciona listeners para o formulário e botões da lista
     document.getElementById('taskForm')?.addEventListener('submit', handleTaskFormSubmit);
     document.getElementById('cancelEditBtn')?.addEventListener('click', () => { adminState.editingTask = null; renderManageTasksPanel(); });
 
@@ -307,6 +404,7 @@ const renderManageTasksPanel = () => {
 
 
 const renderSubmissionsPanel = () => {
+    // ... (Esta função permanece exatamente a mesma) ...
     const container = document.getElementById('submissions-content');
     if (!container) return;
 
@@ -365,18 +463,23 @@ const renderSubmissionsPanel = () => {
 
 
 const renderAdminPanel = () => {
+    // ... (Esta função foi ATUALIZADA) ...
     const adminContent = document.getElementById('admin-content-wrapper');
     if (!adminContent) return;
 
-    // Remove comentários do HTML gerado
     adminContent.innerHTML = `
         <h1 class="text-3xl font-bold mb-8">Airdrop Admin Panel</h1>
 
         <div class="border-b border-border-color mb-6">
             <nav id="admin-tabs" class="-mb-px flex gap-6">
+                <button class="tab-btn ${adminState.activeTab === 'manage-ugc-points' ? 'active' : ''}" data-target="manage-ugc-points">Manage UGC Points</button>
                 <button class="tab-btn ${adminState.activeTab === 'manage-tasks' ? 'active' : ''}" data-target="manage-tasks">Manage Daily Tasks</button>
                 <button class="tab-btn ${adminState.activeTab === 'review-submissions' ? 'active' : ''}" data-target="review-submissions">Review Submissions</button>
             </nav>
+        </div>
+
+        <div id="manage_ugc_points_tab" class="tab-content ${adminState.activeTab === 'manage-ugc-points' ? 'active' : ''}">
+            <div id="manage-ugc-points-content" class="max-w-4xl mx-auto"></div>
         </div>
 
         <div id="manage_tasks_tab" class="tab-content ${adminState.activeTab === 'manage-tasks' ? 'active' : ''}">
@@ -389,7 +492,9 @@ const renderAdminPanel = () => {
     `;
 
     // Renderiza o conteúdo da aba ativa inicial
-    if (adminState.activeTab === 'manage-tasks') {
+    if (adminState.activeTab === 'manage-ugc-points') {
+        renderUgcPointsPanel();
+    } else if (adminState.activeTab === 'manage-tasks') {
         renderManageTasksPanel();
     } else if (adminState.activeTab === 'review-submissions') {
         renderSubmissionsPanel();
@@ -404,17 +509,17 @@ const renderAdminPanel = () => {
             const targetId = button.dataset.target;
             adminState.activeTab = targetId; // Atualiza o estado da aba ativa
 
-            // Atualiza classes dos botões
             document.querySelectorAll('#admin-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
 
-            // Mostra/Esconde conteúdo das abas
             adminContent.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            const targetTabElement = document.getElementById(targetId.replace('-', '_') + '_tab');
+            const targetTabElement = document.getElementById(targetId.replace(/-/g, '_') + '_tab'); // Corrigido para substituir todos os hífens
 
             if (targetTabElement) {
                  targetTabElement.classList.add('active');
-                 // Re-renderiza o conteúdo da aba selecionada
+                 
+                 // ATUALIZADO: Chama a nova função de renderização
+                 if (targetId === 'manage-ugc-points') renderUgcPointsPanel();
                  if (targetId === 'manage-tasks') renderManageTasksPanel();
                  if (targetId === 'review-submissions') renderSubmissionsPanel();
             } else {
@@ -428,6 +533,7 @@ const renderAdminPanel = () => {
 
 export const AdminPage = {
     render() {
+        // ... (Esta função permanece exatamente a mesma) ...
         const adminContainer = document.getElementById('admin');
         if (!adminContainer) return;
 
@@ -441,8 +547,8 @@ export const AdminPage = {
     },
 
      refreshData() {
+         // ... (Esta função permanece exatamente a mesma) ...
          const adminContainer = document.getElementById('admin');
-         // Só recarrega se adminContainer existir E NÃO estiver escondido
          if (adminContainer && !adminContainer.classList.contains('hidden')) {
              console.log("Refreshing Admin Page data...");
              loadAdminData();

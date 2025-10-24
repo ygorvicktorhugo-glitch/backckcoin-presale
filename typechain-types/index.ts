@@ -44,6 +44,8 @@ export type { Strings } from "./@openzeppelin/contracts/utils/Strings";
 export { Strings__factory } from "./factories/@openzeppelin/contracts/utils/Strings__factory";
 export type { BKCToken } from "./contracts/BKCToken";
 export { BKCToken__factory } from "./factories/contracts/BKCToken__factory";
+export type { DecentralizedNotary } from "./contracts/DecentralizedNotary";
+export { DecentralizedNotary__factory } from "./factories/contracts/DecentralizedNotary__factory";
 export type { DelegationManager } from "./contracts/DelegationManager";
 export { DelegationManager__factory } from "./factories/contracts/DelegationManager__factory";
 export type { FortuneTiger } from "./contracts/FortuneTiger";

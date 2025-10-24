@@ -4,7 +4,8 @@ const ethers = window.ethers;
 
 import { DOMElements } from './dom-elements.js';
 import { State } from './state.js';
-import { initPublicProvider, subscribeToWalletChanges, disconnectWallet, openConnectModal } from './modules/wallet.js';
+// CORREÇÃO: Importa 'initializeWalletState' em vez de 'subscribeToWalletChanges'
+import { initPublicProvider, initializeWalletState, disconnectWallet, openConnectModal } from './modules/wallet.js';
 import { showToast, showShareModal } from './ui-feedback.js';
 import { formatBigNumber, formatAddress } from './utils.js';
 
@@ -22,6 +23,7 @@ import { PresalePage } from './pages/PresalePage.js';
 import { DaoPage } from './pages/DaoPage.js';
 import { FaucetPage } from './pages/FaucetPage.js';
 import { TokenomicsPage } from './pages/TokenomicsPage.js'; // <-- Importação da nova página
+import { NotaryPage } from './pages/NotaryPage.js'; // <-- IMPORTAÇÃO DA NOVA PÁGINA
 
 
 const routes = {
@@ -35,6 +37,7 @@ const routes = {
     'admin': AdminPage,
     'presale': PresalePage,
     'dao': DaoPage,
+    'notary': NotaryPage, // <-- ROTA DA NOVA PÁGINA
     'faucet': FaucetPage,
     'tokenomics': TokenomicsPage, // <-- Rota da nova página
 };
@@ -161,12 +164,18 @@ async function init() {
 
     setupGlobalListeners();
     await initPublicProvider();
-    subscribeToWalletChanges(onWalletStateChange); // <- A primeira chamada de updateUIState virá daqui
+    
+    // --- CORREÇÃO APLICADA AQUI ---
+    // Trocamos 'subscribeToWalletChanges' por 'await initializeWalletState'.
+    // Isso garante que o app espera a verificação inicial da carteira
+    // antes de continuar e renderizar a página.
+    await initializeWalletState(onWalletStateChange);
 
-    // *** CHAMADA INICIAL REMOVIDA DAQUI ***
-    // updateUIState(); // Chamada inicial removida para evitar o "flicker"
-
-    navigateTo(activePageId); // Navega para a página inicial (ainda no estado desconectado visualmente)
+    // A chamada inicial 'updateUIState()' foi corretamente removida.
+    
+    // Esta chamada agora ocorrerá DEPOIS que o estado da carteira
+    // (conectado ou desconectado) já foi estabelecido.
+    navigateTo(activePageId); 
 
     console.log("Application initialized.");
 }

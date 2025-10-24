@@ -4,6 +4,7 @@
 import type * as nftLiquidityPoolSol from "./NFTLiquidityPool.sol";
 export type { nftLiquidityPoolSol };
 export type { BKCToken } from "./BKCToken";
+export type { DecentralizedNotary } from "./DecentralizedNotary";
 export type { DelegationManager } from "./DelegationManager";
 export type { FortuneTiger } from "./FortuneTiger";
 export type { PublicSale } from "./PublicSale";

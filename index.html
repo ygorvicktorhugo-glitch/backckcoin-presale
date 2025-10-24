@@ -5,17 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Backchain | Dashboard</title>
 
+    <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'self' http://127.0.0.1 http://localhost:5500 https://backcoin.org https://www.backcoin.org http://localhost:* https://*.pages.dev https://*.vercel.app https://*.ngrok-free.app https://secure-mobile.walletconnect.com https://secure.walletconnect.org;">
     <link rel="icon" href="./assets/bkc_logo_3d.png" type="image/png">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 
     <script src="https://cdn.jsdelivr.net/npm/ethers@6.4.0/dist/ethers.umd.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/nft.storage/dist/bundle.min.js"></script>
 
     <script src="https://pay.coinbase.com/pay-sdk.js" defer></script>
     <script src="https://static.moonpay.com/web-sdk/v1/moonpay-web-sdk.min.js" defer></script>
     <style>
-        /* Estilos CSS (sem alterações da versão anterior) */
+        /* Estilos CSS (sem alterações) */
          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         :root {
             --bg-main: #18181b; --bg-sidebar: #27272a; --bg-card: #3f3f46; --border-color: #52525b; --text-primary: #f4f4f5; --text-secondary: #a1a1aa; --accent: #f59e0b; --accent-hover: #d97706;
@@ -82,7 +85,8 @@
 
         <aside id="sidebar" class="fixed top-0 left-0 z-40 w-64 h-full bg-sidebar p-4 flex flex-col transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0">
             <div class="flex items-center gap-3 px-2 mb-8"><img src="./assets/bkc_logo_3d.png" alt="Backchain Logo" class="h-10 w-auto rounded-full"><span class="text-2xl font-bold text-amber-400">Backchain</span></div>
-            <nav id="nav-links" class="flex flex-col flex-1">
+            
+            <nav id="nav-links" class="flex flex-col flex-1 overflow-y-auto">
                  <div class="space-y-2">
                     <a data-target="dashboard" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors hover:bg-zinc-700 active"><i class="fa-solid fa-chart-pie w-5 text-center"></i><span>Dashboard</span></a>
                     <a data-target="earn" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700"><i class="fa-solid fa-coins w-5 text-center"></i><span>Earn</span></a>
@@ -92,6 +96,10 @@
                     <a data-target="airdrop" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700"><i class="fa-solid fa-parachute-box w-5 text-center"></i><span>Airdrop</span></a>
                     <a data-target="dao" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700"><i class="fa-solid fa-landmark w-5 text-center"></i><span>DAO</span></a>
                     
+                    <a data-target="notary" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700">
+                        <i class="fa-solid fa-stamp w-5 text-center"></i><span>Decentralized Notary</span>
+                    </a>
+
                     <a data-target="tokenomics" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700">
                         <i class="fa-solid fa-chart-line w-5 text-center"></i><span>Tokenomics</span>
                     </a>
@@ -178,6 +186,8 @@
                     <section id="airdrop" class="hidden"><h1 class="text-3xl font-bold mb-8 text-white">Airdrop & Community Rewards</h1><div id="airdrop-loading-placeholder"></div><div id="airdrop-tabs-container"></div><div id="airdrop-content-wrapper" class="pt-4"><div id="active-tab-content"></div></div></section>
                     <section id="dao" class="hidden"></section>
                     
+                    <section id="notary" class="hidden"></section>
+
                     <section id="tokenomics" class="hidden"></section>
                     <section id="faucet" class="hidden"></section>
                     <section id="about" class="hidden"></section>

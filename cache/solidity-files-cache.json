@@ -1125,6 +1125,48 @@
       "artifacts": [
         "FortuneTiger"
       ]
+    },
+    "D:\\backcoin\\Aplicativos\\backchain-final\\contracts\\DecentralizedNotary.sol": {
+      "lastModificationDate": 1761322261269,
+      "contentHash": "7427604e3a70f4075e135fef8f8d64de",
+      "sourceName": "contracts/DecentralizedNotary.sol",
+      "solcConfig": {
+        "version": "0.8.28",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol",
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
+        "./BKCToken.sol",
+        "./DelegationManager.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.28"
+      ],
+      "artifacts": [
+        "DecentralizedNotary"
+      ]
     }
   }
 }

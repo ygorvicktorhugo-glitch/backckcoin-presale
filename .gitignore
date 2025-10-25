@@ -7,15 +7,30 @@ yarn-error.log*
 firebase-debug.log*
 firebase-debug.*.log*
 
+# --- ADIÇÕES PARA HARDHAT/ETHEREUM ---
+# Arquivos de Build/Cache do Hardhat
+artifacts/
+cache/
+# Arquivos de Tipo gerados (Typechain)
+typechain-types/
+# Chaves e credenciais locais (geralmente .env)
+.env
+.env.local
+# Arquivos de deployment específicos
+deployment-addresses.json
+# --- FIM DAS ADIÇÕES HARDHAT/ETHEREUM ---
+
 # Firebase cache
 .firebase/
 
 # Firebase config
+# Remova o comentário se você usa .firebaserc
+# .firebaserc 
 
-# Uncomment this if you'd like others to create their own Firebase project.
-# For a team working on the same Firebase project(s), it is recommended to leave
-# it commented so all members can deploy to the same project(s) in .firebaserc.
-# .firebaserc
+# --- ADIÇÃO CRÍTICA PARA SEGURANÇA (GOOGLLE/FIREBASE) ---
+# Impede o upload de credenciais da conta de serviço
+functions/backcoin-app-credentials.json
+# --- FIM DA ADIÇÃO CRÍTICA ---
 
 # Runtime data
 pids
@@ -63,7 +78,8 @@ node_modules/
 .yarn-integrity
 
 # dotenv environment variables file
-.env
+# (Já coberto acima, mas mantido)
+.env 
 
 # dataconnect generated files
 .dataconnect

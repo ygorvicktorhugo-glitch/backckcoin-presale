@@ -78,7 +78,7 @@ let wasPreviouslyConnected = web3modal.getIsConnected();
 // --- Funções Auxiliares Internas ---
 
 function instantiateContracts(signerOrProvider) {
-    console.log("Instantiating contracts with:", signerOrProvider); // Log para depuração
+    console.log("Instantiating contracts with:", signerOrProvider);
     try {
         if (addresses.bkcToken)
             State.bkcTokenContract = new ethers.Contract(addresses.bkcToken, bkcTokenABI, signerOrProvider);
@@ -97,25 +97,25 @@ function instantiateContracts(signerOrProvider) {
          if (addresses.publicSale) {
              State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
          }
-         if (addresses.faucet && addresses.faucet !== "0x0000000000000000000000000000000000000000") { // Verifica se não é placeholder
+         if (addresses.faucet && addresses.faucet !== "0x0000000000000000000000000000000000000000") {
              State.faucetContract = new ethers.Contract(addresses.faucet, faucetABI, signerOrProvider);
          }
 
-        // --- CORREÇÃO ADICIONADA AQUI ---
-        if (addresses.decentralizedNotary && addresses.decentralizedNotary !== "0x0000000000000000000000000000000000000000") { // Verifica se não é placeholder
-            console.log("Instantiating DecentralizedNotary..."); // Log
+        // --- Instanciação do Contrato DescentralizedNotary ---
+        if (addresses.decentralizedNotary && addresses.decentralizedNotary !== "0x0000000000000000000000000000000000000000") {
+            console.log("Instantiating DecentralizedNotary...");
             State.decentralizedNotaryContract = new ethers.Contract(
                 addresses.decentralizedNotary,
                 decentralizedNotaryABI,
                 signerOrProvider
             );
-            console.log("DecentralizedNotary instance:", State.decentralizedNotaryContract); // Log
+            console.log("DecentralizedNotary instance:", State.decentralizedNotaryContract);
         } else {
              console.warn("Decentralized Notary address not set or is placeholder in config.js");
         }
-        // --- FIM DA CORREÇÃO ---
+        // --- Fim da Instanciação do Contrato ---
 
-        console.log("Contracts instantiated:", State); // Log do estado após instanciar
+        console.log("Contracts instantiated:", State);
 
     } catch (e) {
          console.error("Error instantiating contracts:", e);
@@ -129,7 +129,9 @@ async function setupSignerAndLoadData(provider, address) {
         State.signer = await provider.getSigner();
         State.userAddress = address;
 
-        await signIn(State.userAddress); // Autentica no Firebase
+        // --- CORREÇÃO: Autentica no Firebase usando a CARTEIRA como ID primário ---
+        await signIn(State.userAddress); // Autentica no Firebase E carrega o perfil Airdrop (getAirdropUser)
+        // --- FIM DA CORREÇÃO ---
 
         instantiateContracts(State.signer); // Instancia com o signer
         await loadUserData();
@@ -174,14 +176,14 @@ async function handleProviderChange(state, callback) {
         }
 
         if (chainId !== Number(sepoliaChainId)) {
-            showToast(`Wrong network. Switching to Sepolia...`, 'info'); // 'info' em vez de 'error' inicialmente
+            showToast(`Wrong network. Switching to Sepolia...`, 'info');
             const expectedChainIdHex = '0x' + (Number(sepoliaChainId)).toString(16);
             try {
                 await providerToUse.request({
                     method: 'wallet_switchEthereumChain',
                     params: [{ chainId: expectedChainIdHex }],
                 });
-                return; // Espera novo evento
+                return;
             } catch (switchError) {
                 if (switchError.code === 4902) {
                     showToast('Sepolia network not found. Adding it...', 'info');
@@ -190,7 +192,7 @@ async function handleProviderChange(state, callback) {
                             method: 'wallet_addEthereumChain',
                             params: [ { chainId: expectedChainIdHex, chainName: sepolia.name, rpcUrls: [sepolia.rpcUrl], nativeCurrency: { name: sepolia.currency, symbol: sepolia.currency, decimals: 18, }, blockExplorerUrls: [sepolia.explorerUrl], }, ],
                         });
-                        return; // Espera novo evento
+                        return;
                     } catch (addError) {
                         console.error("Failed to add Sepolia network:", addError);
                         showToast('Please add and switch to the Sepolia network manually.', 'error');
@@ -199,7 +201,7 @@ async function handleProviderChange(state, callback) {
                     }
                 }
                 console.error("Failed to switch network:", switchError);
-                 if (switchError.code !== 4001) { // 4001 é rejeição do usuário
+                 if (switchError.code !== 4001) {
                       showToast('Failed to switch network. Please do it manually.', 'error');
                  } else {
                      showToast('Network switch rejected by user.', 'info');

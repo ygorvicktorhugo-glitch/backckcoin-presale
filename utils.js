@@ -89,7 +89,7 @@ export const renderNoData = (el, message = "No data available.") => {
     el.innerHTML = `<div class="text-center p-4 bg-main border border-border-color rounded-lg col-span-full"><p class="text-zinc-500 italic">${message}</p></div>`;
 }
 
-// Renderização de Lista Paginada com verificações
+// Renderização de Lista Paginada com verificações (Função 'all-in-one' original)
 export const renderPaginatedList = (allItems, containerEl, renderItemFn, itemsPerPage, currentPage = 1, onPageChange, gridClasses = 'space-y-3') => {
     if (!containerEl) { console.warn("renderPaginatedList: Container element not found."); return; }
     if (!Array.isArray(allItems)) {
@@ -146,3 +146,55 @@ export const renderPaginatedList = (allItems, containerEl, renderItemFn, itemsPe
         }
     }
 };
+
+
+// =======================================================
+//  INÍCIO DA CORREÇÃO
+// =======================================================
+
+/**
+ * Renderiza APENAS os controles de paginação (botões, contagem de página).
+ * Esta é a função que o AdminPage.js espera.
+ * @param {HTMLElement} containerEl - O elemento <div> onde os botões serão desenhados.
+ * @param {number} currentPage - A página atual.
+ * @param {number} totalPages - O total de páginas.
+ * @param {function} onPageChange - A função a ser chamada quando um botão é clicado.
+ */
+export function renderPaginationControls(containerEl, currentPage, totalPages, onPageChange) {
+    if (!containerEl) { 
+        console.warn("renderPaginationControls: Element not found."); 
+        return; 
+    }
+    
+    // Limpa o container se não houver páginas suficientes
+    if (totalPages <= 1) {
+        containerEl.innerHTML = ''; 
+        return;
+    }
+
+    try {
+        const paginationHtml = `
+            <div class="flex items-center justify-center gap-2">
+                <button class="pagination-btn prev-page-btn" data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}><i class="fa-solid fa-chevron-left text-xs"></i></button>
+                <span class="pagination-page-num">Page ${currentPage} of ${totalPages}</span>
+                <button class="pagination-btn next-page-btn" data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}><i class="fa-solid fa-chevron-right text-xs"></i></button>
+            </div>
+        `;
+        
+        containerEl.innerHTML = paginationHtml;
+
+        // Adiciona listeners
+        const prevBtn = containerEl.querySelector('.prev-page-btn');
+        const nextBtn = containerEl.querySelector('.next-page-btn');
+        
+        if (prevBtn) {
+             prevBtn.addEventListener('click', (e) => onPageChange(parseInt(e.currentTarget.dataset.page)));
+        }
+        if (nextBtn) {
+             nextBtn.addEventListener('click', (e) => onPageChange(parseInt(e.currentTarget.dataset.page)));
+        }
+    } catch (error) {
+        // Se algo der errado, usa a função renderError corretamente.
+        renderError(containerEl, `Failed to render pagination: ${error.message}`);
+    }
+}

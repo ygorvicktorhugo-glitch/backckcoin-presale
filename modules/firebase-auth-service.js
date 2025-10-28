@@ -8,21 +8,24 @@ import { getFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, updateD
 // --- Configuração Firebase ---
 // Substitua pelas suas credenciais reais
 const firebaseConfig = {
-  apiKey: "AIzaSyDKhF2_--fKtot96YPS8twuD0UoCpS-3T4", //
-  authDomain: "airdropbackchainnew.firebaseapp.com", //
-  projectId: "airdropbackchainnew", //
-  storageBucket: "airdropbackchainnew.appspot.com", // Verifique se este é o correto (.appspot.com)
-  messagingSenderId: "108371799661", //
-  appId: "1:108371799661:web:d126fcbd0ba56263561964", //
-  measurementId: "G-QD9EBZ0Y09" //
+  apiKey: "AIzaSyDKhF2_--fKtot96YPS8twuD0UoCpS-3T4",
+  authDomain: "airdropbackchainnew.firebaseapp.com",
+  projectId: "airdropbackchainnew",
+  storageBucket: "airdropbackchainnew.appspot.com",
+  messagingSenderId: "108371799661",
+  appId: "1:108371799661:web:d126fcbd0ba56263561964",
+  measurementId: "G-QD9EBZ0Y09"
 };
 
 // Inicializa Firebase
-const app = initializeApp(firebaseConfig); //
-const auth = getAuth(app); //
-const db = getFirestore(app); //
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-let currentUser = null; // Armazena o usuário Firebase autenticado
+let currentUser = null; // Armazena o usuário Firebase autenticado (para PERMISSÕES)
+// <-- CORREÇÃO: Variáveis para armazenar a ID real (carteira) e o perfil do usuário
+let currentWalletAddress = null; // A "chave primária" real do usuário
+let currentAirdropProfile = null; // Cache do perfil do usuário
 
 // =======================================================
 //  FUNÇÕES DE AUTENTICAÇÃO
@@ -35,64 +38,76 @@ let currentUser = null; // Armazena o usuário Firebase autenticado
  * @returns {Promise<User>} O objeto do usuário Firebase autenticado.
  */
 export async function signIn(walletAddress) {
-    if (!walletAddress) throw new Error("Wallet address is required for Firebase sign-in."); //
+    if (!walletAddress) throw new Error("Wallet address is required for Firebase sign-in.");
+
+    // <-- CORREÇÃO: Normaliza e armazena a carteira como ID principal
+    const normalizedWallet = walletAddress.toLowerCase();
+    currentWalletAddress = normalizedWallet; // Salva globalmente
 
     // Se já temos um usuário Firebase logado na sessão atual
-    if (currentUser) { //
-        await getAirdropUser(walletAddress); // Garante que o perfil do Airdrop existe/está atualizado
-        return currentUser; //
+    if (currentUser) {
+        // <-- CORREÇÃO: Busca o perfil pela CARTEIRA
+        currentAirdropProfile = await getAirdropUser(normalizedWallet); 
+        return currentUser;
     }
 
     // Tenta usar o usuário Firebase da sessão anterior (se a página foi recarregada)
-    if (auth.currentUser) { //
-        currentUser = auth.currentUser; //
-        await getAirdropUser(walletAddress); //
-        return currentUser; //
+    if (auth.currentUser) {
+        currentUser = auth.currentUser;
+        // <-- CORREÇÃO: Busca o perfil pela CARTEIRA
+        currentAirdropProfile = await getAirdropUser(normalizedWallet);
+        return currentUser;
     }
 
     // Se não há usuário, tenta logar anonimamente
-    return new Promise((resolve, reject) => { //
+    return new Promise((resolve, reject) => {
         // Usa onAuthStateChanged para garantir que o login anônimo (se necessário) complete
-        const unsubscribe = onAuthStateChanged(auth, async (user) => { //
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
             unsubscribe(); // Roda só uma vez
-            if (user) { //
-                currentUser = user; //
-                try { //
-                    await getAirdropUser(walletAddress); // Cria/associa perfil Airdrop
-                    resolve(user); //
-                } catch (error) { //
-                    console.error("Error linking airdrop user profile:", error); //
+            if (user) {
+                currentUser = user;
+                try {
+                    // <-- CORREÇÃO: Busca o perfil pela CARTEIRA
+                    currentAirdropProfile = await getAirdropUser(normalizedWallet); // Cria/associa perfil Airdrop
+                    resolve(user);
+                } catch (error) {
+                    console.error("Error linking airdrop user profile:", error);
                     reject(error); // Rejeita se falhar em criar/associar o perfil
                 }
             } else {
                 // Se onAuthStateChanged retornar null (inesperado após tentativa de login),
                 // tenta logar anonimamente de novo explicitamente.
-                signInAnonymously(auth) //
-                    .then(async (userCredential) => { //
-                        currentUser = userCredential.user; //
-                        await getAirdropUser(walletAddress); //
-                        resolve(currentUser); //
+                signInAnonymously(auth)
+                    .then(async (userCredential) => {
+                        currentUser = userCredential.user;
+                        // <-- CORREÇÃO: Busca o perfil pela CARTEIRA
+                        currentAirdropProfile = await getAirdropUser(normalizedWallet);
+                        resolve(currentUser);
                     })
-                    .catch((error) => { //
-                        console.error("Firebase Anonymous sign-in failed:", error); //
+                    .catch((error) => {
+                        console.error("Firebase Anonymous sign-in failed:", error);
                         reject(error); // Rejeita se o login anônimo falhar
                     });
             }
-        }, (error) => { //
+        }, (error) => {
              // Erro no listener do onAuthStateChanged
-             console.error("Firebase Auth state change error:", error); //
-             unsubscribe(); //
-             reject(error); //
+             console.error("Firebase Auth state change error:", error);
+             unsubscribe();
+             reject(error);
         });
     });
 }
 
 /**
- * Verifica se currentUser (usuário Firebase) está definido. Lança erro se não estiver.
+ * Verifica se currentUser (usuário Firebase) está definido E se a carteira está definida.
  */
 function ensureAuthenticated() {
-    if (!currentUser) { //
-        throw new Error("User not authenticated with Firebase. Please connect wallet first."); //
+    if (!currentUser) {
+        throw new Error("User not authenticated with Firebase. Please sign-in first.");
+    }
+    // <-- CORREÇÃO: Garante que a carteira (ID real) esteja definida
+    if (!currentWalletAddress) { 
+        throw new Error("Wallet address not set. Please connect wallet first.");
     }
 }
 
@@ -106,47 +121,47 @@ function ensureAuthenticated() {
  * @returns {Promise<object>} Objeto contendo config, leaderboards e dailyTasks ativas.
  */
 export async function getPublicAirdropData() {
-    const dataRef = doc(db, "airdrop_public_data", "data_v1"); // Referência ao documento único
-    const dataSnap = await getDoc(dataRef); //
+    const dataRef = doc(db, "airdrop_public_data", "data_v1");
+    const dataSnap = await getDoc(dataRef);
 
-    if (dataSnap.exists()) { //
-        const data = dataSnap.data(); //
+    if (dataSnap.exists()) {
+        const data = dataSnap.data();
 
         // Processa e valida as tarefas diárias
-        const tasks = (data.dailyTasks || []).map(task => { //
+        const tasks = (data.dailyTasks || []).map(task => {
             // Garante que timestamps sejam objetos Date
-            const startDate = task.startDate?.toDate ? task.startDate.toDate() : (task.startDate ? new Date(task.startDate) : null); //
-            const endDate = task.endDate?.toDate ? task.endDate.toDate() : (task.endDate ? new Date(task.endDate) : null); //
-            return { //
-                ...task, //
+            const startDate = task.startDate?.toDate ? task.startDate.toDate() : (task.startDate ? new Date(task.startDate) : null);
+            const endDate = task.endDate?.toDate ? task.endDate.toDate() : (task.endDate ? new Date(task.endDate) : null);
+            return {
+                ...task,
                 id: task.id || null, // Garante que a tarefa tenha um ID
                 startDate: startDate instanceof Date && !isNaN(startDate) ? startDate : null, // Valida Date
                 endDate: endDate instanceof Date && !isNaN(endDate) ? endDate : null,       // Valida Date
             };
         }).filter(task => task.id); // Remove tarefas sem ID
 
-        const now = Date.now(); //
+        const now = Date.now();
 
         // Filtra apenas tarefas ativas (agora >= início E agora < fim)
-        const activeTasks = tasks.filter(task => { //
+        const activeTasks = tasks.filter(task => {
              const startTime = task.startDate ? task.startDate.getTime() : 0; // Início padrão: sempre ativo
              const endTime = task.endDate ? task.endDate.getTime() : Infinity; // Fim padrão: nunca expira
-             return startTime <= now && now < endTime; //
+             return startTime <= now && now < endTime;
         });
 
         // Retorna os dados públicos, garantindo que objetos existam
-        return { //
+        return {
             config: data.config || { ugcBasePoints: {} }, // Garante config e ugcBasePoints
-            leaderboards: data.leaderboards || { top100ByPoints: [], top100ByPosts: [], lastUpdated: null }, //
+            leaderboards: data.leaderboards || { top100ByPoints: [], top100ByPosts: [], lastUpdated: null },
             dailyTasks: activeTasks // Lista de tarefas ativas e validadas
         };
     } else {
         // Se o documento não existe, retorna valores padrão
-        console.warn("Public airdrop data document 'airdrop_public_data/data_v1' not found. Returning defaults."); //
-        return { //
-            config: { isActive: false, roundName: "Loading...", ugcBasePoints: {} }, //
-            leaderboards: { top100ByPoints: [], top100ByPosts: [], lastUpdated: null }, //
-            dailyTasks: [] //
+        console.warn("Public airdrop data document 'airdrop_public_data/data_v1' not found. Returning defaults.");
+        return {
+            config: { isActive: false, roundName: "Loading...", ugcBasePoints: {} },
+            leaderboards: { top100ByPoints: [], top100ByPosts: [], lastUpdated: null },
+            dailyTasks: []
         };
     }
 }
@@ -160,69 +175,110 @@ export async function getPublicAirdropData() {
  * @returns {string} Código de referência.
  */
 function generateReferralCode() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; //
-    let code = ''; //
-    for (let i = 0; i < 6; i++) { //
-        code += chars.charAt(Math.floor(Math.random() * chars.length)); //
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    return code; //
+    return code;
 }
+
+// ==========================================================
+//  INÍCIO DA ALTERAÇÃO (Função Multiplicador)
+// ==========================================================
+
+/**
+ * Calcula o multiplicador de pontos baseado no número de posts aprovados.
+ * @param {number} approvedCount O número de posts aprovados.
+ * @returns {number} O multiplicador (ex: 1.0, 2.0, ... 10.0).
+ */
+function getMultiplierByTier(approvedCount) {
+    if (approvedCount >= 100) return 10.0;
+    if (approvedCount >= 90) return 9.0;
+    if (approvedCount >= 80) return 8.0;
+    if (approvedCount >= 70) return 7.0;
+    if (approvedCount >= 60) return 6.0;
+    if (approvedCount >= 50) return 5.0;
+    if (approvedCount >= 40) return 4.0;
+    if (approvedCount >= 30) return 3.0;
+    if (approvedCount >= 20) return 2.0;
+    return 1.0; // Padrão para 0-19 posts
+}
+
+// ==========================================================
+//  FIM DA ALTERAÇÃO
+// ==========================================================
+
 
 /**
  * Busca o perfil do usuário Airdrop no Firestore. Se não existir, cria um novo.
  * Garante que campos essenciais existam no perfil.
- * @param {string} walletAddress Endereço da carteira do usuário.
+ * * [IMPORTANTE]: O ID do documento é o walletAddress, garantindo que NÃO haja
+ * duplicatas para a mesma carteira.
+ * * @param {string} walletAddress Endereço da carteira do usuário (normalizado/minúsculo).
  * @returns {Promise<object>} O objeto de dados do usuário Airdrop.
  */
 export async function getAirdropUser(walletAddress) {
-    ensureAuthenticated(); // Garante currentUser definido
-    const userRef = doc(db, "airdrop_users", currentUser.uid); // Referência ao documento do usuário
-    const userSnap = await getDoc(userRef); //
+    ensureAuthenticated(); 
+    
+    // O ID do documento é a CARTEIRA
+    const userRef = doc(db, "airdrop_users", walletAddress); 
+    const userSnap = await getDoc(userRef); 
 
-    if (userSnap.exists()) { //
+    if (userSnap.exists()) { 
         // Usuário existe, verifica e preenche campos padrão se necessário
-        const userData = userSnap.data(); //
-        const updates = {}; // Objeto para guardar atualizações necessárias
+        const userData = userSnap.data(); 
+        const updates = {}; 
 
         // Garante que campos essenciais existam e tenham o tipo correto
-        if (!userData.referralCode) updates.referralCode = generateReferralCode(); //
-        if (typeof userData.approvedSubmissionsCount !== 'number') updates.approvedSubmissionsCount = 0; //
-        if (typeof userData.rejectedCount !== 'number') updates.rejectedCount = 0; //
-        if (typeof userData.isBanned !== 'boolean') updates.isBanned = false; //
-        if (typeof userData.totalPoints !== 'number') updates.totalPoints = 0; //
-        if (typeof userData.pointsMultiplier !== 'number') updates.pointsMultiplier = 1.0; // Padrão 1.0
+        if (!userData.referralCode) updates.referralCode = generateReferralCode(); 
+        if (typeof userData.approvedSubmissionsCount !== 'number') updates.approvedSubmissionsCount = 0; 
+        if (typeof userData.rejectedCount !== 'number') updates.rejectedCount = 0; 
+        if (typeof userData.isBanned !== 'boolean') updates.isBanned = false; 
+        if (typeof userData.totalPoints !== 'number') updates.totalPoints = 0; 
+        
+        // --- CORREÇÃO: Esta lógica de "pointsMultiplier" estava errada ---
+        // Não vamos mais salvar o multiplicador no perfil, ele será calculado
+        // dinamicamente. Mas, por segurança, garantimos que o campo exista.
+        if (typeof userData.pointsMultiplier !== 'number') updates.pointsMultiplier = 1.0; 
+        // --- FIM CORREÇÃO ---
+        
+        // Garante que o endereço da carteira esteja no documento
+        if (userData.walletAddress !== walletAddress) {
+            updates.walletAddress = walletAddress;
+        }
 
         // Se precisa atualizar, salva no Firestore
-        if (Object.keys(updates).length > 0) { //
-             try { //
-                 await updateDoc(userRef, updates); //
+        if (Object.keys(updates).length > 0) { 
+             try { 
+                 await updateDoc(userRef, updates); 
                  // Retorna dados combinados
-                 return { id: userSnap.id, ...userData, ...updates }; //
-             } catch (updateError) { //
-                  console.error("Error updating user default fields:", updateError); //
+                 return { id: userSnap.id, ...userData, ...updates }; 
+             } catch (updateError) { 
+                  console.error("Error updating user default fields:", updateError); 
                   // Retorna dados originais mesmo se a atualização falhar
-                  return { id: userSnap.id, ...userData }; //
+                  return { id: userSnap.id, ...userData }; 
              }
         }
         // Se não precisou atualizar, retorna os dados lidos
-        return { id: userSnap.id, ...userData }; //
+        return { id: userSnap.id, ...userData }; 
 
     } else {
         // Usuário não existe, cria um novo perfil
-        const referralCode = generateReferralCode(); //
-        const newUser = { //
-            walletAddress: walletAddress, //
-            referralCode: referralCode, //
-            totalPoints: 0, //
-            pointsMultiplier: 1.0, //
-            approvedSubmissionsCount: 0, //
-            rejectedCount: 0, //
-            isBanned: false, //
-            createdAt: serverTimestamp() // Usa timestamp do servidor para criação
+        const referralCode = generateReferralCode(); 
+        const newUser = { 
+            walletAddress: walletAddress, // <-- Salva a carteira (ID)
+            referralCode: referralCode, 
+            totalPoints: 0, 
+            pointsMultiplier: 1.0, // <-- Mantém o campo por consistência
+            approvedSubmissionsCount: 0, 
+            rejectedCount: 0, 
+            isBanned: false, 
+            createdAt: serverTimestamp() 
         };
-        await setDoc(userRef, newUser); //
+        await setDoc(userRef, newUser); 
         // Retorna dados do novo usuário
-        return { id: userRef.id, ...newUser, createdAt: new Date() }; // Usa Date local como placeholder
+        return { id: userRef.id, ...newUser, createdAt: new Date() }; 
     }
 }
 
@@ -233,50 +289,50 @@ export async function getAirdropUser(walletAddress) {
  * @returns {Promise<{eligible: boolean, timeLeft: number}>} Objeto indicando elegibilidade e tempo restante em ms.
  */
 export async function isTaskEligible(taskId, cooldownHours) {
-    ensureAuthenticated(); //
-    if (!taskId || typeof taskId !== 'string' || taskId.trim() === '') { //
-        console.warn(`isTaskEligible called with invalid taskId: ${taskId}`); //
-        return { eligible: false, timeLeft: 0 }; // Considera inelegível
+    ensureAuthenticated();
+    if (!taskId || typeof taskId !== 'string' || taskId.trim() === '') {
+        console.warn(`isTaskEligible called with invalid taskId: ${taskId}`);
+        return { eligible: false, timeLeft: 0 };
     }
 
-    // Referência ao documento de último claim da tarefa pelo usuário
-    const lastClaimRef = doc(db, "airdrop_users", currentUser.uid, "task_claims", taskId); //
-    const lastClaimSnap = await getDoc(lastClaimRef); //
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const lastClaimRef = doc(db, "airdrop_users", currentWalletAddress, "task_claims", taskId);
+    const lastClaimSnap = await getDoc(lastClaimRef);
 
     const cooldownMs = cooldownHours * 60 * 60 * 1000; // Cooldown em milissegundos
 
     // Se nunca fez a tarefa, está elegível
-    if (!lastClaimSnap.exists()) { //
-        return { eligible: true, timeLeft: 0 }; //
+    if (!lastClaimSnap.exists()) {
+        return { eligible: true, timeLeft: 0 };
     }
 
-    const lastClaimData = lastClaimSnap.data(); //
+    const lastClaimData = lastClaimSnap.data();
     const lastClaimTimestamp = lastClaimData?.timestamp; // Timestamp salvo como string ISO
 
     // Se timestamp ausente ou inválido, permite claim (corrige dados antigos/inválidos)
-    if (typeof lastClaimTimestamp !== 'string' || lastClaimTimestamp.trim() === '') { //
-        console.warn(`Missing/invalid timestamp for task ${taskId}. Allowing claim.`); //
-        return { eligible: true, timeLeft: 0 }; //
+    if (typeof lastClaimTimestamp !== 'string' || lastClaimTimestamp.trim() === '') {
+        console.warn(`Missing/invalid timestamp for task ${taskId}. Allowing claim.`);
+        return { eligible: true, timeLeft: 0 };
     }
 
-    try { //
-        const lastClaimDate = new Date(lastClaimTimestamp); //
+    try {
+        const lastClaimDate = new Date(lastClaimTimestamp);
         if (isNaN(lastClaimDate.getTime())) { // Verifica se a data é válida
-             console.warn(`Invalid timestamp format for task ${taskId}:`, lastClaimTimestamp, ". Allowing claim."); //
-             return { eligible: true, timeLeft: 0 }; //
+             console.warn(`Invalid timestamp format for task ${taskId}:`, lastClaimTimestamp, ". Allowing claim.");
+             return { eligible: true, timeLeft: 0 };
         }
 
-        const lastClaimTime = lastClaimDate.getTime(); //
-        const now = Date.now(); //
+        const lastClaimTime = lastClaimDate.getTime();
+        const now = Date.now();
         const elapsed = now - lastClaimTime; // Tempo desde o último claim
 
-        if (elapsed >= cooldownMs) { //
+        if (elapsed >= cooldownMs) {
             return { eligible: true, timeLeft: 0 }; // Cooldown passou
-        } else { //
+        } else {
             return { eligible: false, timeLeft: cooldownMs - elapsed }; // Cooldown ativo, retorna tempo restante
         }
-    } catch (dateError) { //
-         console.error(`Error parsing timestamp string for task ${taskId}:`, lastClaimTimestamp, dateError); //
+    } catch (dateError) {
+         console.error(`Error parsing timestamp string for task ${taskId}:`, lastClaimTimestamp, dateError);
          return { eligible: true, timeLeft: 0 }; // Erro ao processar, permite claim por segurança
     }
 }
@@ -288,28 +344,29 @@ export async function isTaskEligible(taskId, cooldownHours) {
  * @returns {Promise<number>} Os pontos ganhos.
  */
 export async function recordDailyTaskCompletion(task, currentMultiplier) {
-    ensureAuthenticated(); //
+    ensureAuthenticated();
 
-    if (!task || !task.id) throw new Error("Invalid task data provided."); //
+    if (!task || !task.id) throw new Error("Invalid task data provided.");
 
     // Verifica elegibilidade ANTES de continuar
-    const eligibility = await isTaskEligible(task.id, task.cooldownHours); //
-    if (!eligibility.eligible) { //
-        throw new Error("Cooldown period is still active for this task."); //
+    const eligibility = await isTaskEligible(task.id, task.cooldownHours);
+    if (!eligibility.eligible) {
+        throw new Error("Cooldown period is still active for this task.");
     }
 
-    const userRef = doc(db, "airdrop_users", currentUser.uid); //
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const userRef = doc(db, "airdrop_users", currentWalletAddress);
 
     // Valida e arredonda os pontos da tarefa
-    const pointsToAdd = Math.round(task.points); //
-    if (isNaN(pointsToAdd) || pointsToAdd < 0) throw new Error("Invalid points value for the task."); //
+    const pointsToAdd = Math.round(task.points);
+    if (isNaN(pointsToAdd) || pointsToAdd < 0) throw new Error("Invalid points value for the task.");
 
     // Atualiza total de pontos do usuário
-    await updateDoc(userRef, { totalPoints: increment(pointsToAdd) }); //
+    await updateDoc(userRef, { totalPoints: increment(pointsToAdd) });
 
-    // Registra o claim com timestamp atual (ISO string)
-    const claimRef = doc(db, "airdrop_users", currentUser.uid, "task_claims", task.id); //
-    await setDoc(claimRef, { //
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const claimRef = doc(db, "airdrop_users", currentWalletAddress, "task_claims", task.id);
+    await setDoc(claimRef, {
         timestamp: new Date().toISOString(), // Salva como string ISO
         points: pointsToAdd // Salva os pontos concedidos (para referência)
     });
@@ -327,7 +384,7 @@ export async function recordDailyTaskCompletion(task, currentMultiplier) {
  * @throws {Error} Se a URL for inválida ou a configuração não for encontrada.
  */
 async function detectPlatformAndValidate(url) {
-    const normalizedUrl = url.trim().toLowerCase(); //
+    const normalizedUrl = url.trim().toLowerCase();
     let platform = 'Other'; // Padrão
     let isValid = true; // Assume válido
 
@@ -343,12 +400,12 @@ async function detectPlatformAndValidate(url) {
         }
     }
     // VÍDEO REGULAR DO YOUTUBE
-    else if (normalizedUrl.includes('youtube.com/watch?v=') || normalizedUrl.includes('youtu.be/')) { //
-        platform = 'YouTube'; //
-        const videoIdMatch = normalizedUrl.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:[?&]|$)/); //
-        if (!videoIdMatch || videoIdMatch[1].length !== 11) { //
-            isValid = false; //
-            throw new Error("Invalid YouTube URL: Video ID not found or incorrect format."); //
+    else if (normalizedUrl.includes('youtube.com/watch?v=') || normalizedUrl.includes('youtu.be/')) {
+        platform = 'YouTube';
+        const videoIdMatch = normalizedUrl.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:[?&]|$)/);
+        if (!videoIdMatch || videoIdMatch[1].length !== 11) {
+            isValid = false;
+            throw new Error("Invalid YouTube URL: Video ID not found or incorrect format.");
         }
     }
     // OUTROS LINKS DO YOUTUBE
@@ -358,15 +415,15 @@ async function detectPlatformAndValidate(url) {
         throw new Error("Invalid YouTube URL: Only video links (youtube.com/watch?v=... or youtu.be/...) or Shorts links are accepted.");
     }
     // Instagram
-    else if (normalizedUrl.includes('instagram.com/p/') || normalizedUrl.includes('instagram.com/reel/')) { //
-        platform = 'Instagram'; //
-        const postIdMatch = normalizedUrl.match(/\/(?:p|reel)\/([a-zA-Z0-9_.-]+)/); //
+    else if (normalizedUrl.includes('instagram.com/p/') || normalizedUrl.includes('instagram.com/reel/')) {
+        platform = 'Instagram';
+        const postIdMatch = normalizedUrl.match(/\/(?:p|reel)\/([a-zA-Z0-9_.-]+)/);
         if (!postIdMatch || !postIdMatch[1]) isValid = false; // Se não houver ID, marca inválido
     } 
     // X/Twitter
-    else if (normalizedUrl.includes('twitter.com/') || normalizedUrl.includes('x.com/')) { //
-        if (normalizedUrl.match(/(\w+)\/(?:status|statuses)\/(\d+)/)) { //
-             platform = 'X/Twitter'; //
+    else if (normalizedUrl.includes('twitter.com/') || normalizedUrl.includes('x.com/')) {
+        if (normalizedUrl.match(/(\w+)\/(?:status|statuses)\/(\d+)/)) {
+             platform = 'X/Twitter';
         } 
     }
     // Facebook
@@ -397,14 +454,14 @@ async function detectPlatformAndValidate(url) {
     const ugcPointsConfig = publicData.config?.ugcBasePoints || {}; // Pega pontos da config
 
     // Busca ponto da plataforma, senão 'Other', senão fallback 1000
-    const basePoints = ugcPointsConfig[platform] || ugcPointsConfig['Other'] || 1000; //
+    const basePoints = ugcPointsConfig[platform] || ugcPointsConfig['Other'] || 1000;
 
     // Valida os pontos buscados
-    if (isNaN(basePoints) || basePoints <= 0) { //
-        throw new Error(`Invalid base points configured for platform: ${platform}. Please contact admin.`); //
+    if (isNaN(basePoints) || basePoints < 0) { // Permite 0
+        throw new Error(`Invalid base points configured for platform: ${platform}. Please contact admin.`);
     }
 
-    return { platform, basePoints, isValid, normalizedUrl }; //
+    return { platform, basePoints, isValid, normalizedUrl };
 }
 
 
@@ -415,59 +472,67 @@ async function detectPlatformAndValidate(url) {
  * @throws {Error} Se a URL for inválida, duplicada, ou outro erro ocorrer.
  */
 export async function addSubmission(url) { // Recebe apenas URL
-    ensureAuthenticated(); //
-    const userRef = doc(db, "airdrop_users", currentUser.uid); //
-    const userSubmissionsCol = collection(db, "airdrop_users", currentUser.uid, "submissions"); //
-    const logSubmissionsCol = collection(db, "all_submissions_log"); //
+    ensureAuthenticated();
+    
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const userRef = doc(db, "airdrop_users", currentWalletAddress);
+    const userSubmissionsCol = collection(db, "airdrop_users", currentWalletAddress, "submissions");
+    const logSubmissionsCol = collection(db, "all_submissions_log");
 
     // Validação básica de URL (início http/https)
-    const trimmedUrl = url.trim(); //
-    if (!trimmedUrl || (!trimmedUrl.toLowerCase().startsWith('http://') && !trimmedUrl.toLowerCase().startsWith('https://'))) { //
-        throw new Error(`The provided URL must start with http:// or https://.`); //
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl || (!trimmedUrl.toLowerCase().startsWith('http://') && !trimmedUrl.toLowerCase().startsWith('https://'))) {
+        throw new Error(`The provided URL must start with http:// or https://.`);
     }
 
     // --- Detecta Plataforma, Valida Específica e Busca Pontos ---
-    let detectionResult; //
-    try { //
-        detectionResult = await detectPlatformAndValidate(trimmedUrl); //
-    } catch (validationError) { //
+    let detectionResult;
+    try {
+        detectionResult = await detectPlatformAndValidate(trimmedUrl);
+    } catch (validationError) {
         // Repassa erros específicos de validação (ex: YouTube não-vídeo)
-        throw validationError; //
+        throw validationError;
     }
-    const { platform, basePoints, isValid, normalizedUrl } = detectionResult; //
+    const { platform, basePoints, isValid, normalizedUrl } = detectionResult;
     // Se a validação específica falhou (ex: Instagram sem ID)
-    if (!isValid) { //
-         throw new Error(`The provided URL for ${platform} does not appear valid for submission.`); //
+    if (!isValid) {
+         throw new Error(`The provided URL for ${platform} does not appear valid for submission.`);
     }
     // --- Fim Detecção/Validação ---
 
     // --- Verificação de Duplicatas no Log Central ---
-    const qLog = query(logSubmissionsCol, //
-        where("normalizedUrl", "==", normalizedUrl), //
+    const qLog = query(logSubmissionsCol,
+        where("normalizedUrl", "==", normalizedUrl),
         // Verifica se já existe com status que não seja 'rejected' ou 'deleted_by_user'
-        where("status", "in", ["pending", "approved", "auditing", "flagged_suspicious"]) //
+        where("status", "in", ["pending", "approved", "auditing", "flagged_suspicious"])
     );
-    const logSnapshot = await getDocs(qLog); //
-    if (!logSnapshot.empty) { //
-        throw new Error("This content link has already been submitted. Repeatedly submitting duplicate or fraudulent content may lead to account suspension."); //
+    const logSnapshot = await getDocs(qLog);
+    if (!logSnapshot.empty) {
+        throw new Error("This content link has already been submitted. Repeatedly submitting duplicate or fraudulent content may lead to account suspension.");
     }
     // --- Fim Verificação ---
 
     // --- Pega dados do usuário para calcular pontos ---
-    const userSnap = await getDoc(userRef); //
-    if (!userSnap.exists()) throw new Error("User profile not found."); //
-    const userData = userSnap.data(); //
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) throw new Error("User profile not found.");
+    const userData = userSnap.data();
 
-    // --- Calcula Pontos e Multiplicador ---
-    const currentApprovedCount = userData.approvedSubmissionsCount || 0; //
+    // ==========================================================
+    //  INÍCIO DA ALTERAÇÃO (Cálculo de Pontos)
+    // ==========================================================
+    const currentApprovedCount = userData.approvedSubmissionsCount || 0;
     // Multiplicador baseado na contagem ATUAL (não +1, pois esta não foi aprovada ainda)
-    const multiplierApplied = Math.min(10.0, currentApprovedCount * 0.1); //
-    const pointsAwarded = Math.round(basePoints * multiplierApplied); //
+    const multiplierApplied = getMultiplierByTier(currentApprovedCount); // <-- MUDANÇA
+    const pointsAwarded = Math.round(basePoints * multiplierApplied); // <-- MUDANÇA
+    // ==========================================================
+    //  FIM DA ALTERAÇÃO
+    // ==========================================================
+
 
     // --- Prepara Dados para Salvar ---
     const submissionTimestamp = serverTimestamp(); // Timestamp único para ambos
     // Subcoleção do usuário
-    const submissionDataUser = { //
+    const submissionDataUser = {
         url: trimmedUrl, // URL Original
         platform: platform, // Plataforma Detectada
         status: 'pending', // Status inicial é PENDING
@@ -479,19 +544,20 @@ export async function addSubmission(url) { // Recebe apenas URL
         resolvedAt: null, //
     };
     // Log central
-    const submissionDataLog = { //
-        userId: currentUser.uid, //
-        walletAddress: userData.walletAddress, //
-        normalizedUrl: normalizedUrl, //
-        platform: platform, //
+    const submissionDataLog = {
+        // <-- CORREÇÃO: O 'userId' agora é a CARTEIRA
+        userId: currentWalletAddress,
+        walletAddress: userData.walletAddress,
+        normalizedUrl: normalizedUrl,
+        platform: platform,
         status: 'pending', // Status inicial é PENDING
-        basePoints: basePoints, //
-        submittedAt: submissionTimestamp, //
-        resolvedAt: null, //
+        basePoints: basePoints,
+        submittedAt: submissionTimestamp,
+        resolvedAt: null,
     };
 
     // --- Salva submissão (SEM ATUALIZAR PONTOS/CONTAGEM) ---
-    const batch = writeBatch(db); //
+    const batch = writeBatch(db);
     const newUserSubmissionRef = doc(userSubmissionsCol); // Gera ID
     batch.set(newUserSubmissionRef, submissionDataUser); // Salva na subcoleção
     const newLogSubmissionRef = doc(logSubmissionsCol, newUserSubmissionRef.id); // Usa mesmo ID no log
@@ -507,20 +573,21 @@ export async function addSubmission(url) { // Recebe apenas URL
  * @returns {Promise<Array<object>>} Lista de submissões.
  */
 export async function getUserSubmissions() {
-    ensureAuthenticated(); //
-    const submissionsCol = collection(db, "airdrop_users", currentUser.uid, "submissions"); //
+    ensureAuthenticated();
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const submissionsCol = collection(db, "airdrop_users", currentWalletAddress, "submissions");
     // Busca TUDO, ordenado
     const q = query(submissionsCol, orderBy("submittedAt", "desc")); // Mais recentes primeiro
-    const snapshot = await getDocs(q); //
+    const snapshot = await getDocs(q);
     // Mapeia e converte timestamps
-    return snapshot.docs.map(doc => { //
-        const data = doc.data(); //
-        return { //
-            submissionId: doc.id, //
-            ...data, //
+    return snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+            submissionId: doc.id,
+            ...data,
             // Converte timestamps para Date
-            submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate() : null, //
-            resolvedAt: data.resolvedAt?.toDate ? data.resolvedAt.toDate() : null, //
+            submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate() : null,
+            resolvedAt: data.resolvedAt?.toDate ? data.resolvedAt.toDate() : null,
         };
     });
 }
@@ -531,18 +598,19 @@ export async function getUserSubmissions() {
  * @returns {Promise<Array<object>>} Lista de submissões flagradas.
  */
 export async function getUserFlaggedSubmissions() {
-    ensureAuthenticated(); //
-    const submissionsCol = collection(db, "airdrop_users", currentUser.uid, "submissions"); //
+    ensureAuthenticated();
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const submissionsCol = collection(db, "airdrop_users", currentWalletAddress, "submissions");
     // Busca apenas as flagradas, ordenadas pelas mais recentes
-    const q = query(submissionsCol, where("status", "==", "flagged_suspicious"), orderBy("submittedAt", "desc")); //
-    const snapshot = await getDocs(q); //
+    const q = query(submissionsCol, where("status", "==", "flagged_suspicious"), orderBy("submittedAt", "desc"));
+    const snapshot = await getDocs(q);
     // Mapeia e converte timestamps
-    return snapshot.docs.map(doc => { //
-         const data = doc.data(); //
-        return { //
-            submissionId: doc.id, //
-            ...data, //
-            submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate() : null, //
+    return snapshot.docs.map(doc => {
+         const data = doc.data();
+        return {
+            submissionId: doc.id,
+            ...data,
+            submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate() : null,
             // resolvedAt não é necessário aqui
         };
     });
@@ -555,18 +623,19 @@ export async function getUserFlaggedSubmissions() {
  * @param {string} resolution Resolução do usuário ('not_fraud' ou 'is_fraud').
  */
 export async function resolveFlaggedSubmission(submissionId, resolution) {
-    ensureAuthenticated(); //
-    const userRef = doc(db, "airdrop_users", currentUser.uid); //
-    const submissionRef = doc(db, "airdrop_users", currentUser.uid, "submissions", submissionId); //
-    const logSubmissionRef = doc(db, "all_submissions_log", submissionId); //
+    ensureAuthenticated();
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const userRef = doc(db, "airdrop_users", currentWalletAddress);
+    const submissionRef = doc(db, "airdrop_users", currentWalletAddress, "submissions", submissionId);
+    const logSubmissionRef = doc(db, "all_submissions_log", submissionId);
 
-    const submissionSnap = await getDoc(submissionRef); //
-    if (!submissionSnap.exists() || submissionSnap.data().status !== 'flagged_suspicious') { //
-        throw new Error("Submission not found or not flagged for review."); //
+    const submissionSnap = await getDoc(submissionRef);
+    if (!submissionSnap.exists() || submissionSnap.data().status !== 'flagged_suspicious') {
+        throw new Error("Submission not found or not flagged for review.");
     }
 
-    const submissionData = submissionSnap.data(); //
-    const batch = writeBatch(db); // Usa batch para atualizações
+    const submissionData = submissionSnap.data();
+    const batch = writeBatch(db);
 
     if (resolution === 'not_fraud') {
         // --- AGE COMO 'confirmSubmission' ---
@@ -600,41 +669,41 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
         // Nenhum ponto é dado (pois nunca foi dado).
         // Apenas incrementa a contagem de rejeição.
         
-        const userSnap = await getDoc(userRef); //
-        if (!userSnap.exists()) throw new Error("User profile not found."); //
-        const userData = userSnap.data(); //
-        const userUpdates = {}; //
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) throw new Error("User profile not found.");
+        const userData = userSnap.data();
+        const userUpdates = {};
 
         // Incrementa rejeição e aplica banimento
-        const currentRejectedCount = userData.rejectedCount || 0; //
-        userUpdates.rejectedCount = increment(1); //
-        if (currentRejectedCount + 1 >= 3) { //
-            userUpdates.isBanned = true; //
+        const currentRejectedCount = userData.rejectedCount || 0;
+        userUpdates.rejectedCount = increment(1);
+        if (currentRejectedCount + 1 >= 3) {
+            userUpdates.isBanned = true;
         }
 
         // Aplica atualizações no usuário
-        if (Object.keys(userUpdates).length > 0) { //
-            batch.update(userRef, userUpdates); //
+        if (Object.keys(userUpdates).length > 0) {
+            batch.update(userRef, userUpdates);
         }
 
         // Atualiza submissão do usuário para 'rejected'
-        batch.update(submissionRef, { //
-            status: 'rejected', //
-            pointsAwarded: 0, //
-            multiplierApplied: 0, //
-            resolvedAt: serverTimestamp() //
+        batch.update(submissionRef, {
+            status: 'rejected',
+            pointsAwarded: 0,
+            multiplierApplied: 0, // <-- CORREÇÃO: Zera o multiplicador
+            resolvedAt: serverTimestamp()
         });
 
         // Atualiza log central para 'rejected'
-        if (await getDoc(logSubmissionRef).then(s => s.exists())) { //
-             batch.update(logSubmissionRef, { //
-                status: 'rejected', //
-                resolvedAt: serverTimestamp() //
+        if (await getDoc(logSubmissionRef).then(s => s.exists())) {
+             batch.update(logSubmissionRef, {
+                status: 'rejected',
+                resolvedAt: serverTimestamp()
             });
         }
     }
 
-    await batch.commit(); // Executa as atualizações
+    await batch.commit();
 }
 
 
@@ -645,7 +714,8 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
  */
 export async function confirmSubmission(submissionId) { 
     ensureAuthenticated();
-    const userId = currentUser.uid; 
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const userId = currentWalletAddress; 
     
     // Referências necessárias
     const userRef = doc(db, "airdrop_users", userId); // Ref ao perfil do usuário
@@ -706,7 +776,8 @@ export async function confirmSubmission(submissionId) {
  */
 export async function deleteSubmission(submissionId) { 
     ensureAuthenticated();
-    const userId = currentUser.uid; 
+    // <-- CORREÇÃO: Usa currentWalletAddress (ID real)
+    const userId = currentWalletAddress; 
     
     const submissionRef = doc(db, "airdrop_users", userId, "submissions", submissionId);
     const logSubmissionRef = doc(db, "all_submissions_log", submissionId);
@@ -761,11 +832,11 @@ export async function deleteSubmission(submissionId) {
  * @param {object} newPoints Objeto com { 'PlatformName': points }.
  */
 export async function updateUgcBasePoints(newPoints) {
-    const dataRef = doc(db, "airdrop_public_data", "data_v1"); //
+    const dataRef = doc(db, "airdrop_public_data", "data_v1");
     // Usa setDoc com merge: true para atualizar apenas config.ugcBasePoints
-    await setDoc(dataRef, { //
-        config: { //
-            ugcBasePoints: newPoints //
+    await setDoc(dataRef, {
+        config: {
+            ugcBasePoints: newPoints
         }
     }, { merge: true }); // Merge evita apagar outros campos em 'config'
 }
@@ -775,15 +846,15 @@ export async function updateUgcBasePoints(newPoints) {
  * @returns {Promise<Array<object>>} Lista de tarefas.
  */
 export async function getAllTasksForAdmin() {
-    const tasksCol = collection(db, "daily_tasks"); //
-    const q = query(tasksCol, orderBy("endDate", "asc")); // Ordena por data de término
-    const snapshot = await getDocs(q); //
+    const tasksCol = collection(db, "daily_tasks");
+    const q = query(tasksCol, orderBy("endDate", "asc"));
+    const snapshot = await getDocs(q);
     // Mapeia e converte timestamps para Date
-    return snapshot.docs.map(doc => ({ //
-        id: doc.id, //
-        ...doc.data(), //
-        startDate: doc.data().startDate?.toDate ? doc.data().startDate.toDate() : null, //
-        endDate: doc.data().endDate?.toDate ? doc.data().endDate.toDate() : null, //
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        startDate: doc.data().startDate?.toDate ? doc.data().startDate.toDate() : null,
+        endDate: doc.data().endDate?.toDate ? doc.data().endDate.toDate() : null,
     }));
 }
 
@@ -792,19 +863,19 @@ export async function getAllTasksForAdmin() {
  * @param {object} taskData Dados da tarefa (com ou sem id).
  */
 export async function addOrUpdateDailyTask(taskData) {
-     const dataToSave = { ...taskData }; //
+     const dataToSave = { ...taskData };
      // Converte Date para Timestamp antes de salvar
-    if (dataToSave.startDate instanceof Date) dataToSave.startDate = Timestamp.fromDate(dataToSave.startDate); //
-    if (dataToSave.endDate instanceof Date) dataToSave.endDate = Timestamp.fromDate(dataToSave.endDate); //
+    if (dataToSave.startDate instanceof Date) dataToSave.startDate = Timestamp.fromDate(dataToSave.startDate);
+    if (dataToSave.endDate instanceof Date) dataToSave.endDate = Timestamp.fromDate(dataToSave.endDate);
 
-     const taskId = taskData.id; //
+     const taskId = taskData.id;
      // Remove ID se for criação ou se estiver vazio/null
-     if (!taskId) { //
-         delete dataToSave.id; //
+     if (!taskId) {
+         delete dataToSave.id;
          await addDoc(collection(db, "daily_tasks"), dataToSave); // Cria novo
-     } else { //
+     } else {
          // Atualiza documento existente
-         const taskRef = doc(db, "daily_tasks", taskId); //
+         const taskRef = doc(db, "daily_tasks", taskId);
          delete dataToSave.id; // Não salva o ID dentro do documento
          await setDoc(taskRef, dataToSave, { merge: true }); // Merge para atualização
      }
@@ -815,87 +886,95 @@ export async function addOrUpdateDailyTask(taskData) {
  * @param {string} taskId ID da tarefa a ser deletada.
  */
 export async function deleteDailyTask(taskId) {
-    if (!taskId) throw new Error("Task ID is required for deletion."); //
-    await deleteDoc(doc(db, "daily_tasks", taskId)); //
+    if (!taskId) throw new Error("Task ID is required for deletion.");
+    await deleteDoc(doc(db, "daily_tasks", taskId));
 }
+
+
+// -----------------------------------------------------------------
+// NOTA: O 'userId' nos parâmetros das funções abaixo agora é o 
+// endereço da carteira, o que está correto.
+// -----------------------------------------------------------------
+
 
 /**
  * Busca todas as submissões pendentes, em auditoria ou flagradas para revisão do admin.
+ * (VERSÃO OTIMIZADA: Busca do 'all_submissions_log' em vez de fazer N+1 queries)
  * @returns {Promise<Array<object>>} Lista de submissões para revisão.
  */
 export async function getAllSubmissionsForAdmin() {
-    // Mantendo a busca por usuário para pegar walletAddress atualizado
-    const allSubmissions = []; //
-    const usersSnapshot = await getDocs(collection(db, "airdrop_users")); //
+    // 1. Referencia a coleção de LOG CENTRAL
+    const logCol = collection(db, "all_submissions_log");
 
-    for (const userDoc of usersSnapshot.docs) { //
-        const userId = userDoc.id; //
-        const userData = userDoc.data(); //
+    // 2. Cria a consulta para buscar apenas os status relevantes
+    const q = query(logCol,
+        where("status", "in", ["pending", "auditing", "flagged_suspicious"]),
+        orderBy("submittedAt", "desc") // Ordena pelos mais recentes
+    );
 
-        const submissionsCol = collection(db, "airdrop_users", userId, "submissions"); //
-        // Busca status relevantes para admin
-        const q = query(submissionsCol, //
-            where("status", "in", ["pending", "auditing", "flagged_suspicious"]), //
-            orderBy("submittedAt", "desc") //
-        );
-        const submissionsSnapshot = await getDocs(q); //
+    // 3. Executa APENAS UMA CONSULTA
+    const logSnapshot = await getDocs(q);
 
-        submissionsSnapshot.forEach(subDoc => { //
-             const subData = subDoc.data(); //
-            allSubmissions.push({ //
-                userId: userId, //
-                walletAddress: userData.walletAddress, // Pega do perfil
-                submissionId: subDoc.id, //
-                ...subData, //
-                submittedAt: subData.submittedAt?.toDate ? subData.submittedAt.toDate() : null, //
-                resolvedAt: subData.resolvedAt?.toDate ? subData.resolvedAt.toDate() : null, //
-            });
-        });
-    }
-    // Reordena todas pela data de envio geral (mais recentes primeiro)
-    allSubmissions.sort((a, b) => (b.submittedAt?.getTime() || 0) - (a.submittedAt?.getTime() || 0)); //
-    return allSubmissions; //
+    // 4. Mapeia os resultados
+    return logSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+            // O log já contém userId e walletAddress
+            // <-- NOTA: data.userId AGORA É O ENDEREÇO DA CARTEIRA
+            userId: data.userId,
+            walletAddress: data.walletAddress,
+            submissionId: doc.id, // O ID do documento é o ID da submissão
+            ...data,
+            // Converte timestamps
+            submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate() : null,
+            resolvedAt: data.resolvedAt?.toDate ? data.resolvedAt.toDate() : null,
+        };
+    });
 }
 
 
 /**
  * Atualiza o status de uma submissão (pelo Admin).
  * Se aprovar, concede os pontos. Se rejeitar, apenas incrementa a rejeição.
- * @param {string} userId ID do usuário Firebase.
+ * @param {string} userId ID do usuário (AGORA É A CARTEIRA).
  * @param {string} submissionId ID da submissão.
  * @param {string} status Novo status ('approved' ou 'rejected').
  */
 export async function updateSubmissionStatus(userId, submissionId, status) {
-    const userRef = doc(db, "airdrop_users", userId); //
-    const submissionRef = doc(db, "airdrop_users", userId, "submissions", submissionId); //
-    const logSubmissionRef = doc(db, "all_submissions_log", submissionId); //
+    // <-- NOTA: userId aqui é a CARTEIRA (vindo do log)
+    const userRef = doc(db, "airdrop_users", userId);
+    const submissionRef = doc(db, "airdrop_users", userId, "submissions", submissionId);
+    const logSubmissionRef = doc(db, "all_submissions_log", submissionId);
 
     // Lê os 3 documentos
-    const [userSnap, submissionSnap, logSnap] = await Promise.all([ //
-         getDoc(userRef), getDoc(submissionRef), getDoc(logSubmissionRef) //
+    const [userSnap, submissionSnap, logSnap] = await Promise.all([
+         getDoc(userRef), getDoc(submissionRef), getDoc(logSubmissionRef)
     ]);
 
-    if (!submissionSnap.exists()) throw new Error("Submission not found in user collection."); //
-    if (!userSnap.exists()) throw new Error("User profile not found."); //
-    if (!logSnap.exists()) console.warn(`Log entry ${submissionId} not found. Log will not be updated.`); //
+    if (!submissionSnap.exists()) throw new Error("Submission not found in user collection.");
+    if (!userSnap.exists()) throw new Error("User profile not found.");
+    if (!logSnap.exists()) console.warn(`Log entry ${submissionId} not found. Log will not be updated.`);
 
-    const submissionData = submissionSnap.data(); //
-    const userData = userSnap.data(); //
-    const currentStatus = submissionData.status; //
+    const submissionData = submissionSnap.data();
+    const userData = userSnap.data();
+    const currentStatus = submissionData.status;
 
     // Evita processamento desnecessário
-    if (currentStatus === status) { //
-        console.warn(`Admin action ignored: Submission ${submissionId} already has status ${status}.`); //
-        return; //
+    if (currentStatus === status) {
+        console.warn(`Admin action ignored: Submission ${submissionId} already has status ${status}.`);
+        return;
     }
 
-    const batch = writeBatch(db); //
-    const userUpdates = {}; // Atualizações para o perfil do usuário
-    let finalPointsAwarded = 0; // Padrão é 0
-    let finalMultiplier = submissionData._multiplierApplied || 0; //
+    const batch = writeBatch(db);
+    const userUpdates = {};
+    let finalPointsAwarded = 0;
+    // --- CORREÇÃO: Mantém o multiplicador salvo na submissão ---
+    let finalMultiplier = submissionData._multiplierApplied || 0; 
+    // --- FIM CORREÇÃO ---
+
 
     // --- Lógica de Aprovação pelo Admin ---
-    if (status === 'approved') { //
+    if (status === 'approved') {
         // Se estava 'rejected', 'pending', 'auditing', 'flagged' (qualquer estado que não 'approved')
         // CONCEDE OS PONTOS E INCREMENTA A CONTAGEM
         
@@ -911,51 +990,119 @@ export async function updateSubmissionStatus(userId, submissionId, status) {
         }
 
     // --- Lógica de Rejeição pelo Admin ---
-    } else if (status === 'rejected') { //
+    } else if (status === 'rejected') {
         
         // NENHUM PONTO É DESCONTADO (pois nunca foram dados)
 
         // Incrementa rejeição e aplica banimento, *apenas se não estava rejeitado antes*
         if (currentStatus !== 'rejected') {
-            const currentRejectedCount = userData.rejectedCount || 0; //
-            userUpdates.rejectedCount = increment(1); //
+            const currentRejectedCount = userData.rejectedCount || 0;
+            userUpdates.rejectedCount = increment(1);
             if (currentRejectedCount + 1 >= 3) { // Limite para banimento
-                userUpdates.isBanned = true; //
+                userUpdates.isBanned = true;
             }
         }
+        // Se estava 'approved' antes, remove os pontos
+        else if (currentStatus === 'approved') {
+             const pointsToRemove = submissionData.pointsAwarded || 0;
+             userUpdates.totalPoints = increment(-pointsToRemove);
+             userUpdates.approvedSubmissionsCount = increment(-1);
+             // E adiciona a rejeição
+             const currentRejectedCount = userData.rejectedCount || 0;
+             userUpdates.rejectedCount = increment(1);
+             if (currentRejectedCount + 1 >= 3) {
+                 userUpdates.isBanned = true;
+             }
+        }
+
 
         // Zera os campos na submissão ao rejeitar
-        finalPointsAwarded = 0; //
-        finalMultiplier = 0; //
+        finalPointsAwarded = 0;
+        // --- CORREÇÃO: Mantém o multiplicador salvo para referência ---
+        // finalMultiplier = 0; // (Não zera, apenas os pontos)
+        // --- FIM CORREÇÃO ---
     }
 
     // --- Aplica Atualizações ---
     // Garante que contagens/pontos não fiquem negativos
-    if (userUpdates.approvedSubmissionsCount?.operand < 0 && (userData.approvedSubmissionsCount || 0) <= 0) userUpdates.approvedSubmissionsCount = 0; //
-    if (userUpdates.rejectedCount?.operand < 0 && (userData.rejectedCount || 0) <= 0) userUpdates.rejectedCount = 0; // Correção aqui
-    if (userUpdates.totalPoints?.operand < 0 && (userData.totalPoints || 0) < Math.abs(userUpdates.totalPoints.operand)) userUpdates.totalPoints = 0; //
+    if (userUpdates.approvedSubmissionsCount?.operand < 0 && (userData.approvedSubmissionsCount || 0) <= 0) userUpdates.approvedSubmissionsCount = 0;
+    if (userUpdates.rejectedCount?.operand < 0 && (userData.rejectedCount || 0) <= 0) userUpdates.rejectedCount = 0;
+    if (userUpdates.totalPoints?.operand < 0 && (userData.totalPoints || 0) < Math.abs(userUpdates.totalPoints.operand)) userUpdates.totalPoints = 0;
 
     // Aplica atualizações no usuário (se houver)
-    if (Object.keys(userUpdates).length > 0) { //
-        batch.update(userRef, userUpdates); //
+    if (Object.keys(userUpdates).length > 0) {
+        batch.update(userRef, userUpdates);
     }
 
     // Atualiza submissão do usuário
-    batch.update(submissionRef, { //
-        status: status, //
+    batch.update(submissionRef, {
+        status: status,
         pointsAwarded: finalPointsAwarded, // Salva 0 se rejeitado, ou os pontos calculados se aprovado
-        multiplierApplied: finalMultiplier, // Salva 0 se rejeitado, ou o multiplicador usado se aprovado
+        _multiplierApplied: finalMultiplier, // <-- Salva o multiplicador usado
         resolvedAt: serverTimestamp() // Marca como resolvido pelo admin
     });
 
     // Atualiza log central (se existir)
-    if (logSnap.exists()) { //
-        batch.update(logSubmissionRef, { //
-            status: status, //
-            resolvedAt: serverTimestamp() //
+    if (logSnap.exists()) {
+        batch.update(logSubmissionRef, {
+            status: status,
+            resolvedAt: serverTimestamp()
         });
     }
 
     // Executa o batch
-    await batch.commit(); //
+    await batch.commit();
+}
+
+
+/**
+ * Busca todos os perfis de usuário do Airdrop para o painel admin.
+ * @returns {Promise<Array<object>>} Lista de usuários.
+ */
+export async function getAllAirdropUsers() {
+    const usersCol = collection(db, "airdrop_users");
+    const q = query(usersCol, orderBy("totalPoints", "desc")); // Ordena por pontos
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+        id: doc.id, // <-- NOTA: Este ID AGORA É A CARTEIRA
+        ...doc.data(),
+    }));
+}
+
+/**
+ * Busca submissões de um usuário específico para o admin (ex: 'rejected').
+ * @param {string} userId O ID do usuário (AGORA É A CARTEIRA).
+ * @param {string} status O status para filtrar ('rejected', 'approved', etc.)
+ * @returns {Promise<Array<object>>} Lista de submissões.
+ */
+export async function getUserSubmissionsForAdmin(userId, status) {
+    if (!userId) throw new Error("User ID is required.");
+    // <-- NOTA: userId aqui é a CARTEIRA
+    const submissionsCol = collection(db, "airdrop_users", userId, "submissions");
+    const q = query(submissionsCol, where("status", "==", status), orderBy("resolvedAt", "desc"));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+        submissionId: doc.id,
+        userId: userId, // Adiciona o userId (carteira)
+        ...doc.data(),
+        submittedAt: doc.data().submittedAt?.toDate ? doc.data().submittedAt.toDate() : null,
+        resolvedAt: doc.data().resolvedAt?.toDate ? doc.data().resolvedAt.toDate() : null,
+    }));
+}
+
+/**
+ * Define manualmente o status de banimento de um usuário.
+ * @param {string} userId O ID do usuário (AGORA É A CARTEIRA).
+ * @param {boolean} isBanned True para banir, False para desbanir.
+ */
+export async function setBanStatus(userId, isBanned) {
+    if (!userId) throw new Error("User ID is required.");
+    // <-- NOTA: userId aqui é a CARTEIRA
+    const userRef = doc(db, "airdrop_users", userId);
+    // Atualiza o status de ban e zera as rejeições se for desbanido
+    const updates = { isBanned: isBanned };
+    if (isBanned === false) {
+        updates.rejectedCount = 0; // Zera a contagem de rejeição ao desbanir
+    }
+    await updateDoc(userRef, updates);
 }

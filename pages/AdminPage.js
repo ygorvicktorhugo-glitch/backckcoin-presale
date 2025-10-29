@@ -115,7 +115,7 @@ const handleAdminAction = async (e) => {
     const btn = e.target.closest('button[data-action]');
     if (!btn || btn.disabled) return;
 
-    const action = btn.dataset.action;
+    const action = btn.dataset.action; // <-- AGORA VAI RECEBER 'approved' ou 'rejected'
     const submissionId = btn.dataset.submissionId;
     const userId = btn.dataset.userId;
 
@@ -135,9 +135,10 @@ const handleAdminAction = async (e) => {
     }
 
     try {
-        if (action === 'approve' || action === 'reject') {
+        // A função updateSubmissionStatus já espera 'approved' ou 'rejected'
+        if (action === 'approved' || action === 'rejected') { 
             await db.updateSubmissionStatus(userId, submissionId, action); //
-            showToast(`Submission ${action === 'approve' ? 'APPROVED' : 'REJECTED'}!`, 'success');
+            showToast(`Submission ${action === 'approved' ? 'APPROVED' : 'REJECTED'}!`, 'success');
 
             // Atualiza o estado LOCAL
             adminState.allSubmissions = adminState.allSubmissions.filter(
@@ -273,8 +274,8 @@ const handleReApproveAction = async (e) => {
      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
      try {
-         // Re-usa a função de backend, mas força 'approve'
-         await db.updateSubmissionStatus(userId, submissionId, 'approve'); //
+         // Re-usa a função de backend, mas força 'approved'
+         await db.updateSubmissionStatus(userId, submissionId, 'approved'); // <-- CORRIGIDO
          showToast('Submission re-approved!', 'success');
          
          // Remove do estado local do modal
@@ -1205,9 +1206,10 @@ const renderSubmissionsPanel = () => {
             <td class="p-3 text-xs font-semibold ${statusUI[item.status]?.color || 'text-gray-500'}">${statusUI[item.status]?.text || item.status}</td>
             <td class="p-3 text-right">
                 <div class="flex items-center justify-end gap-2">
-                    <button data-user-id="${item.userId}" data-submission-id="${item.submissionId}" data-action="approve" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1 px-2 rounded transition-colors"><i class="fa-solid fa-check"></i></button>
-                    <button data-user-id="${item.userId}" data-submission-id="${item.submissionId}" data-action="reject" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded transition-colors ml-1"><i class="fa-solid fa-times"></i></button>
-                </div>
+                    
+                    <button data-user-id="${item.userId}" data-submission-id="${item.submissionId}" data-action="approved" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1 px-2 rounded transition-colors"><i class="fa-solid fa-check"></i></button>
+                    <button data-user-id="${item.userId}" data-submission-id="${item.submissionId}" data-action="rejected" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded transition-colors ml-1"><i class="fa-solid fa-times"></i></button>
+                    </div>
             </td>
         </tr>
     `).join('');

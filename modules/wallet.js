@@ -2,8 +2,9 @@
 
 const ethers = window.ethers;
 
-// --- NOVA IMPORTAÇÃO DO WEB3MODAL via CDN ESM ---
-import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
+// --- NOVA IMPORTAÇÃO DO WEB3MODAL via CDN ESM (AJUSTADA) ---
+// Mudado de 5.0.3 para @latest para corrigir o erro 404 Not Found do esm.sh
+import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@latest';
 
 import { State } from '../state.js';
 import { showToast } from '../ui-feedback.js';
@@ -127,10 +128,15 @@ async function setupSignerAndLoadData(provider, address) {
     try {
         State.provider = provider;
         State.signer = await provider.getSigner();
-        State.userAddress = address;
+        
+        // --- INÍCIO DA CORREÇÃO ---
+        // Força o endereço para minúsculas ANTES de salvá-lo no State.
+        const normalizedAddress = address.toLowerCase();
+        State.userAddress = normalizedAddress; // <-- MUDANÇA (salva o endereço minúsculo)
+        // --- FIM DA CORREÇÃO ---
 
         // --- CORREÇÃO: Autentica no Firebase usando a CARTEIRA como ID primário ---
-        await signIn(State.userAddress); // Autentica no Firebase E carrega o perfil Airdrop (getAirdropUser)
+        await signIn(State.userAddress); // <-- MUDANÇA (agora passa o endereço minúsculo)
         // --- FIM DA CORREÇÃO ---
 
         instantiateContracts(State.signer); // Instancia com o signer

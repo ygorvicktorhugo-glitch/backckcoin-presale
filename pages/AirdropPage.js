@@ -351,7 +351,16 @@ async function handleGoToTask(e) {
         const pointsEarned = await db.recordDailyTaskCompletion(task, airdropState.user.pointsMultiplier);
         showToast(`Task complete! +${pointsEarned} points!`, "success");
 
-        // Atualizar o estado local e iniciar o timer visual
+        // ==========================================================
+        //  INÍCIO DA CORREÇÃO (BUG DOS PONTOS/STALE DATA) - JÁ APLICADA
+        // ==========================================================
+        
+        // 1. Atualiza o estado local IMEDIATAMENTE (Atualização Otimista)
+        if (airdropState.user) {
+            airdropState.user.totalPoints = (airdropState.user.totalPoints || 0) + pointsEarned;
+        }
+
+        // 2. Atualiza o estado local da tarefa e inicia o timer visual
         const taskIndex = airdropState.dailyTasks.findIndex(t => t.id === taskId);
         if (taskIndex > -1) {
             const cooldownMs = task.cooldownHours * 3600000;
@@ -365,18 +374,25 @@ async function handleGoToTask(e) {
                 startIndividualCooldownTimer(cardLink, statusBadge, cooldownMs);
             }
         }
-
-        // Recarregar dados após um curto delay
-        setTimeout(async () => {
-            await loadAirdropData();
-            if (airdropState.activeSubmitTab === 'daily-tasks') {
-                 const contentEl = document.getElementById('airdrop-content-wrapper').querySelector('#active-tab-content');
-                 if(contentEl) {
-                     const hasPending = contentEl.dataset.hasPendingConfirmations === 'true';
-                     renderSubmitEarnContent(contentEl, hasPending);
-                 }
-            }
-        }, 500);
+        
+        // 3. Re-renderiza a aba atual com os dados locais atualizados
+        if (airdropState.activeSubmitTab === 'daily-tasks') {
+             const contentEl = document.getElementById('airdrop-content-wrapper').querySelector('#active-tab-content');
+             if(contentEl) {
+                 const hasPending = contentEl.dataset.hasPendingConfirmations === 'true';
+                 renderSubmitEarnContent(contentEl, hasPending); // Re-renderiza a aba de tarefas
+             }
+        } else if (airdropState.activeMainTab === 'profile') {
+             // Se o usuário estiver na aba de perfil, re-renderiza o perfil
+             const activeContentEl = document.getElementById('active-tab-content');
+             if(activeContentEl) {
+                renderProfileContent(activeContentEl);
+             }
+        }
+        
+        // ==========================================================
+        //  FIM DA CORREÇÃO
+        // ==========================================================
 
     } catch (error) {
         if (error.message.includes("Cooldown period is still active")) {
@@ -531,43 +547,74 @@ async function handleConfirmAuthenticity(e) {
     const submissionId = button.dataset.submissionId;
     if (!submissionId) return;
 
-    // Captura estado antigo ANTES de confirmar
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (BUG DOS PONTOS/STALE DATA)
+    // ==========================================================
+
+    // 1. Encontra a submissão e os pontos que ela vale ANTES de chamar o DB
+    const submission = airdropState.userSubmissions.find(s => s.submissionId === submissionId);
+    
+    // [AJUSTE PÓS-CORREÇÃO DO FIREBASE]
+    // Se a submissão for antiga (sem _pointsCalculated), não podemos confiar nela.
+    // Vamos deixar o backend (que foi corrigido) calcular e vamos RECARREGAR.
+    // A animação de pontos não funcionará para posts legados, mas os pontos serão somados.
+    const isLegacyPost = !submission || typeof submission._pointsCalculated !== 'number' || submission._pointsCalculated <= 0;
+    
+    let pointsToAward = 0;
+    if (!isLegacyPost) {
+         pointsToAward = submission._pointsCalculated;
+    }
+
+    // 2. Captura o estado antigo para a animação
     const oldTotalPoints = airdropState.user?.totalPoints || 0;
     const oldApprovedCount = airdropState.user?.approvedSubmissionsCount || 0;
-    // ==========================================================
-    //  INÍCIO DA ALTERAÇÃO (Cálculo de Pontos)
-    // ==========================================================
-    const oldMultiplier = getMultiplierByTier(oldApprovedCount); // <-- MUDANÇA
-    // ==========================================================
-    //  FIM DA ALTERAÇÃO
-    // ==========================================================
+    const oldMultiplier = getMultiplierByTier(oldApprovedCount);
 
     // Feedback visual no botão do modal
     button.disabled = true;
     renderLoading(button, 'Confirming...');
 
     try {
-        // Chama a função de confirmação do backend
+        // 3. Chama a função de confirmação do backend
         await db.confirmSubmission(submissionId);
         showToast("Post confirmed and points awarded!", "success");
 
         closeModal(); // Fecha o modal
 
-        // Atualiza o estado para mover o item e obter novos totais
-        await loadAirdropData();
-        // Renderiza o conteúdo (isso recria os elementos de exibição)
+        // 4. ATUALIZAÇÃO OTIMISTA (A CORREÇÃO)
+        
+        // [AJUSTE PÓS-CORREÇÃO DO FIREBASE]
+        // Se for um post legado, NÃO fazemos a atualização otimista (frontend)
+        // porque não sabemos os pontos. Em vez disso, forçamos um reload (backend).
+        if (isLegacyPost) {
+             console.warn("Legacy post confirmed. Forcing data reload from DB...");
+             await loadAirdropData();
+             renderAirdropContent();
+             return;
+        }
+        
+        // --- Atualização Otimista (Apenas para posts novos) ---
+        if (airdropState.user) {
+            airdropState.user.totalPoints += pointsToAward;
+            airdropState.user.approvedSubmissionsCount += 1;
+        }
+        // Atualiza o item na lista de submissões local
+        if (submission) {
+            submission.status = 'approved';
+            submission.pointsAwarded = pointsToAward;
+            submission.resolvedAt = new Date(); // Suficiente para a UI
+        }
+
+        // 5. REMOVE a leitura de dados antigos
+        // await loadAirdropData(); // <-- REMOVIDO (Causa do bug)
+
+        // 6. Renderiza o conteúdo com o NOVO estado local
         renderAirdropContent();
 
-        // Aciona a Animação pós-renderização
+        // 7. Aciona a Animação (agora com os dados corretos)
         const newTotalPoints = airdropState.user?.totalPoints || 0;
         const newApprovedCount = airdropState.user?.approvedSubmissionsCount || 0;
-        // ==========================================================
-        //  INÍCIO DA ALTERAÇÃO (Cálculo de Pontos)
-        // ==========================================================
-        const newMultiplier = getMultiplierByTier(newApprovedCount); // <-- MUDANÇA
-        // ==========================================================
-        //  FIM DA ALTERAÇÃO
-        // ==========================================================
+        const newMultiplier = getMultiplierByTier(newApprovedCount);
 
 
         const pointsDisplayEl = document.getElementById('history-total-points-display');
@@ -581,11 +628,11 @@ async function handleConfirmAuthenticity(e) {
         }
 
     } catch (error) {
-         // Trata a falha de concorrência ou "já processado"
+         // 8. Em caso de erro, AÍ SIM recarregamos do DB para re-sincronizar
         if (error.message.includes("Document not found or already processed") || error.message.includes("already in status")) {
              showToast(`Action failed: This submission was already processed or deleted. Refreshing...`, "warning");
              closeModal();
-             await loadAirdropData();
+             await loadAirdropData(); // Re-sincroniza
              renderAirdropContent();
              return;
         }
@@ -595,7 +642,14 @@ async function handleConfirmAuthenticity(e) {
          // Restaura o botão do modal em caso de erro
          button.disabled = false;
          button.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Confirm Authenticity';
+         
+         // Re-sincroniza em caso de falha
+         await loadAirdropData();
+         renderAirdropContent();
     }
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
 }
 
 
@@ -947,21 +1001,15 @@ function renderSubmitEarnContent(el, hasPendingConfirmations = false) { // <-- [
 
 // --- (MODIFICADO) SUB-TAB 2.1: Content Submission Panel (Tradução e Layout de Card) ---
 function renderSubmissionPanelContent() {
-    // Calculate Stats (Box)
-    const stats = { total: 0, pending: 0, approved: 0, rejected: 0 };
-    let pendingPoints = 0; // Pontos aguardando confirmação
-    if (airdropState.userSubmissions) {
-         airdropState.userSubmissions.forEach(sub => {
-            stats.total++;
-            if (sub.status === 'approved') stats.approved++;
-            else if (sub.status === 'rejected' || sub.status === 'flagged_suspicious' || sub.status === 'deleted_by_user') stats.rejected++;
-            else if (sub.status === 'pending' || sub.status === 'auditing') {
-                stats.pending++;
-                pendingPoints += (sub._pointsCalculated || 0);
-            }
-        });
-     }
-
+    
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (BUG DA CONTAGEM)
+    // ==========================================================
+    // O bloco de cálculo de 'stats' foi REMOVIDO DAQUI (era aprox. linha 901-915).
+    // Ele agora é calculado *APÓS* as listas (pendingSubmissions, finalizedSubmissions)
+    // serem filtradas, para garantir que os números sejam consistentes.
+    // ==========================================================
+    
     // --- Obter dados do usuário para os contadores do cabeçalho ---
     const user = airdropState.user;
     let headerTotalPoints = 0;
@@ -978,6 +1026,65 @@ function renderSubmissionPanelContent() {
         // ==========================================================
         headerMultiplierDisplay = `${multiplier.toFixed(1)}x`;
     }
+
+    // --- Render Submission History Tabs ---
+    const getHistoryTabBtnClass = (tabName) => {
+        const baseClass = 'history-tab-btn flex-1 sm:flex-none text-center sm:text-left justify-center sm:justify-start flex items-center gap-2 py-2 px-4 text-sm font-semibold transition-colors border-b-2 focus:outline-none rounded-t-md';
+        return airdropState.activeHistoryTab === tabName
+            ? `${baseClass} border-amber-500 text-amber-400 bg-main`
+            : `${baseClass} text-zinc-400 hover:text-white border-transparent hover:border-zinc-500/50`;
+    };
+
+    // Filtra as listas
+    const nowMs = Date.now();
+    const twoHoursMs = AUTO_APPROVE_HOURS * 60 * 60 * 1000;
+
+    const pendingSubmissions = airdropState.userSubmissions.filter(sub =>
+        ['pending', 'auditing', 'flagged_suspicious'].includes(sub.status)
+    ).sort((a, b) => (b.submittedAt?.getTime() || 0) - (a.submittedAt?.getTime() || 0));
+
+    const finalizedSubmissions = airdropState.userSubmissions.filter(sub =>
+        ['approved', 'rejected', 'deleted_by_user'].includes(sub.status)
+    ).sort((a, b) => (b.submittedAt?.getTime() || 0) - (a.submittedAt?.getTime() || 0));
+
+
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Cálculo de Estatísticas)
+    // ==========================================================
+    
+    // Calcula os stats A PARTIR das listas filtradas para garantir consistência
+    // com o que é exibido nas abas "Pending" e "Finalized".
+    
+    const stats = { total: 0, pending: 0, approved: 0, rejected: 0 };
+    let pendingPoints = 0; // Pontos aguardando confirmação
+
+    // 1. Contar Aprovados (da lista de finalizados)
+    stats.approved = finalizedSubmissions.filter(sub => sub.status === 'approved').length;
+
+    // 2. Contar Rejeitados (de ambas as listas)
+    const rejectedFinalizedCount = finalizedSubmissions.filter(sub => ['rejected', 'deleted_by_user'].includes(sub.status)).length;
+    const rejectedPendingCount = pendingSubmissions.filter(sub => sub.status === 'flagged_suspicious').length;
+    stats.rejected = rejectedFinalizedCount + rejectedPendingCount;
+
+    // 3. Contar Pendentes (da lista de pendentes)
+    // NOTA: 'flagged_suspicious' agora conta como 'Rejected' no box, não 'Pending'
+    stats.pending = pendingSubmissions.filter(sub => ['pending', 'auditing'].includes(sub.status)).length;
+    
+    // 4. Calcular Total (Soma das categorias)
+    // Isso corrige o bug onde posts com status 'null' inflavam o total.
+    stats.total = stats.approved + stats.rejected + stats.pending;
+
+    // 5. Calcular pontos pendentes (apenas de 'pending' e 'auditing')
+    pendingSubmissions.forEach(sub => {
+        if (['pending', 'auditing'].includes(sub.status)) {
+            pendingPoints += (sub._pointsCalculated || 0);
+        }
+    });
+    
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
+
 
     const statsHtml = `
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -1009,26 +1116,6 @@ function renderSubmissionPanelContent() {
                 animation: pop 0.2s ease-out;
             }
         </style>`;
-
-    // --- Render Submission History Tabs ---
-    const getHistoryTabBtnClass = (tabName) => {
-        const baseClass = 'history-tab-btn flex-1 sm:flex-none text-center sm:text-left justify-center sm:justify-start flex items-center gap-2 py-2 px-4 text-sm font-semibold transition-colors border-b-2 focus:outline-none rounded-t-md';
-        return airdropState.activeHistoryTab === tabName
-            ? `${baseClass} border-amber-500 text-amber-400 bg-main`
-            : `${baseClass} text-zinc-400 hover:text-white border-transparent hover:border-zinc-500/50`;
-    };
-
-    // Filtra as listas
-    const nowMs = Date.now();
-    const twoHoursMs = AUTO_APPROVE_HOURS * 60 * 60 * 1000;
-
-    const pendingSubmissions = airdropState.userSubmissions.filter(sub =>
-        ['pending', 'auditing', 'flagged_suspicious'].includes(sub.status)
-    ).sort((a, b) => (b.submittedAt?.getTime() || 0) - (a.submittedAt?.getTime() || 0));
-
-    const finalizedSubmissions = airdropState.userSubmissions.filter(sub =>
-        ['approved', 'rejected', 'deleted_by_user'].includes(sub.status)
-    ).sort((a, b) => (b.submittedAt?.getTime() || 0) - (a.submittedAt?.getTime() || 0));
 
 
     // --- (MODIFICADO) Renderiza o item do histórico (função helper genérica) ---
@@ -1155,79 +1242,108 @@ function renderSubmissionPanelContent() {
             </div>
 
             <div id="ugc-submission-history-content">
+
                 <div id="pending-submissions-list" class="${airdropState.activeHistoryTab === 'pending' ? '' : 'hidden'}">
                     ${pendingSubmissions.length > 0
                         ? pendingSubmissions.map((sub, index) => renderHistoryItem(sub, index, pendingSubmissions.length, true)).join('')
-                        : renderNoData(null, 'You have no submissions awaiting confirmation.')}
+                        : '<p class="text-zinc-400 text-center p-4">You have no submissions awaiting confirmation.</p>'}
                 </div>
                 <div id="finalized-submissions-list" class="${airdropState.activeHistoryTab === 'finalized' ? '' : 'hidden'}">
                     ${finalizedSubmissions.length > 0
                         ? finalizedSubmissions.map((sub, index) => renderHistoryItem(sub, index, finalizedSubmissions.length, false)).join('')
-                        : renderNoData(null, 'You have no finalized submissions.')}
+                        : '<p class="text-zinc-400 text-center p-4">You have no finalized submissions.</p>'}
                 </div>
             </div>
         </div>
     `;
-}
+} // <-- FECHAMENTO CORRETO DA FUNÇÃO renderSubmissionPanelContent
 
 // --- SUB-TAB 2.2: Daily Tasks Panel (REDESENHADO) ---
 function renderDailyTasksPanelContent() {
      // Clear timers when switching away from this panel
-     document.querySelectorAll('.task-card-link').forEach(card => { /* clear timers */ });
-
-    // --- Render Task List ---
-     const tasksHtml = airdropState.dailyTasks.length > 0 ? airdropState.dailyTasks.map(task => {
-        if (task.error) return ``;
-
-        const points = Math.round(task.points);
-        const isEligible = task.eligible;
-        const expiryDate = task.endDate ? task.endDate.toLocaleDateString('en-US') : 'N/A';
-
-        // Determine initial status text/state
-        let statusHTML;
-        // Status chip class (discreto e lateral)
-        let statusClass = 'task-status-badge font-bold text-xs py-2 px-3 rounded-xl transition-colors duration-200 shrink-0';
-        // O card inteiro é o link clicável
-        let cardClass = 'task-card-link bg-main border border-border-color rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all duration-200 hover:bg-zinc-800/50 hover:border-amber-500/50 cursor-pointer block decoration-none focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-sidebar';
-
-        if (isEligible) {
-             statusHTML = task.url ? 'Go & Earn' : 'Earn Points';
-             statusClass += ' bg-amber-600 hover:bg-amber-700 text-white';
-        } else {
-            // Remove 'Cooldown: ' para evitar quebra de linha no badge
-            statusHTML = formatTimeLeft(task.timeLeftMs).replace('Cooldown: ', '');
-            // O card em cooldown tem opacidade e o cursor-not-allowed
-            cardClass += ' task-disabled opacity-80 cursor-not-allowed';
-            statusClass += ' bg-zinc-700 text-zinc-400';
+     document.querySelectorAll('.task-card-link').forEach(card => {
+        if (card._cooldownInterval) {
+            clearInterval(card._cooldownInterval);
+            card._cooldownInterval = null;
         }
+     });
 
-        // Task Card as an `<a>` link
-        return `
-            <a href="${task.url || '#'}" ${task.url ? 'target="_blank" rel="noopener noreferrer"' : ''}
-               class="${cardClass}"
-               data-task-id="${task.id}"
-               data-task-url="${task.url || ''}"
-               onclick="return false;" >
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Esconder Tarefas em Cooldown E Bug 'undefined')
+    // ==========================================================
+    
+    // 1. Filtra apenas as tarefas que estão elegíveis (sem cooldown e sem erro)
+    const eligibleTasks = airdropState.dailyTasks.filter(task => task.eligible && !task.error);
+    const allTasksCount = airdropState.dailyTasks.filter(task => !task.error).length;
 
-                <div class="flex flex-col flex-grow items-center text-center min-w-0 pr-4">
-                    <h4 class="font-extrabold text-xl text-white truncate w-full">${task.title}</h4>
-                    <p class="text-sm text-zinc-300 mt-1 mb-3">${task.description || 'Complete the required action.'}</p>
+    // 2. Define uma mensagem "No Data" inteligente
+    let noDataMessage = '<i class="fa-solid fa-coffee mr-2"></i> No active daily tasks right now.';
+    if (allTasksCount > 0 && eligibleTasks.length === 0) {
+        // Se existem tarefas, mas nenhuma está elegível (todas em cooldown)
+        noDataMessage = '<i class="fa-solid fa-clock mr-2"></i> All tasks are currently on cooldown. Check back later!';
+    }
 
-                    <div class="flex items-center gap-4 text-xs text-zinc-500 flex-wrap justify-center">
-                        <span class="text-yellow-500 font-semibold"><i class="fa-solid fa-star mr-1"></i> +${points.toLocaleString('en-US')} Points</span>
-                        <span><i class="fa-solid fa-clock mr-1"></i> Cooldown: ${task.cooldownHours}h</span>
-                        <span><i class="fa-solid fa-calendar-times mr-1"></i> Expires: ${expiryDate}</span>
+    // --- Render Task List (Mapeia APENAS tarefas elegíveis) ---
+    // Substituído renderNoData por HTML inline para corrigir o bug "undefined"
+    let tasksHtml;
+    if (eligibleTasks.length > 0) {
+         tasksHtml = eligibleTasks.map(task => {
+            // A verificação 'if (task.error)' não é mais necessária aqui
+            // A verificação 'if (isEligible)' não é mais necessária aqui
+
+            const points = Math.round(task.points);
+            const expiryDate = task.endDate ? task.endDate.toLocaleDateString('en-US') : 'N/A';
+
+            // 3. Simplifica a lógica de status, pois a tarefa é SEMPRE elegível
+            let statusHTML = task.url ? '<i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> Go & Earn' : '<i class="fa-solid fa-check mr-1"></i> Earn Points';
+            let statusClass = 'task-status-badge font-bold text-xs py-2 px-3 rounded-xl transition-colors duration-200 shrink-0';
+            let cardClass = 'task-card-link bg-main border border-border-color rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all duration-200 hover:bg-zinc-800/50 hover:border-amber-500/50 cursor-pointer block decoration-none focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-sidebar';
+
+            statusClass += ' bg-amber-600 hover:bg-amber-700 text-white';
+            // O 'else' branch (que renderizava o timer e desabilitava o card) foi removido.
+
+            // Task Card as an `<a>` link
+            return `
+                <a href="${task.url || '#'}" ${task.url ? 'target="_blank" rel="noopener noreferrer"' : ''}
+                   class="${cardClass}"
+                   data-task-id="${task.id}"
+                   data-task-url="${task.url || ''}"
+                   onclick="return false;" >
+
+                    <div class="flex flex-col flex-grow items-center text-center min-w-0 pr-4">
+                        <h4 class="font-extrabold text-xl text-white truncate w-full">${task.title}</h4>
+                        
+                        <p class="text-sm text-zinc-300 mt-1 mb-3 break-words">
+                            ${task.description || 'Complete the required action.'}
+                        </p>
+
+                        <div class="flex items-center gap-4 text-xs text-zinc-500 flex-wrap justify-center">
+                            <span class="text-yellow-500 font-semibold"><i class="fa-solid fa-star mr-1"></i> +${points.toLocaleString('en-US')} Points</span>
+                            <span><i class="fa-solid fa-clock mr-1"></i> Cooldown: ${task.cooldownHours}h</span>
+                            <span><i class="fa-solid fa-calendar-times mr-1"></i> Expires: ${expiryDate}</span>
+                        </div>
                     </div>
-                </div>
 
-                <div class="flex-shrink-0 w-full sm:w-40 h-full flex items-center justify-center order-2 sm:order-3 mt-3 sm:mt-0">
-                    <span class="${statusClass} text-center w-full">
-                        ${statusHTML}
-                    </span>
-                </div>
-            </a>
+                    <div class="flex-shrink-0 w-full sm:w-40 h-full flex items-center justify-center order-2 sm:order-3 mt-3 sm:mt-0">
+                        <span class="${statusClass} text-center w-full">
+                            ${statusHTML}
+                        </span>
+                    </div>
+                </a>
+            `;
+        }).join('');
+    } else {
+        // Mensagem de "No Data" inline
+        tasksHtml = `
+            <div class="text-center p-8 bg-main border border-border-color rounded-xl mt-4">
+                <p class="text-zinc-400 text-lg">${noDataMessage}</p>
+            </div>
         `;
-    }).join('') : renderNoData(null, '<i class="fa-solid fa-coffee mr-2"></i> No active daily tasks right now.');
+    }
+
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
 
     // --- Main Tab Content ---
     return `
@@ -1240,7 +1356,12 @@ function renderDailyTasksPanelContent() {
 // --- TAB 3: RANKING ---
 function renderLeaderboardPanel(el) {
     if (!el) return;
-     document.querySelectorAll('.task-card-link').forEach(card => { /* clear timers */ });
+     document.querySelectorAll('.task-card-link').forEach(card => {
+        if (card._cooldownInterval) {
+            clearInterval(card._cooldownInterval);
+            card._cooldownInterval = null;
+        }
+     });
 
     const { leaderboards } = airdropState;
     const topByPoints = leaderboards?.top100ByPoints || [];
@@ -1331,7 +1452,7 @@ function renderLeaderboardPanel(el) {
             <div class="bg-main border border-border-color rounded-xl shadow-lg flex flex-col">
                  <div class="p-5">
                     <h3 class="text-lg font-bold mb-2 text-green-400 flex items-center gap-2"><i class="fa-solid fa-file-invoice"></i> Content Posts Ranking</h3>
-                     <p class="text-xs text-zinc-400 border-t border-zinc-700/50 pt-2">Determines your eligibility for a tiered <strong class="text-white">$BKC Reward Booster NFT</strong>.</p>
+                     <p class="text-xs text-zinc-400 border-t border-zinc-700/50 pt-2">DetermGines your eligibility for a tiered <strong class="text-white">$BKC Reward Booster NFT</strong>.</p>
                 </div>
                 <div class="p-4 bg-zinc-800 border-y border-zinc-700/50 mx-1 mb-0 rounded-t-md">
                      ${nftPrizeTiers} </div>

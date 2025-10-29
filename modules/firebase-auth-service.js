@@ -640,7 +640,32 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
     if (resolution === 'not_fraud') {
         // --- AGE COMO 'confirmSubmission' ---
         // Usuário diz que é legítimo, então APROVA e DÁ OS PONTOS
-        const pointsToAward = submissionData._pointsCalculated || 0;
+        
+        // ==========================================================
+        //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados)
+        // ==========================================================
+        let pointsToAward = submissionData._pointsCalculated;
+        let multiplierApplied = submissionData._multiplierApplied;
+
+        if (typeof pointsToAward !== 'number' || pointsToAward <= 0) {
+            console.warn(`[ResolveFlagged] Legacy submission ${submissionId} missing _pointsCalculated. Recalculating...`);
+            const basePoints = submissionData.basePoints || 0;
+            const userSnap = await getDoc(userRef); // Precisa ler o usuário
+            if (!userSnap.exists()) throw new Error("User profile not found for recalculation.");
+            const userData = userSnap.data();
+            const currentApprovedCount = userData.approvedSubmissionsCount || 0;
+            
+            multiplierApplied = getMultiplierByTier(currentApprovedCount); // Recalcula multiplicador
+            pointsToAward = Math.round(basePoints * multiplierApplied);
+
+            if (pointsToAward <= 0) {
+                 console.warn(`[ResolveFlagged] Recalculation failed (basePoints: ${basePoints}). Using fallback 1000.`);
+                 pointsToAward = Math.round(1000 * multiplierApplied);
+            }
+        }
+        // ==========================================================
+        //  FIM DA CORREÇÃO
+        // ==========================================================
         
         // Atualiza perfil do usuário
         batch.update(userRef, {
@@ -652,6 +677,8 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
         batch.update(submissionRef, {
             status: 'approved',
             pointsAwarded: pointsToAward, // Salva os pontos concedidos
+            _pointsCalculated: pointsToAward, // Garante que foi salvo
+            _multiplierApplied: multiplierApplied, // Garante que foi salvo
             resolvedAt: serverTimestamp()
         });
 
@@ -690,7 +717,7 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
         batch.update(submissionRef, {
             status: 'rejected',
             pointsAwarded: 0,
-            multiplierApplied: 0, // <-- CORREÇÃO: Zera o multiplicador
+            // multiplierApplied: 0, // <-- CORREÇÃO: Não zera, mantém o original para histórico
             resolvedAt: serverTimestamp()
         });
 
@@ -710,6 +737,7 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
 /**
  * Permite ao usuário confirmar que a submissão, após auditoria visual, é legítima.
  * O status é alterado de 'pending' para 'approved' E CONCEDE OS PONTOS.
+ * [CORRIGIDO: Adicionado fallback para posts legados sem _pointsCalculated]
  * @param {string} submissionId ID da submissão.
  */
 export async function confirmSubmission(submissionId) { 
@@ -736,8 +764,46 @@ export async function confirmSubmission(submissionId) {
         throw new Error(`Submission is already in status: ${currentStatus}.`);
     }
 
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados)
+    // ==========================================================
+    
     // Pega os pontos a serem concedidos
-    const pointsToAward = submissionData._pointsCalculated || 0;
+    let pointsToAward = submissionData._pointsCalculated;
+    let multiplierApplied = submissionData._multiplierApplied; // Pega o multiplicador salvo
+
+    // Fallback para submissões antigas (legacy) que não têm _pointsCalculated
+    if (typeof pointsToAward !== 'number' || pointsToAward <= 0) {
+        console.warn(`[ConfirmSubmission] Legacy submission ${submissionId} missing _pointsCalculated. Recalculating...`);
+        
+        // 1. Pega os pontos base da submissão
+        const basePoints = submissionData.basePoints || 0;
+        
+        // 2. Pega o perfil do usuário (precisa ler)
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) throw new Error("User profile not found for recalculation.");
+        const userData = userSnap.data();
+        
+        // 3. Pega a contagem de aprovados ATUAL (antes deste)
+        const currentApprovedCount = userData.approvedSubmissionsCount || 0;
+        
+        // 4. Calcula o multiplicador
+        multiplierApplied = getMultiplierByTier(currentApprovedCount); // Recalcula
+        
+        // 5. Calcula os pontos
+        pointsToAward = Math.round(basePoints * multiplierApplied);
+
+        // Se ainda for 0, busca um fallback (ex: se basePoints também faltar)
+        if (pointsToAward <= 0) {
+             console.warn(`[ConfirmSubmission] Recalculation failed (basePoints: ${basePoints}). Using fallback 1000.`);
+             // Tenta um fallback final
+             pointsToAward = Math.round(1000 * multiplierApplied); // Usa 1000 como base
+        }
+    }
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
+
 
     // Usa um batch para garantir atomicidade das atualizações
     const batch = writeBatch(db);
@@ -745,7 +811,7 @@ export async function confirmSubmission(submissionId) {
     // --- 2. ATUALIZA O PERFIL DO USUÁRIO ---
     // Concede os pontos e incrementa a contagem de aprovação
     batch.update(userRef, {
-        totalPoints: increment(pointsToAward),
+        totalPoints: increment(pointsToAward), // <-- Usa o valor corrigido
         approvedSubmissionsCount: increment(1)
     });
 
@@ -753,6 +819,8 @@ export async function confirmSubmission(submissionId) {
     batch.update(submissionRef, { 
         status: 'approved',
         pointsAwarded: pointsToAward, // Salva o valor concedido
+        _pointsCalculated: pointsToAward, // Salva o valor (para corrigir dados legados)
+        _multiplierApplied: multiplierApplied, // Salva o multiplicador (para corrigir dados legados)
         resolvedAt: serverTimestamp() 
     });
 
@@ -936,6 +1004,7 @@ export async function getAllSubmissionsForAdmin() {
 /**
  * Atualiza o status de uma submissão (pelo Admin).
  * Se aprovar, concede os pontos. Se rejeitar, apenas incrementa a rejeição.
+ * [CORRIGIDO: Adicionado fallback para posts legados sem _pointsCalculated]
  * @param {string} userId ID do usuário (AGORA É A CARTEIRA).
  * @param {string} submissionId ID da submissão.
  * @param {string} status Novo status ('approved' ou 'rejected').
@@ -975,10 +1044,41 @@ export async function updateSubmissionStatus(userId, submissionId, status) {
 
     // --- Lógica de Aprovação pelo Admin ---
     if (status === 'approved') {
-        // Se estava 'rejected', 'pending', 'auditing', 'flagged' (qualquer estado que não 'approved')
-        // CONCEDE OS PONTOS E INCREMENTA A CONTAGEM
         
-        const pointsToAward = submissionData._pointsCalculated || 0;
+        // ==========================================================
+        //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados)
+        // ==========================================================
+        
+        let pointsToAward = submissionData._pointsCalculated;
+
+        // Fallback para submissões antigas (legacy) que não têm _pointsCalculated
+        if (typeof pointsToAward !== 'number' || pointsToAward <= 0) {
+            console.warn(`[Admin] Legacy submission ${submissionId} missing _pointsCalculated. Recalculating...`);
+            
+            // 1. Pega os pontos base da submissão (salvos em addSubmission)
+            const basePoints = submissionData.basePoints || 0; 
+            
+            // 2. Pega a contagem de aprovados do usuário (ANTES de incrementar)
+            const currentApprovedCount = userData.approvedSubmissionsCount || 0;
+            
+            // 3. Pega o multiplicador que DEVERIA ter sido aplicado
+            const multiplierApplied = getMultiplierByTier(currentApprovedCount);
+            
+            // 4. Calcula os pontos
+            pointsToAward = Math.round(basePoints * multiplierApplied);
+            
+            // Se ainda for 0, busca um fallback
+            if (pointsToAward <= 0) {
+                 console.warn(`[Admin] Recalculation failed (basePoints: ${basePoints}). Using fallback 1000.`);
+                 const fallbackMultiplier = getMultiplierByTier(currentApprovedCount);
+                 pointsToAward = Math.round(1000 * fallbackMultiplier); // Usa 1000 como base
+            }
+            finalMultiplier = multiplierApplied; // Salva o multiplicador recém-calculado
+        }
+        // ==========================================================
+        //  FIM DA CORREÇÃO
+        // ==========================================================
+        
         finalPointsAwarded = pointsToAward;
 
         userUpdates.totalPoints = increment(pointsToAward);
@@ -1027,7 +1127,22 @@ export async function updateSubmissionStatus(userId, submissionId, status) {
     // Garante que contagens/pontos não fiquem negativos
     if (userUpdates.approvedSubmissionsCount?.operand < 0 && (userData.approvedSubmissionsCount || 0) <= 0) userUpdates.approvedSubmissionsCount = 0;
     if (userUpdates.rejectedCount?.operand < 0 && (userData.rejectedCount || 0) <= 0) userUpdates.rejectedCount = 0;
-    if (userUpdates.totalPoints?.operand < 0 && (userData.totalPoints || 0) < Math.abs(userUpdates.totalPoints.operand)) userUpdates.totalPoints = 0;
+    
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Evitar Pontos Negativos)
+    // ==========================================================
+    // Lógica de verificação de pontos negativos (para setar para 0 se o resultado for < 0)
+    if (userUpdates.totalPoints?.operand < 0) {
+         const currentPoints = userData.totalPoints || 0;
+         const pointsToRemove = Math.abs(userUpdates.totalPoints.operand);
+         if (currentPoints < pointsToRemove) {
+             userUpdates.totalPoints = 0; // Seta para 0 em vez de incrementar negativamente
+         }
+    }
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
+
 
     // Aplica atualizações no usuário (se houver)
     if (Object.keys(userUpdates).length > 0) {
@@ -1038,6 +1153,8 @@ export async function updateSubmissionStatus(userId, submissionId, status) {
     batch.update(submissionRef, {
         status: status,
         pointsAwarded: finalPointsAwarded, // Salva 0 se rejeitado, ou os pontos calculados se aprovado
+        // Salva o valor (para corrigir dados legados), mas não se for rejeitado
+        _pointsCalculated: (status === 'approved' ? finalPointsAwarded : (submissionData._pointsCalculated || 0)), 
         _multiplierApplied: finalMultiplier, // <-- Salva o multiplicador usado
         resolvedAt: serverTimestamp() // Marca como resolvido pelo admin
     });

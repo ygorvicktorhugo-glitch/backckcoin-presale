@@ -1,4 +1,5 @@
 // pages/DashboardPage.js
+// CORREÇÃO: TVL agora é carregado no estado desconectado (chamada movida em render())
 
 const ethers = window.ethers;
 
@@ -47,8 +48,6 @@ function animateClaimableRewards() {
         const onePercent = targetRewardValue / 100n;
         const increasePerSecond = onePercent / 600n; 
         const incrementThisFrame = (increasePerSecond * BigInt(Math.floor(deltaTime * 1000))) / 1000n;
-        // Simulação de crescimento leve apenas para efeito visual
-        // targetRewardValue += incrementThisFrame; // Removido para manter o valor estático, mas a animação de número continua
     }
     const difference = targetRewardValue - displayedRewardValue;
     if (difference > -10n && difference < 10n && displayedRewardValue !== targetRewardValue) {
@@ -80,12 +79,9 @@ async function openDelegateModal(validatorAddress) {
     if (!State.isConnected) return showToast("Please connect your wallet first.", "error");
     if (!State.ecosystemManagerContract) return showToast("EcosystemManager not loaded.", "error");
 
-    // Delegação é gratuita conforme DelegationManager.sol
     const delegationFeeBips = 0n; 
-    
     const balanceNum = formatBigNumber(State.currentUserBalance || 0n);
     const balanceLocaleString = balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    
     const feePercentage = "0.00"; 
 
     const content = `
@@ -95,7 +91,6 @@ async function openDelegateModal(validatorAddress) {
         </div>
         <p class="text-sm text-zinc-400 mb-2">To: <span class="font-mono">${formatAddress(validatorAddress)}</span></p>
         <p class="text-sm text-zinc-400 mb-4">Your balance: <span class="font-bold text-amber-400">${balanceLocaleString} $BKC</span></p>
-
         <div class="mb-4">
             <label for="delegateAmountInput" class="block text-sm font-medium text-zinc-300 mb-1">Amount to Delegate ($BKC)</label>
             <input type="number" id="delegateAmountInput" placeholder="0.00" step="any" min="0" class="form-input">
@@ -106,7 +101,6 @@ async function openDelegateModal(validatorAddress) {
                 <button class="flex-1 bg-zinc-600 hover:bg-zinc-700 text-xs py-1 rounded set-delegate-perc" data-perc="100">100%</button>
             </div>
         </div>
-
         <div class="mb-6">
             <label for="delegateDurationSlider" class="block text-sm font-medium text-zinc-300 mb-1">Lock Duration: <span id="delegateDurationDisplay" class="font-bold text-amber-400">1825 days</span></label>
             <input type="range" id="delegateDurationSlider" min="1" max="3650" value="1825" class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
@@ -115,13 +109,11 @@ async function openDelegateModal(validatorAddress) {
                 <span>10 years</span>
             </div>
         </div>
-
         <div class="bg-main border border-border-color rounded-lg p-3 text-sm mb-6 space-y-1">
             <div class="flex justify-between"><span class="text-zinc-400">Fee (${feePercentage}%):</span><span id="delegateFeeAmount">0.0000 $BKC</span></div>
             <div class="flex justify-between"><span class="text-zinc-400">Net Delegate Amount:</span><span id="delegateNetAmount">0.0000 $BKC</span></div>
             <div class="flex justify-between"><span class="text-zinc-400">Estimated pStake:</span><span id="delegateEstimatedPStake" class="font-bold text-purple-400">0</span></div>
         </div>
-
         <button id="confirmDelegateBtn" class="w-full bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-4 rounded-md transition-colors btn-disabled" disabled>
             Confirm Delegation
         </button>
@@ -703,10 +695,28 @@ function renderActivityItem(item) {
             title = `Miner Rewards Claimed`; icon = 'fa-pickaxe'; color = 'text-blue-400'; 
             details = `Claimed ${formattedAmount} $BKC from mining`; 
             itemId = null; break;
+        case 'TigerGameWin': 
+            title = `Tiger Game Win`; icon = 'fa-trophy'; color = 'text-yellow-400'; 
+            details = `Won ${formattedAmount} $BKC (Wagered: ${formatBigNumber(item.details.wagered || 0n).toFixed(2)})`; 
+            itemId = null; 
+            break;
+        case 'NFTBuy':
+            title = `Booster Bought (Pool)`; icon = 'fa-shopping-cart'; color = 'text-green-400';
+            details = `Bought NFT #${item.details.tokenId} for ${formattedAmount} $BKC`;
+            itemId = item.details.tokenId;
+            break;
+        case 'NFTSell':
+            title = `Booster Sold (Pool)`; icon = 'fa-dollar-sign'; color = 'text-blue-400';
+            const taxFormatted = formatBigNumber(item.details.tax || 0n).toFixed(2);
+            details = `Sold NFT #${item.details.tokenId} for ${formattedAmount} $BKC (Tax: ${taxFormatted})`;
+            itemId = item.details.tokenId;
+            break;
     }
     const txHash = item.txHash;
     let Tag, tagAttributes, hoverClass, cursorClass, actionIndicator = '';
-    const supportsLazySearch = ['Delegation', 'VestingCertReceived', 'Unstake', 'ForceUnstake', 'CertificateWithdrawn'].includes(item.type);
+    
+    const supportsLazySearch = ['Delegation', 'VestingCertReceived', 'Unstake', 'ForceUnstake', 'CertificateWithdrawn', 'NFTBuy', 'NFTSell'].includes(item.type);
+    
     if (txHash) {
         Tag = 'a'; tagAttributes = `href="${EXPLORER_BASE_URL}${txHash}" target="_blank" rel="noopener noreferrer" title="View Transaction on Explorer"`; hoverClass = 'hover:bg-main/70 group'; cursorClass = 'cursor-pointer';
         actionIndicator = `<span class="text-xs text-blue-400/80 group-hover:text-blue-300 transition-colors ml-auto">View Tx <i class="fa-solid fa-arrow-up-right-from-square ml-1"></i></span>`;
@@ -799,6 +809,76 @@ async function renderActivityHistory() {
             const timestamp = await getTimestamp(event.blockNumber);
             allActivities.push({ type: 'MinerRewardClaimed', amount: amount, timestamp: timestamp, details: {}, txHash: event.transactionHash, itemId: null });
         }
+
+        // --- INÍCIO DA INJEÇÃO DE NOVOS EVENTOS (CORRIGIDO) ---
+        try {
+            // 1. Buscar prêmios do TigerGame (FortuneTiger)
+            // **** CORREÇÃO: Usa State.actionsManagerContract ****
+            if (State.actionsManagerContract) {
+                const gamePlayFilter = State.actionsManagerContract.filters.GamePlayed(userAddress); //
+                // Busca eventos onde o usuário foi o jogador
+                const gamePlayEvents = await safeContractCall(State.actionsManagerContract, 'queryFilter', [gamePlayFilter, -200000], []);
+                
+                for (const event of gamePlayEvents) {
+                    const { user, amountWagered, totalPrizeWon } = event.args;
+                    // Adiciona apenas se o usuário ganhou um prêmio
+                    if (totalPrizeWon > 0n) {
+                        const timestamp = await getTimestamp(event.blockNumber);
+                        allActivities.push({
+                            type: 'TigerGameWin',
+                            amount: totalPrizeWon,
+                            timestamp: timestamp,
+                            details: { wagered: amountWagered },
+                            txHash: event.transactionHash,
+                            itemId: null 
+                        });
+                    }
+                }
+            } else {
+                console.warn("Dashboard: State.actionsManagerContract not found, skipping game history.");
+            }
+
+            // 2. Buscar Compras no NFTLiquidityPool
+            if (State.nftPoolContract) {
+                const buyFilter = State.nftPoolContract.filters.NFTBought(userAddress); //
+                const buyEvents = await safeContractCall(State.nftPoolContract, 'queryFilter', [buyFilter, -200000], []);
+                for (const event of buyEvents) {
+                    const { buyer, boostBips, tokenId, price } = event.args; //
+                    const timestamp = await getTimestamp(event.blockNumber);
+                    allActivities.push({
+                        type: 'NFTBuy',
+                        amount: price, // 'amount' é o preço pago
+                        timestamp: timestamp,
+                        details: { tokenId: tokenId.toString(), boostBips: boostBips.toString() },
+                        txHash: event.transactionHash,
+                        itemId: tokenId.toString()
+                    });
+                }
+
+                // 3. Buscar Vendas no NFTLiquidityPool
+                const sellFilter = State.nftPoolContract.filters.NFTSold(userAddress); //
+                const sellEvents = await safeContractCall(State.nftPoolContract, 'queryFilter', [sellFilter, -200000], []);
+                for (const event of sellEvents) {
+                    const { seller, boostBips, tokenId, payout, taxPaid } = event.args; //
+                    const timestamp = await getTimestamp(event.blockNumber);
+                    allActivities.push({
+                        type: 'NFTSell',
+                        amount: payout, // 'amount' é o pagamento recebido
+                        timestamp: timestamp,
+                        details: { tokenId: tokenId.toString(), boostBips: boostBips.toString(), tax: taxPaid },
+                        txHash: event.transactionHash,
+                        itemId: tokenId.toString()
+                    });
+                }
+            } else {
+                 console.warn("Dashboard: State.nftPoolContract not found, skipping NFT pool history.");
+            }
+        } catch (err) {
+            console.warn("Failed to fetch additional contract events (Game/Pool):", err);
+        }
+        // --- FIM DA INJEÇÃO ---
+
+
         allActivities.sort((a, b) => b.timestamp - a.timestamp);
         if (allActivities.length === 0) {
             renderNoData(listEl, "Your recent activities will appear here.");
@@ -817,16 +897,119 @@ async function renderActivityHistory() {
 }
 
 
+// --- INÍCIO DA FUNÇÃO DE TVL (CORRIGIDA) ---
+/**
+ * Carrega o Valor Total Bloqueado (TVL) de todo o protocolo e o renderiza.
+ * Esta função é pública e pode ser chamada com a carteira desconectada.
+ */
+async function loadAndRenderProtocolTVL() {
+    // Elementos principais
+    const tvlPanelEl = document.getElementById('protocol-tvl-panel'); 
+    const tvlValueEl = document.getElementById('protocol-tvl-value'); 
+    const tvlPercEl = document.getElementById('protocol-tvl-percentage'); 
+
+    // Elementos para os detalhes (opcional)
+    const tvlStakingEl = document.getElementById('tvl-detail-staking');
+    const tvlVestingEl = document.getElementById('tvl-detail-vesting');
+    const tvlGameEl = document.getElementById('tvl-detail-game');
+    const tvlPoolEl = document.getElementById('tvl-detail-nftpool');
+
+    if (!tvlPanelEl || !tvlValueEl || !tvlPercEl) {
+        console.warn("TVL panel elements not found. Skipping TVL load.");
+        return;
+    }
+    
+    // Mostra loading
+    tvlValueEl.innerHTML = '<div class="loader !w-5 !h-5 inline-block"></div>';
+    tvlPercEl.textContent = 'Calculating...';
+
+    try {
+        let totalLocked = 0n;
+        let stakingLocked = 0n, vestingLocked = 0n, gameLocked = 0n, poolLocked = 0n;
+
+        // 0. Espera o State.bkcTokenContract (do publicProvider) estar pronto
+        if (!State.bkcTokenContract) {
+            // Tenta esperar um pouco se o initPublicProvider ainda não terminou
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (!State.bkcTokenContract) {
+                 throw new Error("BKCToken contract (public) not loaded");
+            }
+        }
+
+        // 1. Fundos em Staking (DelegationManager)
+        if (addresses.delegationManager) {
+            stakingLocked = await safeContractCall(State.bkcTokenContract, 'balanceOf', [addresses.delegationManager], 0n);
+            totalLocked += stakingLocked;
+        }
+        
+        // 2. Fundos em Vesting (RewardManager)
+        if (addresses.rewardManager) {
+            vestingLocked = await safeContractCall(State.bkcTokenContract, 'balanceOf', [addresses.rewardManager], 0n);
+            totalLocked += vestingLocked;
+        }
+
+        // 3. Fundos no TigerGame (FortuneTiger)
+        // **** CORREÇÃO: Usa State.actionsManagerContract ****
+        if (State.actionsManagerContract) {
+            // O contrato foi configurado para 4 piscinas (ID 0 a 3)
+            for (let i = 0; i < 4; i++) {
+                // **** CORREÇÃO: Lê o índice [2] (balance) da struct/array retornado ****
+                const poolInfo = await safeContractCall(State.actionsManagerContract, 'prizePools', [i], [0n, 0n, 0n, 0n]);
+                gameLocked += poolInfo[2]; // poolInfo[2] é 'balance'
+            }
+            totalLocked += gameLocked;
+        } else {
+            console.warn("Dashboard: State.actionsManagerContract not found, skipping TVL for Game Pools.");
+        }
+
+        // 4. Fundos no NFTLiquidityPool
+        if (State.nftPoolContract && boosterTiers) {
+            for (const tier of boosterTiers) { 
+                const poolInfo = await safeContractCall(State.nftPoolContract, 'getPoolInfo', [tier.boostBips], { isInitialized: false, tokenBalance: 0n });
+                if (poolInfo.isInitialized) {
+                    poolLocked += poolInfo.tokenBalance; 
+                }
+            }
+            totalLocked += poolLocked;
+        } else {
+             console.warn("Dashboard: State.nftPoolContract not found, skipping TVL for NFT Pools.");
+        }
+
+        // 5. Calcular Porcentagem
+        const totalSupply = await safeContractCall(State.bkcTokenContract, 'totalSupply', [], 0n);
+        const lockedPercentage = (totalSupply > 0n) ? (Number(totalLocked * 10000n / totalSupply) / 100).toFixed(2) : 0;
+
+        // 6. Renderizar
+        tvlValueEl.textContent = `${formatBigNumber(totalLocked).toFixed(0)} $BKC`;
+        tvlPercEl.textContent = `${lockedPercentage}% of Total Supply Locked`;
+        
+        // Renderizar detalhes (opcional, se os IDs existirem)
+        if(tvlStakingEl) tvlStakingEl.textContent = `${formatBigNumber(stakingLocked).toFixed(0)} $BKC`;
+        if(tvlVestingEl) tvlVestingEl.textContent = `${formatBigNumber(vestingLocked).toFixed(0)} $BKC`;
+        if(tvlGameEl) tvlGameEl.textContent = `${formatBigNumber(gameLocked).toFixed(0)} $BKC`;
+        if(tvlPoolEl) tvlPoolEl.textContent = `${formatBigNumber(poolLocked).toFixed(0)} $BKC`;
+
+    } catch (err) {
+        console.error("Failed to load protocol TVL:", err);
+        tvlValueEl.textContent = 'Error';
+        tvlPercEl.textContent = 'Failed to load TVL data.';
+    }
+}
+// --- FIM DA FUNÇÃO DE TVL (CORRIGIDA) ---
+
+
 // --- Main Page Rendering Function ---
 export const DashboardPage = {
     hasRenderedOnce: false,
     async render(isUpdate = false) {
         console.log(`DashboardPage.render called (isUpdate: ${isUpdate}, hasRenderedOnce: ${this.hasRenderedOnce})`);
+        
         if (!DOMElements.dashboard._listenersInitialized && DOMElements.dashboard) {
             console.log("Setting up dashboard action listeners...");
             setupDashboardActionListeners();
             DOMElements.dashboard._listenersInitialized = true;
         }
+
         if (!isUpdate || !State.isConnected) {
             console.log("Resetting tabs state and UI.");
             tabsState = { delegationsLoaded: false, certificatesLoaded: false };
@@ -842,14 +1025,21 @@ export const DashboardPage = {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
         }
+        
+        // --- CORREÇÃO: TVL e Validadores são carregados IMEDIATAMENTE (dados públicos) ---
         renderValidatorsList();
+        loadAndRenderProtocolTVL();
+        // --- FIM DA CORREÇÃO ---
+
+        // Pega os elementos DEPOIS
         const myPositionPStakeEl = document.getElementById('statUserPStake');
         const efficiencyPanel = document.getElementById('reward-efficiency-panel');
         const historyListContainer = document.getElementById('activity-history-list-container');
-        const claimPanelEl = document.getElementById('claimable-rewards-panel-content'); // Onde os detalhes da reivindicação vão
-
+        const claimPanelEl = document.getElementById('claimable-rewards-panel-content');
+        
         if (!State.isConnected) {
-            console.log("Rendering disconnected state.");
+            console.log("Rendering disconnected state (User Panels only).");
+            // Limpa apenas painéis específicos do usuário
             if(myPositionPStakeEl) myPositionPStakeEl.textContent = '--';
             if(claimPanelEl) claimPanelEl.innerHTML = '<p class="text-center text-zinc-400 p-4">Connect wallet to view rewards.</p>';
             if(efficiencyPanel) efficiencyPanel.innerHTML = '<p class="text-center text-zinc-400 p-4">Connect your wallet to view your status.</p>';
@@ -858,26 +1048,31 @@ export const DashboardPage = {
             if(delegationList) renderNoData(delegationList, "Connect your wallet.");
             if(certList) renderNoData(certList, "Connect your wallet.");
             if(historyListContainer) renderNoData(historyListContainer, "Connect your wallet.");
+            
             this.hasRenderedOnce = false;
             return;
         }
+
+        // --- LÓGICA DE CONECTADO ---
         console.log("Rendering connected state...");
+        
         if (!this.hasRenderedOnce && !isUpdate) {
-            console.log("First render: Showing loaders for Overview tab.");
+            console.log("First render (Connected): Showing loaders for User Panels.");
             if(myPositionPStakeEl) renderLoading(myPositionPStakeEl);
             if(claimPanelEl) renderLoading(claimPanelEl);
             if(efficiencyPanel) renderLoading(efficiencyPanel);
             if(historyListContainer) renderLoading(historyListContainer);
         }
+
         try {
             console.log("Loading user data and rewards...");
             if (!State.allValidatorsData || State.allValidatorsData.length === 0) {
                  await loadPublicData();
-                 renderValidatorsList();
+                 renderValidatorsList(); // Recarrega validadores se não estiverem prontos
             }
             await loadUserData();
             
-            // --- CÁLCULO E RENDERIZAÇÃO DOS DETALHES DE REIVINDICAÇÃO (NOVO) ---
+            // --- CÁLCULO E RENDERIZAÇÃO DOS DETALHES DE REIVINDICAÇÃO (TRADUZIDO) ---
             const claimDetails = await calculateClaimDetails();
             const { totalRewards, netClaimAmount, feeAmount, discountPercent, basePenaltyPercent } = claimDetails;
             
@@ -893,10 +1088,10 @@ export const DashboardPage = {
                             </div>
                             
                             ${discountPercent > 0n ? 
-                                `<p class="text-xs text-green-400 pt-1 font-semibold"><i class="fa-solid fa-gem mr-1"></i> Seu Booster NFT economiza ${formatBigNumber(calculatedDiscountAmount).toFixed(4)} $BKC em taxas!</p>` :
+                                `<p class="text-xs text-green-400 pt-1 font-semibold"><i class="fa-solid fa-gem mr-1"></i> Your Booster NFT saves you ${formatBigNumber(calculatedDiscountAmount).toFixed(4)} $BKC in fees!</p>` :
                                 totalRewards > 0n ?
-                                `<p class="text-xs text-red-400 pt-1 font-semibold"><i class="fa-solid fa-exclamation-triangle mr-1"></i> Adquira um Booster NFT para economizar até ${formatBigNumber(baseFeeAmount).toFixed(4)} $BKC em taxas!</p>` :
-                                `<p class="text-xs text-zinc-500 pt-1">Faça um Stake para começar a ganhar recompensas.</p>`
+                                `<p class="text-xs text-red-400 pt-1 font-semibold"><i class="fa-solid fa-exclamation-triangle mr-1"></i> Get a Booster NFT to save up to ${formatBigNumber(baseFeeAmount).toFixed(4)} $BKC in fees!</p>` :
+                                `<p class="text-xs text-zinc-500 pt-1">Stake to start earning rewards.</p>`
                             }
                             <div class="flex justify-between items-center text-sm ${discountPercent > 0 ? 'line-through text-red-500/70' : 'text-zinc-400'}">
                                 <span class="text-zinc-400">Base Fee (${basePenaltyPercent.toFixed(2)}%):</span>
@@ -951,10 +1146,13 @@ export const DashboardPage = {
             if(claimPanelEl) renderError(claimPanelEl, "Failed to load rewards data.");
             if(efficiencyPanel) renderError(efficiencyPanel, "Failed to load user data.");
             if(historyListContainer) renderError(historyListContainer, "Failed to load history.");
+
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
         }
+        
         setupActivityTabListeners();
+
         if (isUpdate) {
             console.log("Handling update: Reloading active tab content (if not Overview)...");
             const activeTabButton = document.querySelector('#user-activity-tabs .tab-btn.active');

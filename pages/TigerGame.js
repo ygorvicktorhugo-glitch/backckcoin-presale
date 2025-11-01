@@ -70,7 +70,7 @@ const PRIZE_POOLS_CONFIG = [
 const WINNING_SYMBOL_HTML = '<div class="bkc-logo-symbol"><img src="./assets/bkc_logo_3d.png" alt="BKC" style="width: 70%; height: 70%; object-fit: contain;"></div>';
 const FALLBACK_SYMBOLS = ['🍋', '🍒', '💰', '💎', '7️⃣', '🔔', '🐯', WINNING_SYMBOL_HTML]; // Adicionado 🍋 para a piscina x4
 const REEL_COUNT = 3;
-const SYMBOL_HEIGHT_PX = 120; 
+const SYMBOL_HEIGHT_PX = 100; // AJUSTADO PARA MOBILE (100px no CSS) 
 const MAX_PRIZE_POOL_BIPS = 8000; 
 
 // Opcional: Áudio para realismo (adicione assets spin.mp3 e win.mp3 no diretório)
@@ -281,7 +281,6 @@ async function stopSlotAnimation(prizeWon) {
         // Efeito cascata (delay maior para realismo)
         await new Promise(resolve => setTimeout(resolve, 1000 + (i * 500))); 
     }
-    
     await new Promise(resolve => setTimeout(resolve, 1000)); 
 }
 
@@ -579,10 +578,10 @@ export const TigerGamePage = {
                     
                     <div class="secondary-actions">
                         <button class="icon-button" id="achievementsBtn" title="Achievements">
-                            🏆
+                            <i class="fa-solid fa-trophy"></i>
                             <span class="notification-badge" id="achievementBadge" style="display: none;">!</span>
                         </button>
-                        <button class="icon-button" id="rulesBtn" title="Game Rules">❓</button>
+                        <button class="icon-button" id="rulesBtn" title="Game Rules"><i class="fa-solid fa-book-open"></i></button>
                     </div>
                 </section>
 
@@ -679,7 +678,7 @@ export const TigerGamePage = {
 
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
+                if (e.target.classList.contains('modal') || e.target.classList.contains('modal-close')) {
                     modal.classList.remove('active');
                 }
             });
@@ -858,9 +857,10 @@ export const TigerGamePage = {
         }
     },
 
-    unlockAchievement(achievement) {
+   unlockAchievement(achievement) {
         achievement.unlocked = true;
-        document.getElementById('achievementBadge').style.display = 'block';
+        const badge = document.getElementById('achievementBadge');
+        if(badge) badge.style.display = 'flex';
         showToast(`🏆 Achievement Unlocked: ${achievement.name}!`, 'success');
     },
 
@@ -877,6 +877,8 @@ export const TigerGamePage = {
                 </div>
             </div>
         `).join('');
+        const badge = document.getElementById('achievementBadge');
+        if(badge) badge.style.display = 'none';
         achievementsModal.classList.add('active');
     },
 

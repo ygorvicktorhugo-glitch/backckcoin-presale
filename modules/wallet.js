@@ -32,12 +32,16 @@ import {
     addresses, sepoliaRpcUrl, sepoliaChainId,
     bkcTokenABI, delegationManagerABI, rewardManagerABI,
     rewardBoosterABI, nftBondingCurveABI, actionsManagerABI, publicSaleABI,
-    faucetABI, decentralizedNotaryABI, ecosystemManagerABI 
+    faucetABI, decentralizedNotaryABI, ecosystemManagerABI,
+    // ######################################################
+    // ### CORREÇÃO 2: IMPORTAÇÃO DO ABI CORRETO DO JOGO DO TIGRE ###
+    // ######################################################
+    fortuneTigerABI 
 } from '../config.js';
 import { loadPublicData, loadUserData } from './data.js';
 import { signIn } from './firebase-auth-service.js';
 
-// --- CONFIGURAÇÃO DO WEB3MODAL ---
+// --- CONFIGURAÇÃO DO WEB3MODAL (MANTIDA) ---
 const WALLETCONNECT_PROJECT_ID = 'cd4bdedee7a7e909ebd3df8bbc502aed';
 
 const sepolia = {
@@ -95,7 +99,7 @@ const web3modal = createWeb3Modal({
 let wasPreviouslyConnected = web3modal.getIsConnected();
 
 
-// --- FUNÇÃO AUXILIAR PARA DESCONEXÃO SEGURA (NOVA) ---
+// --- FUNÇÃO AUXILIAR PARA DESCONEXÃO SEGURA (MANTIDA) ---
 async function safeDisconnect() {
     if (typeof web3modal === 'object' && web3modal !== null && typeof web3modal.disconnect === 'function') {
         try {
@@ -121,7 +125,14 @@ function instantiateContracts(signerOrProvider) {
             { name: "bkcToken", address: addresses.bkcToken, abi: bkcTokenABI, stateProp: "bkcTokenContract" },
             { name: "delegationManager", address: addresses.delegationManager, abi: delegationManagerABI, stateProp: "delegationManagerContract" },
             { name: "rewardManager", address: addresses.rewardManager, abi: rewardManagerABI, stateProp: "rewardManagerContract" },
-            { name: "actionsManager", address: addresses.actionsManager, abi: actionsManagerABI, stateProp: "actionsManagerContract" },
+            
+            // ######################################################
+            // ### CORREÇÃO 1: USA fortuneTigerABI PARA O ACTIONS MANAGER ###
+            // ######################################################
+            { name: "actionsManager", address: addresses.actionsManager, abi: fortuneTigerABI, stateProp: "actionsManagerContract" },
+            // NOTA: Se você tiver um contrato Actions/DAO separado, ele usaria actionsManagerABI
+            // aqui. Como addresses.actionsManager aponta para FortuneTiger, o ABI deve ser fortuneTigerABI.
+            
             { name: "rewardBoosterNFT", address: addresses.rewardBoosterNFT, abi: rewardBoosterABI, stateProp: "rewardBoosterContract" },
             { name: "nftBondingCurve", address: addresses.nftBondingCurve, abi: nftBondingCurveABI, stateProp: "nftBondingCurveContract" },
             { name: "publicSale", address: addresses.publicSale, abi: publicSaleABI, stateProp: "publicSaleContract" },
@@ -163,7 +174,7 @@ function instantiateContracts(signerOrProvider) {
 async function setupSignerAndLoadData(provider, address) {
     try {
         State.provider = provider;
-        // CORREÇÃO 1: Tenta obter o signer. Se falhar, o erro é capturado abaixo.
+        // Tenta obter o signer - Ponto sensível a rejeição do usuário/problemas de rede
         State.signer = await provider.getSigner(); 
         
         const normalizedAddress = address.toLowerCase();

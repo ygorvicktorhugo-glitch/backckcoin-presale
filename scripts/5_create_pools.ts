@@ -1,5 +1,5 @@
 // scripts/5_create_pools.ts
-import hre from "hardhat";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 import addressesJson from "../deployment-addresses.json";
@@ -21,12 +21,13 @@ const TIERS_TO_CREATE = [
 ];
 // ------------------------
 
-async function main() {
+// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
 
-  console.log(`🚀 (Passo 5/8) Criando estruturas de Pool AMM na rede: ${networkName}`);
+  console.log(`🚀 (Passo 5/8) Criando estruturas de Pool AMM (para NFTs) na rede: ${networkName}`);
   console.log(`Usando a conta: ${deployer.address}`);
   console.log("----------------------------------------------------");
 
@@ -34,8 +35,7 @@ async function main() {
   const poolAddress = addresses.nftLiquidityPool;
   if (!poolAddress) {
     console.error("❌ Erro: Endereço 'nftLiquidityPool' não encontrado em deployment-addresses.json.");
-    console.error("Por favor, execute os scripts 1, 2 e 3 primeiro.");
-    process.exit(1);
+    throw new Error("Missing nftLiquidityPool address.");
   }
 
   // --- 2. Obter Instância do Contrato ---
@@ -46,7 +46,7 @@ async function main() {
   );
 
   // --- 3. Criar Pools ---
-  console.log("Criando 7 estruturas de pool vazias...");
+  console.log("Criando 7 estruturas de pool vazias para o AMM de NFT...");
   let createdCount = 0;
   let skippedCount = 0;
 
@@ -76,34 +76,8 @@ async function main() {
   }
 
   console.log("----------------------------------------------------");
-  console.log("\n🎉 Processo de criação de pools concluído!");
+  console.log("\n🎉 Processo de criação de pools AMM concluído!");
   console.log(`   Total de pools criados: ${createdCount}`);
   console.log(`   Total ignorados (já existiam): ${skippedCount}`);
   console.log("\nPróximo passo: Execute '6_setup_sale.ts'");
 }
-
-main().catch((error: any) => {
-  console.error("\n❌ ERRO CRÍTICO DURANTE A CRIAÇÃO DOS POOLS (Passo 5) ❌\n");
-
-  if (
-    error.message.includes("ProviderError") ||
-    error.message.includes("in-flight") ||
-    error.message.includes("nonce") ||
-    error.message.includes("underpriced")
-  ) {
-    console.error(
-      "Causa Provável: Problema de conexão de rede ou transação pendente."
-    );
-    console.log("\n--- AÇÃO RECOMENDADA ---");
-    console.log(
-      "1. No MetaMask, vá em 'Configurações' -> 'Avançado' e clique em 'Limpar dados de atividade'."
-    );
-    console.log(
-      "2. Aguarde um minuto e tente executar ESTE SCRIPT ('5_create_pools.ts') novamente."
-    );
-  } else {
-    console.error("Ocorreu um erro inesperado:", error.message);
-  }
-
-  process.exit(1);
-});

@@ -34,10 +34,6 @@ interface IRewardBoosterNFT {
      * @dev Used as the key for the discount mapping.
      */
     function boostBips(uint256 tokenId) external view returns (uint256);
-
-    // ====================================================================
-    // ======================= INÍCIO DA CORREÇÃO 1 =======================
-    // ====================================================================
     /**
      * @notice (PublicSale Contract) Mints a single NFT.
      * @dev Adicionado à interface para que o PublicSale possa chamá-lo.
@@ -47,9 +43,6 @@ interface IRewardBoosterNFT {
         uint256 boostInBips,
         string calldata metadataFile
     ) external returns (uint256);
-    // ==================================================================
-    // ======================== FIM DA CORREÇÃO 1 =======================
-    // ==================================================================
 }
 
 /**
@@ -63,11 +56,9 @@ interface IEcosystemManager {
         address _user,
         uint256 _boosterTokenId
     ) external view returns (uint256 finalFee);
-
     function getServiceRequirements(
         string calldata _serviceKey
     ) external view returns (uint256 fee, uint256 pStake);
-
     function getBoosterDiscount(uint256 _boostBips) external view returns (uint256);
     
     /**
@@ -101,27 +92,17 @@ contract EcosystemManager is Ownable, IEcosystemManager {
     address public treasuryWallet;
     address public delegationManagerAddress;
     address public rewardBoosterAddress;
-    // (More addresses can be added here, e.g., rewardManagerAddress)
 
     // --- 2. FEE REGISTRY (ADJUSTABLE) ---
     // Maps a string key (e.g., "NOTARY_FEE") to a fee (in BKC with 18 decimals)
     mapping(string => uint256) public serviceFees;
+
     // --- 3. MINIMUM PSTAKE REGISTRY (ADJUSTABLE) ---
     // Maps a string key (e.g., "NOTARY_SERVICE") to a minimum pStake
     mapping(string => uint256) public servicePStakeMinimums;
-    
-    // --- 4. DISCOUNT REGISTRY (BOOSTER - NOW IMMUTABLE) ---
-    
-    // ====================================================================
-    // ======================= INÍCIO DA CORREÇÃO 2 =======================
-    // ====================================================================
-    // Mappings NÃO PODEM ser 'immutable'. A imutabilidade é alcançada
-    // por configurar os valores no constructor e não ter função de set.
-    mapping(uint256 => uint256) public boosterDiscountsBips;
-    // ==================================================================
-    // ======================== FIM DA CORREÇÃO 2 =======================
-    // ==================================================================
 
+    // --- 4. DISCOUNT REGISTRY (BOOSTER - NOW IMMUTABLE) ---
+    mapping(uint256 => uint256) public boosterDiscountsBips;
 
     // --- EVENTS (For your scripts/frontend) ---
     event AddressesSet(
@@ -131,35 +112,27 @@ contract EcosystemManager is Ownable, IEcosystemManager {
     );
     event FeeSet(string indexed serviceKey, uint256 newFee);
     event PStakeMinimumSet(string indexed serviceKey, uint256 newPStake);
-    // REMOVED: event DiscountSet(uint256 indexed boostBips, uint256 newDiscountBips);
+
     /**
      * @dev Sets the initial owner and the IMMUTABLE booster discounts.
      */
     constructor(address _initialOwner) Ownable(_initialOwner) {
         // --- IMMUTABLE DISCOUNTS SET ON DEPLOY ---
-        // Maps [boostBips] -> [discountBips]
 
         // 1. Diamond (Boost 5000)
-        boosterDiscountsBips[5000] = 5000;
-        // 50% discount
+        boosterDiscountsBips[5000] = 5000; // 50% discount
         // 2. Platinum (Boost 4000)
-        boosterDiscountsBips[4000] = 4000;
-        // 40% discount
+        boosterDiscountsBips[4000] = 4000; // 40% discount
         // 3. Gold (Boost 3000)
-        boosterDiscountsBips[3000] = 3000;
-        // 30% discount
+        boosterDiscountsBips[3000] = 3000; // 30% discount
         // 4. Silver (Boost 2000)
-        boosterDiscountsBips[2000] = 2000;
-        // 20% discount
+        boosterDiscountsBips[2000] = 2000; // 20% discount
         // 5. Bronze (Boost 1000)
-        boosterDiscountsBips[1000] = 1000;
-        // 10% discount
+        boosterDiscountsBips[1000] = 1000; // 10% discount
         // 6. Iron (Boost 500)
-        boosterDiscountsBips[500] = 500;
-        // 5% discount
+        boosterDiscountsBips[500] = 500; // 5% discount
         // 7. Crystal (Boost 100)
-        boosterDiscountsBips[100] = 100;
-        // 1% discount
+        boosterDiscountsBips[100] = 100; // 1% discount
     }
 
     // --- 5. ADMIN FUNCTIONS (For your scripts) ---
@@ -176,8 +149,7 @@ contract EcosystemManager is Ownable, IEcosystemManager {
         require(
             _token != address(0) &&
             _treasury != address(0) &&
-            _delegationManager != 
-            address(0) &&
+            _delegationManager != address(0) &&
             _rewardBooster != address(0),
             "Ecosystem: Addresses cannot be zero"
         );
@@ -201,7 +173,7 @@ contract EcosystemManager is Ownable, IEcosystemManager {
 
     /**
      * @notice (Owner) Sets the minimum pStake required to use a service.
-     * @param _serviceKey The service key (e.g., "NOTARY_SERVICE").
+     * @param _serviceKey The service key (e.g., "NOTARY_SERVICE" or "TIGER_GAME_SERVICE").
      * @param _pStake The minimum pStake required (e.g., 10000).
      */
     function setPStakeMinimum(
@@ -212,31 +184,18 @@ contract EcosystemManager is Ownable, IEcosystemManager {
         emit PStakeMinimumSet(_serviceKey, _pStake);
     }
 
-    /**
-     * @notice (Owner) Sets the discount for a booster tier.
-     * @dev REMOVED: Discounts are now immutable and set in the constructor.
-     */
-    // function setBoosterDiscount(...) external onlyOwner { ... } // <-- REMOVED
-
-
     // --- 6. AUTHORIZATION FUNCTION (The "Master Check") ---
 
     /**
      * @notice Checks if a user is authorized to use a service and returns the final fee.
      * @dev This is the main function that "Spokes" (other contracts) will call.
      * @dev It verifies pStake and applies the booster discount.
-     * @param _serviceKey The service key (e.g., "NOTARY_FEE").
-     * @param _user The address of the user attempting to use the service.
-     * @param _boosterTokenId The ID of the Booster NFT that the user (via frontend)
-     * declared they want to use.
-     * Send 0 if they don't have or want to use one.
-     * @return finalFee The final fee in Wei (with discount applied, if any).
      */
     function authorizeService(
         string calldata _serviceKey,
         address _user,
         uint256 _boosterTokenId
-    ) external view override returns (uint256 finalFee) { // Adicionado 'override'
+    ) external view override returns (uint256 finalFee) {
 
         // --- A. PSTAKE VERIFICATION ---
         uint256 minPStake = servicePStakeMinimums[_serviceKey];
@@ -257,7 +216,6 @@ contract EcosystemManager is Ownable, IEcosystemManager {
         if (_boosterTokenId > 0 && rewardBoosterAddress != address(0)) {
             IRewardBoosterNFT booster = IRewardBoosterNFT(rewardBoosterAddress);
             // 1. Verify the user is the true owner of the NFT
-            // We use a try/catch to prevent reverts if the token is invalid/doesn't exist.
             try booster.ownerOf(_boosterTokenId) returns (address owner) {
                 if (owner == _user) {
 
@@ -265,24 +223,20 @@ contract EcosystemManager is Ownable, IEcosystemManager {
                     uint256 boostBips = booster.boostBips(_boosterTokenId);
                     // 3. Get the IMMUTABLE discount configured for this tier
                     uint256 discountBips = boosterDiscountsBips[boostBips];
+
                     if (discountBips > 0) {
                         // Apply the discount
-                        // Since discountBips can be <= 10000, no underflow risk
                         uint256 discountAmount = (baseFee * discountBips) / 10000;
-                        // Protect against potential underflow if discountBips > 10000 (though unlikely now)
                         if (discountAmount <= baseFee) {
                              finalFee = baseFee - discountAmount;
                         } else {
-                             finalFee = 0;
-                             // Ensure fee doesn't become negative
+                             finalFee = 0; // Ensure fee doesn't become negative
                         }
                     }
                 }
             } catch {
-                // If ownerOf reverts (e.g., 
-                // token doesn't exist) or any other error,
+                // If ownerOf reverts (e.g., token doesn't exist) or any other error,
                 // simply ignore it.
-                // The user pays the baseFee.
             }
         }
 
@@ -293,20 +247,18 @@ contract EcosystemManager is Ownable, IEcosystemManager {
 
     /**
      * @notice Returns the requirements for a service (for the frontend).
-     * @dev The frontend uses this to display (e.g., "Minimum pStake: 10000").
      */
     function getServiceRequirements(
         string calldata _serviceKey
-    ) external view override returns (uint256 fee, uint256 pStake) { // Adicionado 'override'
+    ) external view override returns (uint256 fee, uint256 pStake) {
         return (serviceFees[_serviceKey], servicePStakeMinimums[_serviceKey]);
     }
 
 
     /**
      * @notice Retorna a taxa para uma chave de serviço (wrapper para o mapeamento).
-     * @dev Adicionado para corresponder à interface IEcosystemManager, usado por Spokes.
      */
-    function getFee(string calldata _serviceKey) external view override returns (uint256) { // Adicionado 'override'
+    function getFee(string calldata _serviceKey) external view override returns (uint256) {
         return serviceFees[_serviceKey];
     }
 
@@ -316,22 +268,22 @@ contract EcosystemManager is Ownable, IEcosystemManager {
      */
     function getBoosterDiscount(
         uint256 _boostBips
-    ) external view override returns (uint256) { // Adicionado 'override'
+    ) external view override returns (uint256) {
         return boosterDiscountsBips[_boostBips];
     }
 
     // Getters for addresses (for "Spokes" to use)
-    function getTreasuryAddress() external view override returns (address) { // Adicionado 'override'
+    function getTreasuryAddress() external view override returns (address) {
         return treasuryWallet;
     }
-    function getDelegationManagerAddress() external view override returns (address) { // Adicionado 'override'
+    function getDelegationManagerAddress() external view override returns (address) {
         return delegationManagerAddress;
     }
-    function getBKCTokenAddress() external view override returns (address) { // Adicionado 'override'
+    function getBKCTokenAddress() external view override returns (address) {
         return bkcTokenAddress;
     }
     // New Getter: Allows other contracts to find the Booster NFT contract
-    function getBoosterAddress() external view override returns (address) { // Adicionado 'override'
+    function getBoosterAddress() external view override returns (address) {
         return rewardBoosterAddress;
     }
 }

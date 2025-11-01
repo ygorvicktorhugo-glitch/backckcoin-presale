@@ -1,5 +1,5 @@
 // scripts/6_setup_sale.ts
-import hre from "hardhat";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { ethers, LogDescription, Log } from "ethers";
 import fs from "fs";
 import path from "path";
@@ -13,7 +13,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // --- ⚙️ CONFIGURAÇÃO DA PRÉ-VENDA ---
 //
-// Valores de 'maxSupply' (Suprimento Total 100%) confirmados.
+// Os valores de 'maxSupply' representam 100% do suprimento total por Tier.
+// O script cunhará 5% desse valor para a Tesouraria e configurará a venda dos 95% restantes.
 //
 const TIERS_TO_SETUP = [
   { tierId: 0, maxSupply: 100, priceETH: "3.60", boostBips: 5000, metadata: "diamond_booster.json" },
@@ -27,7 +28,8 @@ const TIERS_TO_SETUP = [
 
 const CHUNK_SIZE_BIGINT = BigInt(150); // Mintar em lotes de 150
 
-async function main() {
+// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
@@ -43,7 +45,7 @@ async function main() {
 
   if (!saleContractAddress || !boosterAddress || !hubAddress) {
     console.error("❌ Erro: Endereços 'publicSale', 'rewardBoosterNFT', ou 'ecosystemManager' não encontrados.");
-    process.exit(1);
+    throw new Error("Missing sale or NFT addresses.");
   }
   
   // --- 2. Obter Instâncias dos Contratos ---
@@ -63,7 +65,7 @@ async function main() {
     console.log(`\n -> Processando cunhagem da Tesouraria para: ${tier.metadata}`);
 
     // 3a. Ler maxSupply (100%) da NOSSA CONFIGURAÇÃO
-    const maxSupply = BigInt(tier.maxSupply); // Usa o valor local
+    const maxSupply = BigInt(tier.maxSupply);
     if (maxSupply === 0n) {
         console.log(`   ⚠️ AVISO: maxSupply para ${tier.metadata} é 0 na configuração. Pulando cunhagem da Tesouraria.`);
         continue;
@@ -131,11 +133,11 @@ async function main() {
       console.log(`   Preço: ${tier.priceETH} BNB (${priceInWei} Wei)`);
       console.log(`   Boost: ${tier.boostBips} BIPS`);
 
-      // Chama a função setTier com 5 argumentos, incluindo maxSupply
+      // Ordem: _tierId, _priceInWei, _maxSupply, _boostBips, _metadataFile
       const tx = await saleContract.setTier(
         tier.tierId,
-        maxSupply, // O Suprimento Total (100%)
-        priceInWei,
+        priceInWei, // 2º Argumento (Preço)
+        maxSupply, // 3º Argumento (MaxSupply)
         tier.boostBips,
         tier.metadata
       );
@@ -143,7 +145,7 @@ async function main() {
       console.log(`   ✅ Tier ${tier.metadata} configurado com sucesso!`);
     } catch (error: any) {
       console.error(`   ❌ FALHA ao configurar Tier ${tier.tierId}. Razão: ${error.reason || error.message}`);
-      console.error("   Possível causa: Verifique se a ABI do 'PublicSale' está atualizada (delete a pasta 'artifacts' e 'cache' e recompile).");
+      throw error;
     }
   }
 
@@ -152,8 +154,3 @@ async function main() {
   console.log("A pré-venda está agora pronta para o público.");
   console.log("\nPróximo passo: Execute '7_configure_fees.ts'");
 }
-
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});

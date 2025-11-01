@@ -1,21 +1,20 @@
-// app.js (AJUSTADO)
+// app.js (AJUSTADO: Resolvendo o erro de rota e garantindo a atualização do estado da UI)
 
 const ethers = window.ethers;
 
 import { DOMElements } from './dom-elements.js';
 import { State } from './state.js';
-// Assumimos que initializeWalletState e openConnectModal contêm a lógica de reconexão
 import { initPublicProvider, initializeWalletState, disconnectWallet, openConnectModal } from './modules/wallet.js';
 import { showToast, showShareModal, showWelcomeModal } from './ui-feedback.js';
 import { formatBigNumber, formatAddress } from './utils.js';
 import { loadAddresses } from './config.js'; 
 
-// Importações das Páginas (mantidas)
+// Importações das Páginas (CORRIGIDO: O nome do componente importado DEVE ser 'TigerGamePage')
 import { DashboardPage } from './pages/DashboardPage.js';
 import { EarnPage } from './pages/EarnPage.js';
 import { StorePage } from './pages/StorePage.js';
 import { RewardsPage } from './pages/RewardsPage.js';
-import { ActionsPage } from './pages/ActionsPage.js';
+import { TigerGamePage } from './pages/TigerGame.js'; 
 import { AboutPage } from './pages/AboutPage.js';
 import { AirdropPage } from './pages/AirdropPage.js';
 import { AdminPage } from './pages/AdminPage.js';
@@ -25,109 +24,140 @@ import { FaucetPage } from './pages/FaucetPage.js';
 import { TokenomicsPage } from './pages/TokenomicsPage.js';
 import { NotaryPage } from './pages/NotaryPage.js';
 
+
+// Mapeamento de rotas
 const routes = {
     'dashboard': DashboardPage,
     'earn': EarnPage,
     'store': StorePage,
     'rewards': RewardsPage,
-    'actions': ActionsPage,
-    'about': AboutPage,
+    'actions': TigerGamePage, // Mapeia 'actions' (ID do HTML) para o componente TigerGamePage
+    'notary': NotaryPage,
     'airdrop': AirdropPage,
+    'dao': DaoPage,
+    'tokenomics': TokenomicsPage,
+    'faucet': FaucetPage,
+    'about': AboutPage,
     'admin': AdminPage,
     'presale': PresalePage,
-    'dao': DaoPage,
-    'notary': NotaryPage,
-    'faucet': FaucetPage,
-    'tokenomics': TokenomicsPage,
 };
 
-// Página inicial padrão: Dashboard
 let activePageId = 'dashboard';
-const ADMIN_WALLET = "0x03aC69873293cD6ddef7625AfC91E3Bd5434562a";
+const ADMIN_WALLET = '0x03aC69873293cD6ddef7625AfC91E3Bd5434562a';
 
 
-// --- Funções de UI e Navegação (mantidas as correções anteriores) ---
+// --- FUNÇÕES DE NAVEGAÇÃO E ESTADO DA UI ---
 
-function updateConnectionStatus(status, message) {
-    const statuses = { disconnected: { bg: 'bg-red-500/20', text: 'text-red-400', icon: 'fa-circle' }, connecting: { bg: 'bg-amber-500/20', text: 'text-amber-400', icon: 'fa-spinner fa-spin' }, connected: { bg: 'bg-green-500/20', text: 'text-green-400', icon: 'fa-circle' }, }; const { bg, text, icon } = statuses[status]; const statusEl = DOMElements.connectionStatus; if (statusEl) { statusEl.className = `hidden sm:inline-flex lg:hidden items-center gap-2 py-1.5 px-3 rounded-full text-sm font-medium ${bg} ${text}`; statusEl.innerHTML = `<i class="fa-solid ${icon} text-xs"></i><span>${message}</span>`; }
+function onWalletStateChange(changes) {
+    const { isConnected, address, isNewConnection, wasConnected } = changes;
+    console.log("Wallet State Changed:", changes);
+
+    updateUIState();
+    
+    if (isConnected && isNewConnection) {
+        showToast(`Connected: ${formatAddress(address)}`, "success");
+    } else if (!isConnected && wasConnected) {
+        showToast("Wallet disconnected.", "info");
+    }
 }
 
-function navigateTo(targetId) {
-    // Verifica se a rota é válida.
-    if (!routes[targetId]) { 
-        console.warn(`Route not found: ${targetId}. Navigating to dashboard.`); 
-        targetId = 'dashboard'; 
-    }
-    
-    // Fallback para 'dashboard' se targetId for nulo (após a verificação de rota)
-    if (!targetId) {
-        targetId = 'dashboard';
-    }
-    
-    // Restrição de acesso ao Admin
-    if (targetId === 'admin' && (!State.userAddress || State.userAddress.toLowerCase() !== ADMIN_WALLET.toLowerCase())) { 
-        showToast("Access Denied. You are not an administrator.", "error"); 
-        return; 
-    }
-    
+/**
+ * Altera a página ativa da aplicação.
+ */
+function navigateTo(pageId) {
+    const pageContainer = document.querySelector('main > div.container');
+    const navItems = document.querySelectorAll('.sidebar-link');
 
-    activePageId = targetId;
-    document.querySelectorAll('main section').forEach(section => { if (section) section.classList.add('hidden'); });
-    
-    const targetSection = document.getElementById(targetId);
-    if (targetSection) { 
-        targetSection.classList.remove('hidden'); 
-    } else { 
-        // Se a seção alvo não for encontrada, o problema é sério (DOM Structure).
-        console.error(`Target section #${targetId} not found! Navigating to dashboard.`); 
-        activePageId = 'dashboard'; 
-        document.getElementById('dashboard')?.classList.remove('hidden'); 
-        document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active')); 
-        document.querySelector(`.sidebar-link[data-target="dashboard"]`)?.classList.add('active'); 
-        routes['dashboard']?.render(); 
-        return; 
+    if (!pageContainer || !navItems.length) {
+        console.error("DOM elements for navigation not found.");
+        return;
     }
-    
-    // Atualiza o link ativo na barra lateral
-    document.querySelectorAll('.sidebar-link').forEach(l => { if(!l.hasAttribute('data-target')) return; l.classList.remove('active'); });
-    const activeLink = document.querySelector(`.sidebar-link[data-target="${targetId}"]`);
-    if(activeLink) { activeLink.classList.add('active'); }
-    
-    // Renderiza a página
-    if (routes[targetId] && typeof routes[targetId].render === 'function') {
-        routes[targetId].render();
+
+    // 1. Esconde todas as páginas
+    Array.from(pageContainer.children).forEach(child => {
+        if (child.tagName === 'SECTION') {
+            child.classList.add('hidden');
+            child.classList.remove('active');
+        }
+    });
+
+    // 2. Remove o estado ativo de todos os itens da navegação
+    navItems.forEach(item => {
+        item.classList.remove('active');
+        item.classList.add('text-zinc-400', 'hover:text-white', 'hover:bg-zinc-700');
+    });
+
+    // 3. Exibe a página alvo
+    const targetPage = document.getElementById(pageId);
+    if (targetPage && routes[pageId]) {
+        targetPage.classList.remove('hidden');
+        targetPage.classList.add('active');
+        activePageId = pageId;
+
+        // 4. Marca o item de navegação como ativo
+        const activeNavItem = document.querySelector(`.sidebar-link[data-target="${pageId}"]`);
+        if (activeNavItem) {
+            activeNavItem.classList.add('active');
+        }
+
+        // 5. Renderiza/Atualiza o conteúdo da página
+        if (routes[pageId]) {
+             if (typeof routes[pageId].render === 'function') {
+                routes[pageId].render(true);
+            }
+        }
         
-        // NOTA: A lógica de init() foi movida para dentro do render() da PresalePage
-        // e é controlada por hasInitialized. Não chamamos init aqui para evitar duplicidade.
-
     } else {
-        console.warn(`No render function found for route: ${targetId}`);
-        if (targetSection) targetSection.classList.remove('hidden');
+        // Se a rota não for encontrada, tentamos navegar para o Dashboard
+        console.error(`Page ID '${pageId}' not found or route not defined.`);
+        navigateTo('dashboard');
+    }
+}
+window.navigateTo = navigateTo;
+
+function updateConnectionStatus(status, text) {
+    const mobileStatusEl = document.getElementById('connectionStatus');
+    if (!mobileStatusEl) return;
+
+    const icon = mobileStatusEl.querySelector('i');
+    const textSpan = mobileStatusEl.querySelector('span:last-child');
+    if(!icon || !textSpan) return;
+
+    textSpan.textContent = text;
+    mobileStatusEl.classList.remove('bg-red-500/20', 'text-red-400');
+    
+    if (status === 'connected') {
+        mobileStatusEl.classList.remove('hidden');
+        mobileStatusEl.classList.add('bg-green-500/20', 'text-green-400');
+        icon.classList.add('text-green-400');
+        icon.classList.remove('text-red-400');
+    } else if (status === 'disconnected') {
+        mobileStatusEl.classList.remove('hidden');
+        mobileStatusEl.classList.add('bg-red-500/20', 'text-red-400');
+        icon.classList.add('text-red-400');
+        icon.classList.remove('text-green-400');
+    } else {
+        mobileStatusEl.classList.add('hidden');
     }
 }
 
-function toggleSidebar() {
-    DOMElements.sidebar?.classList.toggle('-translate-x-full');
-    DOMElements.sidebarBackdrop?.classList.toggle('hidden');
-}
-function closeSidebar() {
-    DOMElements.sidebar?.classList.add('-translate-x-full');
-    DOMElements.sidebarBackdrop?.classList.add('hidden');
-}
 
+/**
+ * Atualiza todos os elementos da UI com base no State global (conectado/desconectado, saldos, etc.).
+ */
 function updateUIState() {
     const adminLinkContainer = document.getElementById('admin-link-container');
-    const statUserBalanceEl = document.getElementById('statUserBalance'); // Dashboard balance
+    const statUserBalanceEl = document.getElementById('statUserBalance'); 
 
-    const desktopDisconnected = DOMElements.desktopDisconnected;
-    const desktopConnectedInfo = DOMElements.desktopConnectedInfo;
-    const desktopUserAddress = DOMElements.desktopUserAddress;
-    const desktopUserBalance = DOMElements.desktopUserBalance;
-    const connectButtonMobile = DOMElements.connectButtonMobile;
-    const mobileAppDisplay = DOMElements.mobileAppDisplay;
-    const mobileSettingsButton = DOMElements.mobileSettingsButton;
-
-    console.log("Updating UI state, isConnected:", State.isConnected, "User Address:", State.userAddress);
+    const desktopDisconnected = document.getElementById('desktopDisconnected');
+    const desktopConnectedInfo = document.getElementById('desktopConnectedInfo');
+    const desktopUserAddress = document.getElementById('desktopUserAddress');
+    const desktopUserBalance = document.getElementById('desktopUserBalance');
+    const connectButtonMobile = document.getElementById('connectButtonMobile');
+    const mobileAppDisplay = document.getElementById('mobileAppDisplay');
+    const mobileSettingsButton = document.getElementById('mobileSettingsButton');
+    const popMiningTab = document.getElementById('pop-mining-tab');
+    const validatorSectionTab = document.getElementById('validator-section-tab');
 
     const checkElement = (el, name) => { if (!el) console.warn(`Element ${name} not found in DOM during UI update.`); return el; };
 
@@ -137,100 +167,142 @@ function updateUIState() {
         const balanceString = `${balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         const addressFormatted = formatAddress(State.userAddress);
 
+        // Desktop Conectado
         checkElement(desktopDisconnected, 'desktopDisconnected')?.classList.add('hidden');
         const desktopInfoEl = checkElement(desktopConnectedInfo, 'desktopConnectedInfo');
-        if (desktopInfoEl) { desktopInfoEl.classList.remove('hidden'); desktopInfoEl.classList.remove('text-white'); desktopInfoEl.classList.add('text-zinc-900'); }
-        const desktopAddrEl = checkElement(desktopUserAddress, 'desktopUserAddress');
-        if (desktopAddrEl) desktopAddrEl.textContent = addressFormatted;
-        const desktopBalEl = checkElement(desktopUserBalance, 'desktopUserBalance');
-        if (desktopBalEl) desktopBalEl.textContent = `${balanceString} $BKC`;
+        if (desktopInfoEl) { 
+            desktopInfoEl.classList.remove('hidden'); 
+            desktopInfoEl.classList.add('flex'); 
+            desktopInfoEl.style.display = 'flex';
+        }
+        checkElement(desktopUserAddress, 'desktopUserAddress').textContent = addressFormatted;
+        checkElement(desktopUserBalance, 'desktopUserBalance').textContent = `${balanceString} $BKC`;
 
+        // Mobile Conectado
         checkElement(connectButtonMobile, 'connectButtonMobile')?.classList.add('hidden');
         checkElement(mobileSettingsButton, 'mobileSettingsButton')?.classList.remove('hidden');
         const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
-        if (mobileDisplayEl) { mobileDisplayEl.textContent = `${balanceString} $BKC`; mobileDisplayEl.classList.add('text-amber-400'); mobileDisplayEl.classList.remove('text-white'); }
+        if (mobileDisplayEl) { mobileDisplayEl.textContent = `${balanceString} $BKC`; mobileDisplayEl.classList.remove('text-amber-400'); mobileDisplayEl.classList.add('text-white'); }
 
+        // Elementos de contexto
         if (statUserBalanceEl) statUserBalanceEl.textContent = balanceString;
-        if (DOMElements.popMiningTab) DOMElements.popMiningTab.style.display = 'block';
-        if (DOMElements.validatorSectionTab) DOMElements.validatorSectionTab.style.display = 'block';
+        if (popMiningTab) popMiningTab.style.display = 'block';
+        if (validatorSectionTab) validatorSectionTab.style.display = 'block';
         if (adminLinkContainer) { adminLinkContainer.style.display = (State.userAddress.toLowerCase() === ADMIN_WALLET.toLowerCase()) ? 'block' : 'none'; }
         updateConnectionStatus('connected', addressFormatted);
 
     } else {
         // --- ESTADO DESCONECTADO ---
+        
+        // Desktop Desconectado
         checkElement(desktopDisconnected, 'desktopDisconnected')?.classList.remove('hidden');
         const desktopInfoEl = checkElement(desktopConnectedInfo, 'desktopConnectedInfo');
-        if (desktopInfoEl) { desktopInfoEl.classList.add('hidden'); desktopInfoEl.classList.remove('text-zinc-900'); }
-        const desktopAddrEl = checkElement(desktopUserAddress, 'desktopUserAddress');
-        if (desktopAddrEl) desktopAddrEl.textContent = '';
-        const desktopBalEl = checkElement(desktopUserBalance, 'desktopUserBalance');
-        if (desktopBalEl) desktopBalEl.textContent = '';
+        if (desktopInfoEl) { 
+            desktopInfoEl.classList.add('hidden'); 
+            desktopInfoEl.classList.remove('flex');
+            desktopInfoEl.style.display = 'none';
+        }
 
+        // Mobile Desconectado
         checkElement(connectButtonMobile, 'connectButtonMobile')?.classList.remove('hidden');
         checkElement(mobileSettingsButton, 'mobileSettingsButton')?.classList.add('hidden');
         const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
         if (mobileDisplayEl) { mobileDisplayEl.textContent = 'Backchain'; mobileDisplayEl.classList.add('text-amber-400'); mobileDisplayEl.classList.remove('text-white'); }
 
-        if (DOMElements.popMiningTab) DOMElements.popMiningTab.style.display = 'none';
-        if (DOMElements.validatorSectionTab) DOMElements.validatorSectionTab.style.display = 'none';
+        // Elementos de contexto
+        if (popMiningTab) popMiningTab.style.display = 'none';
+        if (validatorSectionTab) validatorSectionTab.style.display = 'none';
         if (adminLinkContainer) adminLinkContainer.style.display = 'none';
         if (statUserBalanceEl) statUserBalanceEl.textContent = '--';
         updateConnectionStatus('disconnected', 'Disconnected');
     }
 
     // A atualização da página ativa deve ser feita após a atualização do estado da conexão.
-    if (routes[activePageId]) { 
-        if (typeof routes[activePageId].update === 'function') { 
-            routes[activePageId].update(State.isConnected); 
-        } else if (typeof routes[activePageId].render === 'function') { 
-            // CORREÇÃO: Chama render, que por sua vez chama init (se necessário)
-            routes[activePageId].render(); 
-        } 
-    } else { 
-        console.error(`Route handler for ${activePageId} not found during UI update.`); 
-        navigateTo('dashboard'); 
-    }
+    // Navega para a página ativa para acionar o re-render
+    navigateTo(activePageId); 
 }
 
 
-async function onWalletStateChange(newState) {
-    console.log("onWalletStateChange:", newState);
-    
-    // AQUI É ONDE SE GARANTE QUE A UI É ATUALIZADA APÓS QUALQUER MUDANÇA DE ESTADO
-    if (!newState.isConnected) { 
-        if (newState.wasConnected) showToast("Wallet disconnected.", "info"); 
-        updateUIState(); 
-        // Se desconectou, volta para o dashboard
-        navigateTo('dashboard');
-    } else { 
-        if (newState.isNewConnection) showToast("Wallet connected successfully!", "success"); 
-        updateUIState(); 
-    }
-}
+// --- LISTENERS E INICIALIZAÇÃO GLOBAL ---
 
-
-// --- SETUP PRINCIPAL (CORRIGIDO E OTIMIZADO) ---
 function setupGlobalListeners() {
-    DOMElements.menuBtn?.addEventListener('click', toggleSidebar);
-    DOMElements.sidebarBackdrop?.addEventListener('click', closeSidebar);
-    DOMElements.navLinks?.addEventListener('click', (e) => { const link = e.target.closest('a'); if (!link) return; if (link.id === 'shareProjectBtn') { e.preventDefault(); showShareModal(); closeSidebar(); return; } if (link.hasAttribute('data-target')) { e.preventDefault(); navigateTo(link.dataset.target); closeSidebar(); } });
-    DOMElements.connectButtonDesktop?.addEventListener('click', () => { openConnectModal(); });
-    DOMElements.connectButtonMobile?.addEventListener('click', () => { openConnectModal(); });
-    DOMElements.mobileSettingsButton?.addEventListener('click', () => { openConnectModal(); });
-    document.body.addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop' || e.target.closest('.closeModalBtn')) { if (DOMElements.modalContainer) DOMElements.modalContainer.innerHTML = ''; } });
-    DOMElements.earnTabs?.addEventListener('click', (e) => { const button = e.target.closest('.tab-btn'); if (!button) return; const targetId = button.dataset.target; const earnSection = document.getElementById('earn'); if (!earnSection) return; earnSection.querySelectorAll('#earn-tabs .tab-btn').forEach(btn => btn.classList.remove('active')); button.classList.add('active'); earnSection.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active')); const targetContent = earnSection.querySelector(`#${targetId}`); if(targetContent) targetContent.classList.add('active'); });
+    const navItems = document.querySelectorAll('.sidebar-link');
+    const menuButton = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    const connectButton = document.getElementById('connectButtonDesktop');
+    const connectButtonMobile = document.getElementById('connectButtonMobile');
+    const desktopConnectedInfo = document.getElementById('desktopConnectedInfo');
+    const shareButton = document.getElementById('shareProjectBtn');
+
+    // 1. Navegação Lateral (Sidebar)
+    if (navItems.length > 0) {
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const pageId = item.dataset.target;
+                if (pageId) {
+                    navigateTo(pageId);
+                    // Fechar o sidebar mobile após a navegação
+                    if (sidebar.classList.contains('translate-x-0')) {
+                        sidebar.classList.remove('translate-x-0');
+                        sidebar.classList.add('-translate-x-full');
+                        sidebarBackdrop.classList.add('hidden');
+                    }
+                }
+            });
+        });
+    } else {
+        console.warn("No sidebar navigation items found.");
+    }
+    
+    // 2. Botões de Conexão
+    if (connectButton) {
+        connectButton.addEventListener('click', openConnectModal);
+    }
+    if (connectButtonMobile) {
+        connectButtonMobile.addEventListener('click', openConnectModal);
+    }
+    
+    // 3. Botão de Configurações/Logout (Desktop - o wrapper)
+    if (desktopConnectedInfo) {
+        desktopConnectedInfo.addEventListener('click', () => {
+            openConnectModal(); // Abre o modal do Web3Modal (que permite desconectar)
+        });
+    }
+
+    // 4. Botão de Compartilhar
+    if (shareButton) {
+        shareButton.addEventListener('click', () => {
+            showShareModal(State.userAddress);
+        });
+    }
+
+
+    // 5. Botão de menu mobile
+    if (menuButton && sidebar && sidebarBackdrop) {
+        menuButton.addEventListener('click', () => {
+            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('translate-x-0');
+            sidebarBackdrop.classList.toggle('hidden');
+        });
+         sidebarBackdrop.addEventListener('click', () => {
+            sidebar.classList.add('-translate-x-full');
+            sidebar.classList.remove('translate-x-0');
+            sidebarBackdrop.classList.add('hidden');
+        });
+    }
+
+    console.log("Global listeners attached.");
 }
 
-async function init() {
-    console.log("Initializing application...");
-    if (typeof ethers === 'undefined') {
-        showToast("Ethers library not loaded. Please refresh.", "error");
-        document.body.innerHTML = '<div style="color: red; padding: 20px;">Error: Ethers.js not found.</div>';
-        return;
-    }
+/**
+ * Ponto de entrada principal da aplicação.
+ */
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("DOM Content Loaded. Starting initialization...");
 
     try {
-        console.log("Carregando endereços dos contratos...");
+         // Carregar endereços e ABIs
         const addressesLoaded = await loadAddresses(); 
         
         if (!addressesLoaded) {
@@ -250,24 +322,21 @@ async function init() {
     // 1. Inicializa o Provedor Público
     await initPublicProvider(); 
 
-    // 2. Tenta a RECONEXÃO AUTOMÁTICA (se o State for persistido via initializeWalletState)
-    // O onWalletStateChange será chamado APÓS a verificação (se conectado ou desconectado)
+    // 2. Tenta a RECONEXÃO AUTOMÁTICA
     await initializeWalletState(onWalletStateChange);
 
-    // 3. Mostra o modal de boas-vindas. O modal deve aparecer com o idioma padrão (en)
+    // 3. Mostra o modal de boas-vindas. 
     showWelcomeModal();
 
-    // 4. E navega para a página padrão (Dashboard, já que activePageId='dashboard')
-    // A navegação acontece agora para garantir que a página correta seja renderizada logo
-    // após o estado da carteira ser estabelecido (mesmo que desconectado).
+    // 4. Navega para a página padrão.
+    // Note: A chamada a navigateTo dentro de updateUIState garante que a renderização final
+    // ocorra após o estado da carteira ser conhecido.
     navigateTo(activePageId); 
 
     console.log("Application initialized.");
-}
+});
 
-// Start the application
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+// Expor funções necessárias para o escopo global (para uso em HTML, se necessário)
+window.openConnectModal = openConnectModal;
+window.disconnectWallet = disconnectWallet;
+window.updateUIState = updateUIState;

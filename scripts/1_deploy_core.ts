@@ -1,5 +1,5 @@
 // scripts/1_deploy_core.ts
-import hre from "hardhat";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 
@@ -7,7 +7,8 @@ import path from "path";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEPLOY_DELAY_MS = 2000; // 2-second delay
 
-async function main() {
+// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
@@ -17,10 +18,24 @@ async function main() {
   console.log("----------------------------------------------------");
 
   const addresses: { [key: string]: string } = {};
+  let existingFaucetAddress = "";
+
+  // Verifica se o endereço do Faucet já está no deployment-addresses.json
+  const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
+  try {
+      const existingAddresses = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
+      if (existingAddresses.faucet) {
+          existingFaucetAddress = existingAddresses.faucet;
+          console.log(`⚠️ Endereço do Faucet existente (${existingFaucetAddress}) será mantido, mas não será reimplantado.`);
+      }
+  } catch (e) {
+      // Cria um novo arquivo se ele não existir
+      fs.writeFileSync(addressesFilePath, JSON.stringify({}, null, 2));
+  }
+
 
   try {
     // --- 1. Deploy EcosystemManager (The Hub) ---
-    // Este é o "cérebro" e deve ser implantado primeiro.
     console.log("1. Implantando EcosystemManager (Hub)...");
     const ecosystemManager = await ethers.deployContract("EcosystemManager", [
       deployer.address,
@@ -54,7 +69,6 @@ async function main() {
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 4. Deploy DelegationManager ---
-    // Depende do BKCToken e do EcosystemManager
     console.log("4. Implantando DelegationManager...");
     const delegationManager = await ethers.deployContract("DelegationManager", [
       addresses.bkcToken,
@@ -70,7 +84,6 @@ async function main() {
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 5. Deploy RewardManager ---
-    // Depende do BKCToken, EcosystemManager, e Treasury (usando deployer como tesouraria inicial)
     console.log("5. Implantando RewardManager...");
     const rewardManager = await ethers.deployContract("RewardManager", [
       addresses.bkcToken,
@@ -85,7 +98,6 @@ async function main() {
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 6. Deploy DecentralizedNotary ---
-    // Depende do BKCToken e do EcosystemManager
     console.log("6. Implantando DecentralizedNotary...");
     const decentralizedNotary = await ethers.deployContract(
       "DecentralizedNotary",
@@ -100,7 +112,6 @@ async function main() {
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 7. Deploy PublicSale ---
-    // Depende do RewardBoosterNFT e do EcosystemManager
     console.log("7. Implantando PublicSale...");
     const publicSale = await ethers.deployContract("PublicSale", [
       addresses.rewardBoosterNFT,
@@ -112,37 +123,43 @@ async function main() {
     console.log(`✅ PublicSale implantado em: ${addresses.publicSale}`);
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
+    
+    // --- 8. Deploy SimpleBKCFaucet (Movido para aqui para o Passo 0 funcionar) ---
+    // Mesmo se a intenção for não reimplantar, precisamos que o endereço exista para o Passo 0
+    if (!existingFaucetAddress) {
+        console.log("8. Implantando SimpleBKCFaucet...");
+        const simpleBKCFaucet = await ethers.deployContract("SimpleBKCFaucet", [
+            addresses.bkcToken,
+        ]);
+        await simpleBKCFaucet.waitForDeployment();
+        addresses.faucet = simpleBKCFaucet.target as string;
+        console.log(`✅ SimpleBKCFaucet implantado em: ${addresses.faucet}`);
+        console.log("----------------------------------------------------");
+        await sleep(DEPLOY_DELAY_MS);
+    } else {
+        addresses.faucet = existingFaucetAddress;
+    }
 
-    // --- 8. Deploy SimpleBKCFaucet ---
-    // Depende do BKCToken
-    console.log("8. Implantando SimpleBKCFaucet...");
-    const simpleBKCFaucet = await ethers.deployContract("SimpleBKCFaucet", [
-      addresses.bkcToken,
-    ]);
-    await simpleBKCFaucet.waitForDeployment();
-    addresses.faucet = simpleBKCFaucet.target as string;
-    console.log(`✅ SimpleBKCFaucet implantado em: ${addresses.faucet}`);
-    console.log("----------------------------------------------------");
-  } catch (error) {
-    console.error("❌ Falha na implantação (Passo 1):", error);
-    process.exit(1);
+
+  } catch (error: any) {
+    console.error("❌ Falha na implantação (Passo 1):", error.message);
+    throw error;
   }
 
-  // --- Salva os 8 endereços no arquivo ---
-  const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
+  // --- Salva os endereços no arquivo (incluindo o Faucet) ---
+  let finalAddresses = {};
+  try {
+      const existingContent = fs.readFileSync(addressesFilePath, "utf8");
+      finalAddresses = JSON.parse(existingContent);
+  } catch (e) { /* continua com objeto vazio */ }
+  // Sobrescreve/adiciona os novos endereços
+  Object.assign(finalAddresses, addresses);
+
   fs.writeFileSync(
     addressesFilePath,
-    JSON.stringify(addresses, null, 2)
+    JSON.stringify(finalAddresses, null, 2)
   );
 
   console.log("\n🎉🎉🎉 CONTRATOS PRINCIPAIS IMPLANTADOS COM SUCESSO! 🎉🎉🎉");
-  console.log(
-    `✅ Todos os 8 endereços principais salvos em: ${addressesFilePath}`
-  );
-  console.log("\nPróximo passo: Execute '2_configure_hub_addresses.ts'");
+  console.log("\nPróximo passo: Execute '0_faucet_test_supply.ts'");
 }
-
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});

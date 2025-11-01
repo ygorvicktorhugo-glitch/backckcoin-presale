@@ -1,10 +1,11 @@
 // scripts/2_configure_hub_addresses.ts
-import hre from "hardhat";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 import { ethers } from "ethers";
 
-async function main() {
+// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
@@ -17,8 +18,7 @@ async function main() {
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
     console.error("❌ Erro: 'deployment-addresses.json' não encontrado.");
-    console.error("Por favor, execute '1_deploy_core.ts' primeiro.");
-    process.exit(1);
+    throw new Error("Missing deployment-addresses.json");
   }
   const addresses = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
 
@@ -32,7 +32,7 @@ async function main() {
   for (const addr of required) {
     if (!addresses[addr]) {
       console.error(`❌ Erro: Endereço '${addr}' não encontrado em deployment-addresses.json.`);
-      process.exit(1);
+      throw new Error(`Missing required address: ${addr}`);
     }
   }
 
@@ -57,16 +57,11 @@ async function main() {
     console.log(`   -> Tesouraria definida para: ${deployer.address}`);
     console.log("----------------------------------------------------");
     
-  } catch (error) {
-    console.error("❌ Falha na configuração dos endereços (Passo 2):", error);
-    process.exit(1);
+  } catch (error: any) {
+    console.error("❌ Falha na configuração dos endereços (Passo 2):", error.message);
+    throw error;
   }
 
   console.log("\n🎉🎉🎉 ENDEREÇOS DO HUB CONFIGURADOS COM SUCESSO! 🎉🎉🎉");
   console.log("\nPróximo passo: Execute '3_deploy_spokes.ts'");
 }
-
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});

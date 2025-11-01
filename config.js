@@ -5,7 +5,7 @@ export const addresses = {};
 
 export async function loadAddresses() {
     try {
-        const response = await fetch('../deployment-addresses.json');
+        const response = await fetch('./deployment-addresses.json');
         if (!response.ok) {
             throw new Error(`Falha ao buscar deployment-addresses.json: ${response.statusText}`);
         }
@@ -19,8 +19,8 @@ export async function loadAddresses() {
         addresses.faucet = jsonAddresses.faucet;
         addresses.decentralizedNotary = jsonAddresses.decentralizedNotary;
         addresses.nftBondingCurve = jsonAddresses.nftLiquidityPool;
-        addresses.actionsManager = jsonAddresses.fortuneTiger;
-        addresses.ecosystemManager = jsonAddresses.ecosystemManager; // <-- O Hub
+        addresses.actionsManager = jsonAddresses.fortuneTiger; // ActionsManager agora aponta para FortuneTiger
+        addresses.ecosystemManager = jsonAddresses.ecosystemManager; 
 
         return true;
 
@@ -36,7 +36,8 @@ export async function loadAddresses() {
 
 
 // --- Constante do Faucet ---
-export const FAUCET_AMOUNT_WEI = 12500000000000000000000n; // 12.500 $BKC
+// AJUSTADA para 100 BKC (100 * 10^18)
+export const FAUCET_AMOUNT_WEI = 100n * 10n**18n; 
 
 export const sepoliaRpcUrl = "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz";
 export const ipfsGateway = "https://ipfs.io/ipfs/";
@@ -54,6 +55,7 @@ export const boosterTiers = [
 
 
 // --- ABIs CORRIGIDAS --- 
+// Incluindo mais funções para o ABI Mismatch
 
 export const bkcTokenABI = [
     "function totalSupply() view returns (uint256)",
@@ -64,7 +66,6 @@ export const bkcTokenABI = [
     "function symbol() view returns (string)",
     "function allowance(address owner, address spender) view returns (uint256)",
     "function mint(address to, uint256 amount)",
-    // CORRIGIDO: Adicionadas constantes públicas do BKCToken
     "function MAX_SUPPLY() view returns (uint256)", 
     "function TGE_SUPPLY() view returns (uint256)" 
 ];
@@ -80,18 +81,20 @@ export const delegationManagerABI = [
     "function hasPaidRegistrationFee(address) view returns (bool)",
     "function MIN_LOCK_DURATION() view returns (uint256)",
     "function MAX_LOCK_DURATION() view returns (uint256)",
+    "function getMinValidatorStake() view returns (uint256)",
+    
+    // Funções de Escrita (Validador e Ações)
     "function payRegistrationFee()",
     "function registerValidator(address _validatorAddress)",
     "function delegate(address _validatorAddress, uint256 _totalAmount, uint256 _lockDuration)",
     "function unstake(uint256 _delegationIndex)",
     "function forceUnstake(uint256 _delegationIndex, uint256 _boosterTokenId)",
     "function claimDelegatorReward()",
-    "function getMinValidatorStake() view returns (uint256)",
+    
+    // Eventos
     "event Delegated(address indexed user, address indexed validator, uint256 delegationIndex, uint256 amount, uint256 feePaid)",
     "event Unstaked(address indexed user, uint256 delegationIndex, uint256 amount, uint256 feePaid)",
     "event DelegatorRewardClaimed(address indexed delegator, uint256 amount)"
-    // MINT_POOL, TGE_SUPPLY, MAX_SUPPLY não são mais necessárias publicamente aqui,
-    // pois o RewardManager as define e não as expõe na ABI
 ];
 
 export const rewardManagerABI = [
@@ -99,12 +102,16 @@ export const rewardManagerABI = [
     "function vestingPositions(uint256) view returns (uint256 totalAmount, uint256 startTime)",
     "function VESTING_DURATION() view returns (uint256)",
     "function tokenURI(uint256 _tokenId) view returns (string)",
-    "function minerRewardsOwed(address) view returns (uint256)",
+    "function minerRewardsOwed(address) view returns (uint256)", 
     "function INITIAL_PENALTY_BIPS() view returns (uint256)",
     "function withdraw(uint256 _tokenId, uint256 _boosterTokenId)",
     "function claimMinerRewards()",
     "function createVestingCertificate(address _recipient, uint256 _grossAmount)",
     "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+    
+    // CORREÇÃO: ADICIONAR NOVA FUNÇÃO VIEW DO MINT RATE
+    "function getMintRate(uint256 _purchaseAmount) view returns (uint256)", 
+    
     "event VestingCertificateCreated(uint256 indexed tokenId, address indexed recipient, uint256 netAmount)",
     "event CertificateWithdrawn(uint256 indexed tokenId, address indexed owner, uint256 amountToOwner, uint256 penaltyAmount)",
     "event MinerRewardClaimed(address indexed miner, uint256 amount)"
@@ -130,6 +137,17 @@ export const nftBondingCurveABI = [
     "event NFTSold(address indexed seller, uint256 indexed boostBips, uint256 tokenId, uint256 payout, uint256 feePaid)"
 ];
 
+// --- NOVO: ABI para o Contrato FortuneTiger (Jogo do Tigre) ---
+export const fortuneTigerABI = [
+    "function play(uint256 _amount, uint256 _boosterTokenId)",
+    "function prizePools(uint256) view returns (uint256 multiplier, uint256 chanceDenominator, uint256 balance, uint256 contributionShareBips)",
+    "function setPools(uint256[] calldata _multipliers, uint256[] calldata _denominators, uint256[] calldata _contributionBips)",
+    "function SERVICE_FEE_BIPS() view returns (uint256)",
+    "event GamePlayed(address indexed user, uint256 amountWagered, uint256 totalPrizeWon)"
+];
+
+// O ABI actionsManagerABI (originalmente para o jogo do tigre) agora é um placeholder
+// para o contrato de Actions/DAO se for o caso. 
 export const actionsManagerABI = [ 
     "function actionCounter() view returns (uint256)",
     "function actions(uint256) view returns (uint256 id, address creator, string description, uint8 actionType, uint8 status, uint256 endTime, uint256 totalPot, uint256 creatorStake, bool isStakeReturned, address beneficiary, uint256 totalCoupons, address winner, uint256 closingBlock, uint256 winningCoupon)",
@@ -138,6 +156,7 @@ export const actionsManagerABI = [
     "function participate(uint256 _actionId, uint256 _bkcAmount, uint256 _boosterTokenId)",
     "function finalizeAction(uint256 _actionId)",
 ];
+
 
 export const publicSaleABI = [
     "function tiers(uint256) view returns (uint256 priceInWei, uint256 maxSupply, uint256 mintedCount, uint256 boostBips, string metadataFile, bool isConfigured)",
@@ -169,7 +188,7 @@ export const faucetABI = [
   "event TokensClaimed(address indexed recipient, uint256 amount)",
   "function claim()",
   "function claimAmount() view returns (uint256)",
-  "function hasClaimed(address) view returns (bool)",
+  // REMOVIDO: hasClaimed
   "function owner() view returns (address)",
   "function renounceOwnership()",
   "function token() view returns (address)",

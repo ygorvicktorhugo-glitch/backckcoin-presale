@@ -11,7 +11,7 @@ import { safeBalanceOf, safeContractCall } from '../modules/data.js';
 
 let faucetState = {
     ethBalance: null,
-    hasClaimedBKC: null,
+    // REMOVIDO: hasClaimedBKC: null, // Não mais necessário
     faucetBKCBalance: null,
 };
 
@@ -75,7 +75,7 @@ function renderWalletInfo(walletAddress, ethBalance) {
     `;
 }
 
-// *** CÓDIGO AJUSTADO AQUI ***
+
 function renderScreen_MissingETH() {
     return `
         <div class="max-w-xl mx-auto">
@@ -84,7 +84,7 @@ function renderScreen_MissingETH() {
             ${renderStepCard({
                 title: 'Step 1: Get Sepolia ETH (Gas)',
                 status: 'required',
-                icon: 'fa-gas-pump', // Ícone ajustado
+                icon: 'fa-gas-pump', 
                 contentHTML: `
                     <p>Your wallet requires Sepolia ETH to pay for transaction fees (gas) before we can send you $BKC.</p>
                     <p class="mt-3 text-sm font-semibold text-white">Follow these 3 actions to get Sepolia ETH:</p>
@@ -107,15 +107,15 @@ function renderScreen_MissingETH() {
         </div>
     `;
 }
-// *** FIM DO CÓDIGO AJUSTADO AQUI ***
 
 
 function renderScreen_ReadyToClaim() {
+    // FAUCET_AMOUNT_WEI é o valor ajustado de 100 BKC
     const bkcClaimAmountFormatted = formatBigNumber(FAUCET_AMOUNT_WEI);
     const faucetHasEnoughBKC = faucetState.faucetBKCBalance >= FAUCET_AMOUNT_WEI;
 
     let claimStatus = 'active'; // Default
-    let content = `<p class="text-lg">You are ready to claim **${bkcClaimAmountFormatted.toFixed(2)} $BKC**!</p><p class="text-xs text-zinc-400">This action can only be performed once per address.</p>`;
+    let content = `<p class="text-lg">You are ready to claim **${bkcClaimAmountFormatted.toFixed(2)} $BKC** per claim.</p><p class="text-xs text-zinc-400">This action can be performed multiple times to facilitate network testing.</p>`;
     let actionHTML = `
         <button id="claimFaucetBtn" class="w-full font-bold py-3 px-6 rounded-lg text-lg transition-colors shadow-lg hover:shadow-xl bg-green-500 hover:bg-green-600 text-zinc-900">
             <i class="fa-solid fa-gift mr-2"></i> Claim ${bkcClaimAmountFormatted.toFixed(2)} $BKC
@@ -136,35 +136,13 @@ function renderScreen_ReadyToClaim() {
             ${renderStepCard({
                 title: 'Step 2: Claim Your $BKC Tokens',
                 status: claimStatus,
-                icon: 'fa-hand-holding-dollar', // Ícone ajustado
+                icon: 'fa-hand-holding-dollar', 
                 contentHTML: content,
                 actionHTML: actionHTML
             })}
         </div>
     `;
 }
-
-function renderScreen_Claimed() {
-    const bkcClaimAmountFormatted = formatBigNumber(FAUCET_AMOUNT_WEI);
-    return `
-        <div class="max-w-xl mx-auto text-center">
-            <i class="fa-solid fa-check-circle text-7xl text-green-400 mb-5"></i>
-            ${renderStepCard({
-                title: 'Claim Completed',
-                status: 'complete',
-                icon: 'fa-lock-open', // Ícone ajustado
-                customClass: 'border-2',
-                contentHTML: `
-                    <p class="text-lg font-semibold">Congratulations! You have successfully claimed ${bkcClaimAmountFormatted.toFixed(2)} $BKC with this wallet.</p>
-                    <p class="text-sm text-zinc-400 mt-3">This faucet is single-use only. You can now use your $BKC to delegate, earn rewards, and test the Backchain network.</p>
-                `,
-                actionHTML: ''
-            })}
-            <p class="text-zinc-500 mt-5">Thank you for testing the Sepolia network!</p>
-        </div>
-    `;
-}
-
 
 // --- Função Principal de Renderização ---
 async function renderFaucetContent() {
@@ -178,20 +156,20 @@ async function renderFaucetContent() {
 
 
     // 2. Carregamento dos Dados
-    if (faucetState.ethBalance === null || faucetState.hasClaimedBKC === null || faucetState.faucetBKCBalance === null) {
+    // REMOVIDO: hasClaimedBKC da verificação de estado
+    if (faucetState.ethBalance === null || faucetState.faucetBKCBalance === null) {
         if (!faucetState.isLoading) {
             faucetState.isLoading = true;
-            // Alinhamento visual: Usar o estilo de loader do DApp
             container.innerHTML = `<div class="max-w-xl mx-auto text-center py-20"><div class="loader inline-block !w-8 !h-8"></div><p class="text-zinc-400 mt-4 text-lg">Loading faucet status...</p></div>`;
             console.log("FAUCET: Starting data fetch...");
             try {
-                const [ethBal, hasClaimed, faucetBal] = await Promise.all([
+                // REMOVIDO: safeContractCall(State.faucetContract, 'hasClaimed', [State.userAddress], null),
+                const [ethBal, faucetBal] = await Promise.all([
                     State.provider.getBalance(State.userAddress),
-                    safeContractCall(State.faucetContract, 'hasClaimed', [State.userAddress], null),
                     safeBalanceOf(State.bkcTokenContract, addresses.faucet)
                 ]);
                 faucetState.ethBalance = ethBal;
-                faucetState.hasClaimedBKC = hasClaimed;
+                // faucetState.hasClaimedBKC = hasClaimed; // REMOVIDO
                 faucetState.faucetBKCBalance = faucetBal;
             } catch (e) {
                 console.error("FAUCET: Critical error during data fetch.", e);
@@ -206,14 +184,13 @@ async function renderFaucetContent() {
     // 3. Determinação da Tela
     let screenContent = '';
     const needsSepoliaETH = faucetState.ethBalance === 0n;
-    const claimed = faucetState.hasClaimedBKC === true;
+    // REMOVIDO: const claimed = faucetState.hasClaimedBKC === true;
     const faucetHasFunds = faucetState.faucetBKCBalance >= FAUCET_AMOUNT_WEI;
 
-    if (claimed) {
-        screenContent = renderScreen_Claimed();
-    } else if (needsSepoliaETH) {
+    if (needsSepoliaETH) {
         screenContent = renderScreen_MissingETH();
-    } else { // Inclui ReadyToClaim e Faucet Empty
+    } else { 
+        // Não há mais tela de "Claimed", pois o claim é repetível.
         screenContent = renderScreen_ReadyToClaim();
     }
 
@@ -256,8 +233,8 @@ export const FaucetPage = {
     async render() {
         const faucetContainer = document.getElementById('faucet');
         if (!faucetContainer) return;
-        // Inicia o estado como nulo para forçar a busca de dados
-        faucetState = { ethBalance: null, hasClaimedBKC: null, faucetBKCBalance: null, isLoading: false };
+        // Reseta o estado para forçar a busca de dados
+        faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false };
         faucetContainer.innerHTML = `<div id="faucet-content-wrapper" class="container mx-auto max-w-7xl py-8"></div>`;
         await renderFaucetContent();
     },
@@ -266,7 +243,7 @@ export const FaucetPage = {
          if (claimBtn && !claimBtn.disabled) {
             const success = await executeFaucetClaim(claimBtn);
             if (success) {
-                faucetState.hasClaimedBKC = true; // Marca como clamado
+                // Não marca mais como 'claimed', apenas força o re-render para atualizar o saldo
                 // Força re-renderização completa após delay
                 setTimeout(async () => { await FaucetPage.render(); }, 2500);
             }

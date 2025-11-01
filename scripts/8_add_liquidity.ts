@@ -1,20 +1,13 @@
 // scripts/8_add_liquidity.ts
 // IMPORTANTE: Este script deve ser executado *APÓS* o término da pré-venda.
 //
-// LÓGICA ATUALIZADA (NOVA):
-// 1. (Cunhagem dos 5% da Tesouraria FOI MOVIDA para o script 6_setup_sale.ts)
-// 2. Lê o `maxSupply` (100%) e `mintedCount` (vendidos) do PublicSale.
-// 3. Calcula os 95% que estavam à venda (`saleAllocation`).
-// 4. Calcula os NFTs "não vendidos" (`unsoldAmount = saleAllocation - mintedCount`).
-// 5. Cunhagem (criação) dos NFTs "não vendidos".
-// 6. Adiciona os NFTs "não vendidos" + 2 Milhões de $BKC à NFTLiquidityPool.
-// 7. Renuncia à propriedade do RewardBoosterNFT (PASSO FINAL E PERMANENTE).
+// LÓGICA: Cunha NFTs "não vendidos" (95% - Vendidos) e adiciona-os ao AMM de NFT.
 
-import hre from "hardhat";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import addressesJson from "../deployment-addresses.json";
-import { LogDescription, ContractTransactionReceipt, ethers, Log } from "ethers"; // Importado 'Log'
+import { LogDescription, ContractTransactionReceipt, ethers, Log } from "ethers";
 import fs from "fs";
-import path from "path"; // Importado 'path'
+import path from "path";
 
 // Type assertion for the addresses object
 const addresses: { [key: string]: string } = addressesJson;
@@ -22,7 +15,7 @@ const addresses: { [key: string]: string } = addressesJson;
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Transaction wrapper with retries
+// Transaction wrapper with retries (função completa)
 async function sendTransactionWithRetries(
   txFunction: () => Promise<any>,
   retries = 3
@@ -61,7 +54,7 @@ async function sendTransactionWithRetries(
 // ###               CONFIGURE MANUALMENTE AQUI (PÓS-VENDA)              ###
 // ######################################################################
 
-// Sua nova regra: 2 Milhões de BKC por piscina
+// Sua nova regra: 2 Milhões de BKC por piscina AMM
 const LIQUIDITY_BKC_AMOUNT_PER_POOL = ethers.parseEther("2000000"); // 2,000,000 BKC
 
 // Definição dos 7 Tiers (deve corresponder ao 6_setup_sale.ts)
@@ -83,9 +76,12 @@ const CHUNK_SIZE_BIGINT = BigInt(CHUNK_SIZE);
 // ###               NÃO EDITE ABAIXO DESTA LINHA                     ###
 // ######################################################################
 
-async function main() {
+// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
+
+  // --- Carregar Contratos ---
   const hub = await ethers.getContractAt(
     "EcosystemManager",
     addresses.ecosystemManager,
@@ -98,7 +94,7 @@ async function main() {
   console.log(`Carteira da Tesouraria (do Hub): ${treasuryWallet}`);
   console.log("----------------------------------------------------");
 
-  // --- Carregar Contratos ---
+  // --- Obter Instâncias dos Contratos ---
   const rewardBoosterNFT = await ethers.getContractAt(
     "RewardBoosterNFT",
     addresses.rewardBoosterNFT,
@@ -116,15 +112,7 @@ async function main() {
     deployer
   );
 
-  // --- PASSO 1: (REMOVIDO) Cunhagem da Tesouraria ---
-  // Esta lógica foi movida para o script '6_setup_sale.ts'
-  console.log("\n--- Passo 1: Cunhagem da Tesouraria ---");
-  console.log("✅ IGNORADO: Os 5% da Tesouraria já foram cunhados durante o Passo 6 (setup da venda).");
-  console.log("----------------------------------------------------");
-
-
-  // --- Passo 2: Adição de Liquidez "Inteligente" (Contabilização dos 95% restantes) ---
-  console.log("\n--- Passo 2: Adicionando Liquidez Inicial às Piscinas AMM (usando não vendidos) ---");
+  console.log("\n--- Passo 1: Adicionando Liquidez Inicial às Piscinas AMM (usando não vendidos) ---");
 
   // Aprovar $BKC uma vez para todas as piscinas
   const bkcPoolCount = ALL_TIERS.length;
@@ -138,7 +126,7 @@ async function main() {
   );
   console.log("✅ Aprovação do BKC bem-sucedida.");
 
-  // Aprovar todos os NFTs para o Pool (necessário para addInitialLiquidity)
+  // Aprovar todos os NFTs para o Pool
   await sendTransactionWithRetries(() =>
     rewardBoosterNFT.setApprovalForAll(addresses.nftLiquidityPool, true)
   );
@@ -146,7 +134,7 @@ async function main() {
 
 
   // --- A LÓGICA INTELIGENTE COMEÇA AQUI ---
-  for (const tier of ALL_TIERS) { // Loop sobre ALL_TIERS
+  for (const tier of ALL_TIERS) {
     console.log(`\n--- Processando liquidez da piscina para: ${tier.name} ---`);
 
     // 2a. Contabilização: Ler o contrato PublicSale
@@ -154,19 +142,17 @@ async function main() {
     const maxSupply = tierInfo.maxSupply; // Suprimento Total (100%)
     const mintedCount = tierInfo.mintedCount; // Quantos foram VENDIDOS (pelo público)
     
-    // 2b. (CORREÇÃO DE LÓGICA) Calcular corretamente os não vendidos
+    // 2b. Calcular corretamente os não vendidos (95% - Vendidos)
     const saleAllocation = (maxSupply * 95n) / 100n; // Os 95% que estavam à venda
-    let unsoldAmount = 0n; // Quantidade não vendida
-    
+    let unsoldAmount = 0n;
+
     if (mintedCount >= saleAllocation) {
-        // Se a contagem de vendidos (mintedCount) for maior ou igual à alocação de venda (95%),
-        // significa que tudo foi vendido, então 0 NFTs não vendidos sobram.
         unsoldAmount = 0n;
     } else {
         unsoldAmount = saleAllocation - mintedCount; // O que sobrou dos 95%
     }
     
-    console.log(`   Estatísticas: Suprimento Máx. (100%)=${maxSupply}, Alocação Venda (95%)=${saleAllocation}`);
+    console.log(`   Estatísticas: Suprimento Máx.=${maxSupply}, Alocação Venda (95%)=${saleAllocation}`);
     console.log(`   Vendido (público)=${mintedCount}, Não Vendido (para liquidez)=${unsoldAmount}`);
 
     // 2c. Verificar o estado da piscina de liquidez
@@ -191,7 +177,7 @@ async function main() {
     console.log(` -> Cunhando ${unsoldAmount} NFTs "não vendidos" (${tier.name}) para a piscina de liquidez...`);
     const allPoolTokenIds: string[] = [];
 
-    // Este loop usa 'bigint' pois 'unsoldAmount' é 'bigint'
+    // Este loop usa 'bigint'
     for (let i = 0n; i < unsoldAmount; i += CHUNK_SIZE_BIGINT) {
       const remainingInLiquidityLoop = unsoldAmount - i;
       const amountToMint_Liquidity = remainingInLiquidityLoop < CHUNK_SIZE_BIGINT ? remainingInLiquidityLoop : CHUNK_SIZE_BIGINT;
@@ -205,13 +191,13 @@ async function main() {
         )
       );
 
-      // Analisa os logs para obter os token IDs (com tipos explícitos)
+      // Analisa os logs para obter os token IDs
       const tokenIdsInChunk = receipt.logs
-        .map((log: Log) => { // <-- Correção de tipo
+        .map((log: Log) => {
           try { return rewardBoosterNFT.interface.parseLog(log); } catch { return null; }
         })
-        .filter((log: LogDescription | null): log is LogDescription => log !== null && log.name === "BoosterMinted") // <-- Correção de tipo
-        .map((log: LogDescription) => log.args.tokenId.toString()); // <-- Correção de tipo
+        .filter((log: LogDescription | null): log is LogDescription => log !== null && log.name === "BoosterMinted")
+        .map((log: LogDescription) => log.args.tokenId.toString());
           
       allPoolTokenIds.push(...tokenIdsInChunk);
     }
@@ -272,11 +258,3 @@ async function main() {
   );
   console.log("\n✅ O ecossistema está totalmente configurado e o mercado secundário de NFT está ATIVO.");
 }
-
-main().catch((error: any) => {
-  console.error(
-    "\n❌ ERRO CRÍTICO DURANTE A CUNHAGEM PÓS-VENDA E LIQUIDEZ (Passo 8) ❌\n"
-  );
-  console.error("Ocorreu um erro inesperado:", error.message, error.stack);
-  process.exit(1);
-});

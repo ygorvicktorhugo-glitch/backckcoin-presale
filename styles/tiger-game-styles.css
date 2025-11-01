@@ -1,0 +1,789 @@
+/* ============================================
+   THE TIGER'S DEN - Adapted CSS for DApp (AJUSTADO FINAL COM REALISMO)
+   ============================================ */
+
+:root {
+    --tiger-bg-primary: #0A1919;
+    --tiger-bg-secondary: #0F2626;
+    --tiger-accent-gold: #FFD700;
+    --tiger-accent-green: #00FF7F;
+    --tiger-accent-orange: #FF4500;
+    --tiger-text-primary: #E0E0E0;
+    --tiger-text-secondary: #A0A0A0;
+}
+
+/* ============================================
+   WRAPPER & LAYOUT
+   ============================================ */
+
+.tiger-game-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 16px; 
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 0 10px; 
+}
+
+/* ============================================
+   HEADER & STATUS
+   ============================================ */
+
+.tiger-header {
+    background: rgba(15, 38, 38, 0.8);
+    border: 2px solid var(--tiger-accent-gold);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.game-title {
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--tiger-accent-gold);
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+    letter-spacing: 2px;
+}
+
+.legacy-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 215, 0, 0.1);
+    border: 2px solid var(--tiger-accent-gold);
+    border-radius: 50px;
+    padding: 8px 16px;
+    font-weight: bold;
+    color: var(--tiger-accent-gold);
+}
+
+.legacy-icon {
+    font-size: 20px;
+    animation: paw-bounce 1.5s ease-in-out infinite;
+}
+
+@keyframes paw-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+
+.legacy-level {
+    font-size: 16px;
+}
+
+.legacy-progress {
+    margin-bottom: 16px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 215, 0, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--tiger-accent-gold);
+    margin-bottom: 6px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--tiger-accent-gold), var(--tiger-accent-green));
+    width: 0%;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.progress-text {
+    font-size: 12px;
+    color: var(--tiger-text-secondary);
+}
+
+.pools-info {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.pool-item {
+    background: rgba(0, 255, 127, 0.05);
+    border: 1px solid var(--tiger-accent-green);
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+    font-size: 12px;
+    cursor: help; /* Para tooltips */
+}
+
+.pool-label {
+    display: block;
+    color: var(--tiger-text-secondary);
+    margin-bottom: 4px;
+}
+
+.pool-value {
+    display: block;
+    color: var(--tiger-accent-green);
+    font-weight: bold;
+    font-size: 14px;
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* ============================================
+   GAME AREA (REELS) - AJUSTADO PARA ROLAGEM VERTICAL COM REALISMO
+   ============================================ */
+
+.tiger-game-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    background: rgba(15, 38, 38, 0.6);
+    border: 2px solid var(--tiger-accent-gold);
+    border-radius: 12px;
+    padding: 16px; 
+    box-shadow: inset 0 0 20px rgba(255, 215, 0, 0.1);
+}
+
+.reel-frame {
+    position: relative;
+    width: 95%; 
+    height: 120px; /* Altura principal */
+    background: linear-gradient(135deg, rgba(10, 25, 25, 0.9), rgba(15, 38, 38, 0.9));
+    border: 4px solid var(--tiger-accent-gold);
+    border-radius: 12px;
+    padding: 0; 
+    box-shadow: 
+        0 0 30px rgba(255, 215, 0, 0.4),
+        inset 0 0 20px rgba(0, 0, 0, 0.5);
+    overflow: hidden; 
+}
+
+.reels-container {
+    display: flex;
+    justify-content: space-around;
+    align-items: flex-start; 
+    height: 100%;
+    gap: 6px; 
+    position: relative; 
+}
+
+.reel {
+    flex: 1;
+    height: 100%;
+    min-width: 0; 
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--tiger-accent-gold);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column; 
+    align-items: center;
+    justify-content: flex-start;
+    overflow: hidden;
+    position: relative;
+    font-size: 60px;
+    line-height: 120px; 
+}
+
+.symbol {
+    width: 100%;
+    height: 120px; /* Altura do símbolo (conforme SYMBOL_HEIGHT_PX = 120 no JS) */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; 
+    transition: transform 0.1s ease;
+}
+
+/* --- NOVO SÍMBOLO BKC (IMAGEM) --- */
+.bkc-logo-symbol {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 1px;
+    /* Adiciona um efeito de sombra para destaque */
+    filter: drop-shadow(0 0 5px var(--tiger-accent-gold));
+}
+.bkc-logo-symbol img {
+    max-width: 70%; 
+    max-height: 70%;
+    object-fit: contain;
+}
+
+/* --- ANIMAÇÃO DE ROLAGEM VERTICAL (Aprimorada para seamless loop) --- */
+.reel.spinning {
+    animation: reel-roll 0.2s linear infinite; 
+    transition: none; 
+}
+
+@keyframes reel-roll {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-120px); } /* Ajuste para SYMBOL_HEIGHT_PX para loop seamless */
+}
+
+.reel.win-highlight {
+    animation: win-pulse 0.6s ease-out;
+    box-shadow: 0 0 20px var(--tiger-accent-gold);
+}
+
+@keyframes win-pulse {
+    0% { box-shadow: 0 0 0 0 var(--tiger-accent-gold); }
+    50% { box-shadow: 0 0 30px 10px rgba(255, 215, 0, 0.5); }
+    100% { box-shadow: 0 0 20px var(--tiger-accent-gold); }
+}
+
+/* Nova animação de shake para vitória */
+.reel.shake {
+    animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(5px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(3px); }
+}
+
+.winning-line {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--tiger-accent-gold), transparent);
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.winning-line.active {
+    opacity: 1;
+    animation: line-glow 0.6s ease-out;
+}
+
+@keyframes line-glow {
+    0% { box-shadow: 0 0 0 0 var(--tiger-accent-gold); }
+    50% { box-shadow: 0 0 20px 5px rgba(255, 215, 0, 0.5); }
+    100% { box-shadow: 0 0 10px 2px rgba(255, 215, 0, 0.3); }
+}
+
+.result-display {
+    text-align: center;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.result-display h3 {
+    font-size: 24px;
+    color: var(--tiger-text-secondary);
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.result-display.win h3 {
+    color: var(--tiger-accent-gold);
+    animation: win-text-pulse 0.6s ease-out;
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+}
+
+@keyframes win-text-pulse {
+    0% { transform: scale(0.8); opacity: 0; }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* ============================================
+   CONTROL PANEL
+   ============================================ */
+
+.tiger-control-panel {
+    background: rgba(15, 38, 38, 0.8);
+    border: 2px solid var(--tiger-accent-gold);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.wager-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.control-label {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--tiger-text-secondary);
+    letter-spacing: 1px;
+}
+
+.wager-input-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--tiger-accent-gold);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.wager-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--tiger-accent-gold);
+    font-size: 18px;
+    font-weight: bold;
+    outline: none;
+}
+
+.wager-input::placeholder {
+    color: var(--tiger-text-secondary);
+}
+
+.currency {
+    color: var(--tiger-accent-green);
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.quick-bets {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+/* Estilo para o botão RESET */
+.reset-btn {
+    grid-column: span 2; /* Ocupa 2 colunas */
+    background: #602828 !important; /* Cor vermelha escura para Reset */
+    border-color: #f00 !important;
+    color: white !important;
+}
+/* Altera o layout para 3 colunas em telas maiores para o Quick Bets */
+@media (min-width: 600px) { 
+    .quick-bets {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    .reset-btn {
+        grid-column: span 1; 
+    }
+}
+
+
+.quick-bet-btn {
+    background: rgba(255, 215, 0, 0.1);
+    border: 1px solid var(--tiger-accent-gold);
+    color: var(--tiger-accent-gold);
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.quick-bet-btn:hover {
+    background: rgba(255, 215, 0, 0.2);
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+    transform: translateY(-2px);
+}
+
+.quick-bet-btn:active {
+    transform: translateY(0);
+}
+
+.quick-bet-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.payout-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(0, 255, 127, 0.05);
+    border: 1px solid var(--tiger-accent-green);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.info-label {
+    color: var(--tiger-text-secondary);
+    font-weight: 600;
+}
+
+.info-value {
+    color: var(--tiger-accent-green);
+    font-weight: bold;
+}
+
+.status-icon {
+    margin-right: 4px;
+}
+
+.status-icon.error {
+    color: var(--tiger-accent-orange);
+}
+
+/* ============================================
+   ACTION BAR & MODALS
+   ============================================ */
+
+.tiger-action-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+}
+
+.spin-button {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, var(--tiger-accent-gold), #FFA500);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(255, 215, 0, 0.4);
+    transition: all 0.3s ease;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.spin-button:hover:not(:disabled) {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 30px rgba(255, 215, 0, 0.6);
+}
+
+.spin-button:active:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.spin-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.secondary-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.icon-button {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255, 215, 0, 0.1);
+    border: 2px solid var(--tiger-accent-gold);
+    color: var(--tiger-accent-gold);
+    font-size: 24px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.icon-button:hover {
+    background: rgba(255, 215, 0, 0.2);
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.4);
+    transform: scale(1.1);
+}
+
+.notification-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 24px;
+    height: 24px;
+    background: var(--tiger-accent-orange);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    animation: badge-pulse 1s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    animation: fade-in 0.3s ease-out;
+}
+
+.modal.active {
+    display: flex;
+}
+
+@keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-content {
+    background: linear-gradient(135deg, rgba(15, 38, 38, 0.95), rgba(10, 25, 25, 0.95));
+    border: 2px solid var(--tiger-accent-gold);
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 0 40px rgba(255, 215, 0, 0.3);
+    animation: modal-slide-up 0.3s ease-out;
+}
+
+@keyframes modal-slide-up {
+    from {
+        transform: translateY(50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 2px solid var(--tiger-accent-gold);
+}
+
+.modal-header h2 {
+    color: var(--tiger-accent-gold);
+    font-size: 22px;
+    letter-spacing: 1px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--tiger-accent-gold);
+    font-size: 24px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.modal-close:hover {
+    transform: rotate(90deg);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.rules-content h3 {
+    color: var(--tiger-accent-gold);
+    margin-top: 16px;
+    margin-bottom: 8px;
+    font-size: 16px;
+}
+
+.rules-content p {
+    color: var(--tiger-text-primary);
+    line-height: 1.6;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.achievement-item {
+    background: rgba(255, 215, 0, 0.05);
+    border: 1px solid var(--tiger-accent-gold);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.achievement-icon {
+    font-size: 32px;
+}
+
+.achievement-info {
+    flex: 1;
+}
+
+.achievement-name {
+    color: var(--tiger-accent-gold);
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.achievement-desc {
+    color: var(--tiger-text-secondary);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.achievement-item.locked {
+    opacity: 0.5;
+}
+
+.level-up-content {
+    text-align: center;
+}
+
+.level-up-header {
+    padding: 30px 20px 20px;
+    border-bottom: 2px solid var(--tiger-accent-gold);
+}
+
+.level-up-header h2 {
+    color: var(--tiger-accent-gold);
+    font-size: 28px;
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+    animation: bounce 0.6s ease-out;
+}
+
+@keyframes bounce {
+    0% { transform: scale(0.8); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.level-up-body {
+    padding: 30px 20px;
+}
+
+.level-up-body p {
+    color: var(--tiger-text-primary);
+    font-size: 16px;
+    margin-bottom: 16px;
+    line-height: 1.6;
+}
+
+.reward-amount {
+    color: var(--tiger-accent-green);
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.btn-claim {
+    background: linear-gradient(135deg, var(--tiger-accent-gold), #FFA500);
+    color: #000;
+    border: none;
+    padding: 14px 32px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(255, 215, 0, 0.4);
+    transition: all 0.3s ease;
+    margin-top: 16px;
+}
+
+.btn-claim:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 30px rgba(255, 215, 0, 0.6);
+}
+
+/* ============================================
+   RESPONSIVE DESIGN 
+   ============================================ */
+
+@media (max-width: 480px) {
+    .tiger-game-wrapper {
+        gap: 12px;
+    }
+
+    .reel-frame {
+        height: 120px; 
+    }
+    .reel {
+        font-size: 40px;
+        line-height: 120px;
+    }
+    .symbol {
+        height: 120px;
+    }
+
+    .game-title {
+        font-size: 20px;
+        letter-spacing: 1px;
+    }
+    
+    .legacy-badge {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    .result-display h3 {
+        font-size: 18px;
+    }
+
+    .pools-info {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+    }
+
+    .pool-item {
+        padding: 6px 4px;
+        font-size: 10px;
+    }
+
+    .payout-info {
+        padding: 10px;
+    }
+}
+
+@media (max-width: 360px) {
+    .game-title {
+        font-size: 18px;
+    }
+
+    .reel {
+        font-size: 36px;
+    }
+
+    .quick-bets {
+        grid-template-columns: repeat(3, 1fr); /* Mantendo 3 colunas para botões menores */
+    }
+    .reset-btn {
+        grid-column: span 1; 
+    }
+}

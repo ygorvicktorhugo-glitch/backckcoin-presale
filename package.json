@@ -33,7 +33,7 @@
     "typescript": "^5.4.5"
   },
   "engines": {
-    "node": "18.x"
+    "node": "20.x"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.2",

@@ -1,5 +1,10 @@
 // app.js (AJUSTADO: Saldo e Endereço no mesmo botão)
 
+// --- INÍCIO DA CORREÇÃO: VERCEL ANALYTICS ---
+import { inject } from '@vercel/analytics';
+inject();
+// --- FIM DA CORREÇÃO ---
+
 const ethers = window.ethers;
 
 import { DOMElements } from './dom-elements.js';

@@ -17,7 +17,8 @@ import {
     fortuneTigerABI, // <-- CORREÇÃO 1: Importar o ABI correto (fortuneTigerABI)
     publicSaleABI,
     faucetABI,
-    ecosystemManagerABI // <-- CORREÇÃO: Adicionada importação faltante do EcosystemManager
+    ecosystemManagerABI, // <-- CORREÇÃO: Adicionada importação faltante do EcosystemManager
+    decentralizedNotaryABI // <-- AJUSTE ADICIONADO: Importação do ABI do Notário
 } from '../config.js';
 import { loadPublicData, loadUserData } from './data.js';
 import { signIn } from './firebase-auth-service.js';
@@ -113,6 +114,12 @@ function instantiateContracts(signerOrProvider) {
          if (addresses.ecosystemManager) {
             State.ecosystemManagerContract = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, signerOrProvider);
          }
+         
+         // <-- AJUSTE ADICIONADO: Inicialização do Notário
+         if (addresses.decentralizedNotary) {
+            State.decentralizedNotaryContract = new ethers.Contract(addresses.decentralizedNotary, decentralizedNotaryABI, signerOrProvider);
+         }
+
 
     } catch (e) {
          console.error("Error instantiating contracts:", e);

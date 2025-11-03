@@ -15,12 +15,11 @@
 
     <link rel="stylesheet" href="./styles/trade.css">
 
-
-    <script src="https://cdn.jsdelivr.net/npm/ethers@6.4.0/dist/ethers.umd.min.js"></script>
-
-    <script src="https://cdn.jsdelivr.net/npm/nft.storage/dist/bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.4.0/dist/ethers.umd.min.js" defer></script>
+    
     <script src="https://pay.coinbase.com/pay-sdk.js" defer></script>
     <script src="https://static.moonpay.com/web-sdk/v1/moonpay-web-sdk.min.js" defer></script>
+    
     <style>
         /* Estilos CSS (sem alterações) */
          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -256,7 +255,7 @@
                             <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-users text-2xl text-green-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Validators</p><p id="statValidators" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
                             <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-shield-halved text-2xl text-purple-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Net pStake</p><p id="statTotalPStake" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
                             <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-vault text-2xl text-cyan-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Locked %</p><p id="statLockedPercentage" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
-                            <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-fire text-2xl text-amber-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Scarcity Rate</p><p id="statScarcity" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
+                            <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-fire text-2xl text-amber-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Scarcity Rate</p><p id_broker.md="statScarcity" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
                         </div>
                         <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
                             <div class="flex flex-col gap-8">
@@ -303,13 +302,13 @@
                                         <div class="flex justify-between"><span class="text-zinc-400">NFT Pools:</span> <span id="tvl-detail-nftpool" class="font-mono text-zinc-300">-- $BKC</span></div>
                                     </div>
                                 </div>
-                                <div id="top-validators-dashboard" class="bg-sidebar border border-border-color rounded-xl p-6"><div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">Network Validators</h3><p class="text-sm text-zinc-400">Sorted by highest pStake</p></div><div id="top-validators-list" class="space-y-3"></div></div>
+                                <div id="top-validators-dashboard" class="bg-sidebar border border-border-color rounded-xl p-6"><div class="flex justify-between items-center mb-4"><h3 classs="text-xl font-bold">Network Validators</h3><p class="text-sm text-zinc-400">Sorted by highest pStake</p></div><div id="top-validators-list" class="space-y-3"></div></div>
                             </div>
                         </div>
                     </section>
                     <section id="presale" style="background-color: var(--presale-bg-main); margin: -1.5rem;" class="hidden"></section>
 
-                    <section id="earn" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">Earn Rewards</h1><div class="border-b border-border-color mb-6"><nav id="earn-tabs" class="-mb-px flex gap-6"><button class="tab-btn active" data-target="delegate-tab">Delegate (pStake)</button><button class="tab-btn" data-target="distribute-tab" id="pop-mining-tab" style="display: none;">PoP Mining</button><button class="tab-btn" data-target="validator-tab" id="validator-section-tab" style="display: none;">Become a Validator</button></nav></div><div id="delegate-tab" class="tab-content active"><div id="validatorsList" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div></div><div id="distribute-tab" class="tab-content"><div id="pop-mining-content" class="bg-sidebar border border-border-color rounded-xl max-w-3xl mx-auto overflow-hidden"></div></div><div id="validator-tab" class="tab-content"><div id="validator-content-wrapper" class="max-w-3xl mx-auto"></div></div></section>
+                    <section id="earn" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">Earn Rewards</h1><div class="border-b border-border-color mb-6"><nav id="earn-tabs" class="-mb-px flex gap-6"><button class="tab-btn active" data-target="delegate-tab">Delegate (pStake)</button><button class="tab-btn" data-target="distribute-tab" id="pop-mining-tab" style="display: none;">PoP Mining</button><button classs="tab-btn" data-target="validator-tab" id="validator-section-tab" style="display: none;">Become a Validator</button></nav></div><div id="delegate-tab" class="tab-content active"><div id="validatorsList" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div></div><div id="distribute-tab" class="tab-content"><div id="pop-mining-content" class="bg-sidebar border border-border-color rounded-xl max-w-3xl mx-auto overflow-hidden"></div></div><div id="validator-tab" class="tab-content"><div id="validator-content-wrapper" class="max-w-3xl mx-auto"></div></div></section>
                     <section id="store" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">Reward Booster Store</h1><p class="text-zinc-400 max-w-3xl mb-8">Increase your reward claim efficiency from a 50% base up to 100% by purchasing a Booster NFT. Prices are dynamic and increase as NFTs are sold.</p><div id="store-content-wrapper"><h2 class="text-xl font-bold mb-4">Booster Pools</h2><div id="store-items-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div><div class="mt-12"><h2 class="text-xl font-bold mb-4">My Locked & Ineligible Boosters</h2><div id="my-locked-boosters-container"></div></div></div></section>
                     <section id="rewards" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">My Rewards & Certificates</h1><div id="claimable-rewards-panel" class="mb-8 p-6 bg-sidebar border border-border-color rounded-xl max-w-2xl mx-auto"><h2 class="text-xl font-bold mb-4">Claimable Rewards</h2><div id="rewards-loader" class="text-center hidden"><div class="loader inline-block"></div></div><div id="rewards-details-content"></div></div><h2 class="text-xl font-bold mb-4">My Vesting Certificates</h2><div id="certificates-list-container"></div></section>
                     

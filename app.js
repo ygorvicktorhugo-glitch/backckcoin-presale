@@ -354,8 +354,14 @@ function setupGlobalListeners() {
 /**
  * Ponto de entrada principal da aplicação.
  */
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log("DOM Content Loaded. Starting initialization...");
+// ==================================================================
+// --- INÍCIO DA CORREÇÃO ---
+// Trocado 'DOMContentLoaded' por 'load'.
+// 'load' espera que TODOS os recursos (incluindo scripts com defer)
+// sejam carregados antes de executar o app.
+// ==================================================================
+window.addEventListener('load', async () => {
+    console.log("Window 'load' event fired. Starting initialization...");
 
     try {
          // Carregar endereços e ABIs
@@ -369,7 +375,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     } catch (error) {
         console.error("Falha crítica ao carregar endereços:", error);
-        document.body.innerHTML = `<div style="color: red; padding: 20px;">Falha ao carregar endereços: ${error.message}</div>`;
+        document.body.innerHTML = `<div style="color: red; padding: 20px; font-family: sans-serif; font-size: 1.2rem; background: #222; border: 1px solid red; margin: 20px;">
+            <b>Erro:</b> Não foi possível carregar <code>deployment-addresses.json</code>.
+            <br><br><b>Solução:</b> Verifique se o arquivo está na raiz do projeto e atualize a página.
+            <br><br><small>${error.message}</small></div>`;
         return;
     }
     
@@ -390,6 +399,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     console.log("Application initialized.");
 });
+// ==================================================================
+// --- FIM DA CORREÇÃO ---
+// ==================================================================
+
 
 // Expor funções necessárias para o escopo global (para uso em HTML, se necessário)
 window.openConnectModal = openConnectModal;

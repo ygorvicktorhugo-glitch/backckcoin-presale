@@ -5,6 +5,7 @@ import fs from 'fs';
 
 // Pega a chave secreta das variáveis de ambiente da Vercel
 const NFT_STORAGE_TOKEN = process.env.NFT_STORAGE_TOKEN;
+console.log("Diagnóstico: NFT_STORAGE_TOKEN length:", NFT_STORAGE_TOKEN ? NFT_STORAGE_TOKEN.length : 'undefined');
 
 // Função helper para lidar com a request (necessária na Vercel)
 export const config = {
@@ -20,7 +21,7 @@ export default async function handler(req, res) {
 
     if (!NFT_STORAGE_TOKEN) {
         console.error("Erro de servidor: Chave NFT_STORAGE_TOKEN não encontrada nas variáveis de ambiente.");
-        return res.status(500).json({ error: 'Chave da API não configurada no servidor.' });
+        return res.status(500).json({ error: 'Chave da API não configurada no servidor. (Diagnóstico: Token ausente ou vazio)' });
     }
 
     try {

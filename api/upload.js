@@ -1,13 +1,9 @@
-// /api/upload.js
-import { NFTStorage } from 'nft.storage';
+// /api/upload.js (Piñata Version - English Logs)
+import pinataSDK from '@pinata/sdk';
 import { Formidable } from 'formidable';
 import fs from 'fs';
 
-// Pega a chave secreta das variáveis de ambiente da Vercel
-const NFT_STORAGE_TOKEN = process.env.NFT_STORAGE_TOKEN;
-
-
-// Função helper para lidar com a request (necessária na Vercel)
+// Helper function required for Vercel
 export const config = {
     api: {
         bodyParser: false,
@@ -19,39 +15,52 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    if (!NFT_STORAGE_TOKEN) {
-        console.error("Erro de servidor: Chave NFT_STORAGE_TOKEN não encontrada nas variáveis de ambiente.");
-        return res.status(500).json({ error: 'Chave da API não configurada no servidor.' });
+    // 1. Get the JWT from Vercel Environment Variables
+    // (Make sure you named the variable 'PINATA_JWT')
+    const PINATA_JWT = process.env.PINATA_JWT;
+
+    if (!PINATA_JWT) {
+        console.error("Server Error: PINATA_JWT key not found in environment variables.");
+        return res.status(500).json({ error: 'Piñata API Key not configured on server.' });
     }
+    
+    // Initialize the Piñata SDK with the JWT
+    const pinata = new pinataSDK({ pinataJWTKey: PINATA_JWT });
 
     try {
-        // 1. Processa o arquivo enviado pelo frontend
+        // 2. Process the file uploaded from the frontend
         const form = new Formidable();
         const [fields, files] = await form.parse(req);
 
-        const file = files.file[0]; // Assumindo que o nome do campo é 'file'
+        const file = files.file[0]; // Assuming the form field name is 'file'
         if (!file) {
-            return res.status(400).json({ error: 'Nenhum arquivo recebido.' });
+            return res.status(400).json({ error: 'No file received.' });
         }
 
-        // 2. Prepara o arquivo para o nft.storage
-        const client = new NFTStorage({ token: NFT_STORAGE_TOKEN });
+        // 3. Create a readable stream from the temporary file path
+        const stream = fs.createReadStream(file.filepath);
+        
+        const options = {
+            pinataMetadata: {
+                name: file.originalFilename || 'Notary File (Backchain)',
+            },
+            pinataOptions: {
+                cidVersion: 1 
+            }
+        };
 
-        // Lê o arquivo do disco temporário para a memória
-        const fileData = await fs.promises.readFile(file.filepath);
-        const blob = new Blob([fileData], { type: file.mimetype });
+        // 4. Send the file to Piñata
+        const result = await pinata.pinFileToIPFS(stream, options);
 
-        // 3. Envia para o nft.storage (do servidor!)
-        const cid = await client.storeBlob(blob);
+        // 5. Return the CID and IPFS URI
+        const cid = result.IpfsHash;
         const ipfsUri = `ipfs://${cid}`;
-
-        console.log("Upload do servidor com sucesso. CID:", cid);
-
-        // 4. Retorna *apenas* o CID para o frontend
+        
+        console.log("Upload via Piñata successful. CID:", cid);
         return res.status(200).json({ cid: cid, ipfsUri: ipfsUri });
 
     } catch (error) {
-        console.error("Erro no backend de upload:", error);
-        return res.status(500).json({ error: `Erro interno do servidor: ${error.message}` });
+        console.error("Backend upload error (Piñata):", error);
+        return res.status(500).json({ error: `Internal Server Error: ${error.message}` });
     }
 }

@@ -193,7 +193,7 @@ function updateNotaryUserStatus() {
                 <i class="fa-solid ${hasEnoughFee ? 'fa-check-circle text-green-400' : 'fa-times-circle text-red-400'} w-5 mr-2"></i>
                 Your $BKC (${needsFee ? formatBigNumber(State.notaryFee) : '0'} base needed):
             </span>
-            <span class="font-bold ${hasEnoughFee ? 'text-green-400' : 'text-red-400'} text-base">
+            <span class="font-bold ${hasEnoughFee ? 'text-green-00' : 'text-red-400'} text-base">
                 ${formatBigNumber(userBalance).toFixed(2)}
             </span>
         </div>
@@ -227,10 +227,8 @@ function updateNotaryUserStatus() {
 
 
 /**
- * ==================================================================
- * ================== INÍCIO DA ATUALIZAÇÃO (IMAGEM) =================
- * ==================================================================
- * Atualizado para buscar o Content-Type do IPFS e mostrar a imagem
+ * renderMyNotarizedDocuments (Esta função permanece a mesma)
+ * (incluindo a lógica de detecção de imagem)
  */
 async function renderMyNotarizedDocuments() {
     const docsEl = document.getElementById('my-notarized-documents');
@@ -260,14 +258,12 @@ async function renderMyNotarizedDocuments() {
             
             const gatewayLink = docURI.startsWith('ipfs://') ? docURI.replace('ipfs://', ipfsGateway) : docURI;
 
-            // --- LÓGICA DE DETECÇÃO DE TIPO DE ARQUIVO ---
             let isImage = false;
             let isPdf = false;
             let fileType = 'IPFS File';
             let typeColor = 'text-blue-400';
             
             try {
-                // Tenta buscar o cabeçalho do arquivo no IPFS Gateway (sem baixar o arquivo todo)
                 const response = await fetch(gatewayLink, { method: 'HEAD' });
                 if (response.ok) {
                     const contentType = response.headers.get('Content-Type') || '';
@@ -284,11 +280,8 @@ async function renderMyNotarizedDocuments() {
                      console.warn(`Could not fetch HEAD for ${gatewayLink}. Status: ${response.status}`);
                 }
             } catch (fetchError) {
-                // Se o HEAD falhar (ex: CORS ou timeout), o IPFS pode estar lento.
                 console.warn(`Could not fetch Content-Type for ${gatewayLink}: ${fetchError.message}. Defaulting to generic icon.`);
             }
-            // --- FIM DA LÓGICA DE DETECÇÃO ---
-
 
             let displayHtml = '';
             if (isImage) {
@@ -298,7 +291,6 @@ async function renderMyNotarizedDocuments() {
                                    <i class="fa-solid fa-file-pdf text-5xl text-red-400"></i>
                                </div>`;
             } else {
-                 // Padrão (Cubo Azul)
                  displayHtml = `<div class="w-full h-40 flex items-center justify-center bg-zinc-800 rounded-t-lg">
                                     <i class="fa-solid fa-cube text-5xl text-blue-400"></i>
                                 </div>`;
@@ -317,7 +309,7 @@ async function renderMyNotarizedDocuments() {
                         <button class="add-to-wallet-btn text-xs text-zinc-400 hover:text-white mt-3 w-full text-left transition-colors" data-address="${State.decentralizedNotaryContract.target}" data-tokenid="${tokenId}">
                             <i class="fa-solid fa-wallet w-4 mr-1"></i> Add to Wallet
                         </button>
-                        </div>
+                    </div>
                 </div>
             `);
         }
@@ -328,9 +320,6 @@ async function renderMyNotarizedDocuments() {
         renderError(docsEl, "Failed to load your documents.");
     }
 }
-// ==================================================================
-// =================== FIM DA ATUALIZAÇÃO (IMAGEM) ==================
-// ==================================================================
 
 
 /**
@@ -405,10 +394,10 @@ async function handleFileUpload(file) {
 }
 
 
-// ==================================================================
-// ================= INÍCIO DA ATUALIZAÇÃO (NOVA FUNÇÃO) =================
-// ==================================================================
 /**
+ * ==================================================================
+ * ================== INÍCIO DA CORREÇÃO (FUNÇÃO CHAVE) =================
+ * ==================================================================
  * Manipulador para o clique no botão "Add to Wallet".
  * Usa o EIP-747 (wallet_watchAsset) para adicionar o NFT ao MetaMask.
  */
@@ -420,15 +409,27 @@ async function handleAddNFTToWallet(e) {
     const address = btn.dataset.address;
     const tokenId = btn.dataset.tokenid;
 
-    // State.web3Provider é o provedor da carteira (ex: MetaMask)
-    if (!State.web3Provider) {
+    // --- INÍCIO DA CORREÇÃO ---
+    // Verificamos se o 'State.signer' (o usuário conectado) existe.
+    // O 'State.signer.provider' é o ethers.BrowserProvider conectado à carteira.
+    if (!State.signer || !State.signer.provider) {
         showToast("Wallet provider (e.g., MetaMask) not found.", "error");
         return;
     }
+    
+    // O '.provider' *dentro* do BrowserProvider é o provedor EIP-1193 cru (ex: window.ethereum)
+    // É esse provedor que tem o método '.request()'.
+    const rawProvider = State.signer.provider.provider;
+
+    if (!rawProvider || typeof rawProvider.request !== 'function') {
+         showToast("The connected wallet does not support 'wallet_watchAsset'.", "error");
+         return;
+    }
+    // --- FIM DA CORREÇÃO ---
 
     try {
         // Pede ao MetaMask para "assistir" (adicionar) este NFT
-        const wasAdded = await State.web3Provider.request({
+        const wasAdded = await rawProvider.request({ // <--- CHAMADA CORRIGIDA
             method: 'wallet_watchAsset',
             params: {
                 type: 'ERC721',
@@ -450,12 +451,13 @@ async function handleAddNFTToWallet(e) {
     }
 }
 // ==================================================================
-// ================== FIM DA ATUALIZAÇÃO (NOVA FUNÇÃO) ==================
+// ================== FIM DA CORREÇÃO (FUNÇÃO CHAVE) ==================
 // ==================================================================
 
 
 /**
- * initNotaryListeners (Atualizado para incluir o listener do novo botão)
+ * initNotaryListeners (Esta função permanece a mesma)
+ * (incluindo o listener de delegação de evento)
  */
 function initNotaryListeners() {
     const fileInput = document.getElementById('notary-file-upload');
@@ -517,21 +519,12 @@ function initNotaryListeners() {
             }
         });
     }
-
-    // ==================================================================
-    // ========= INÍCIO DA ATUALIZAÇÃO (LISTENER ADD TO WALLET) =========
-    // ==================================================================
-    // Adiciona o listener na DIV pai (my-notarized-documents)
-    // Isso usa "delegação de evento" para funcionar para todos os botões
+    
     const docsEl = document.getElementById('my-notarized-documents');
     if (docsEl) {
-        // Garante que não estamos adicionando múltiplos listeners
         docsEl.removeEventListener('click', handleAddNFTToWallet); 
         docsEl.addEventListener('click', handleAddNFTToWallet);
     }
-    // ==================================================================
-    // ========== FIM DA ATUALIZAÇÃO (LISTENER ADD TO WALLET) ==========
-    // ==================================================================
 }
 
 export const NotaryPage = {

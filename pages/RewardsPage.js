@@ -1,29 +1,40 @@
 // pages/RewardsPage.js
+// ARQUIVO CORRIGIDO
+// - Importação de 'loadMyCertificates' atualizada para 'loadMyCertificatesFromAPI'
 
-import { DOMElements } from '../dom-elements.js'; // <-- *** ADICIONADO ***
+import { DOMElements } from '../dom-elements.js'; 
 import { State } from '../state.js';
-import { loadMyCertificates, calculateUserTotalRewards, getHighestBoosterBoost } from '../modules/data.js';
+// =================================================================
+// ### CORREÇÃO DE IMPORTAÇÃO (Linha 5) ###
+import { loadMyCertificatesFromAPI, calculateUserTotalRewards, getHighestBoosterBoostFromAPI, safeContractCall } from '../modules/data.js';
+// =================================================================
 import { executeWithdraw, executeUniversalClaim } from '../modules/transactions.js';
 import { formatBigNumber, renderLoading, renderNoData, renderPaginatedList, ipfsGateway } from '../utils.js';
 import { startCountdownTimers, addNftToWallet } from '../ui-feedback.js';
 import { addresses } from '../config.js';
-import { safeContractCall } from '../modules/data.js';
+
 
 // Base URI para os metadados dos Certificados de Vesting (do configureSystem.ts)
 const VESTING_CERT_BASE_URI = "ipfs://bafybeiew62trbumuxfta36hh7tz7pdzhnh73oh6lnsrxx6ivq5mxpwyo24/";
 
 let rewardsCurrentPage = 1;
-const ITEMS_PER_PAGE = 6; // Ajustado para 6 por página, por exemplo
+const ITEMS_PER_PAGE = 6; 
 
-// --- Função Auxiliar para obter HTML do Certificado ---
+// --- Função Auxiliar para obter HTML do Certificado (Mantida) ---
 async function getFullCertificateHTML(certificate) {
     const { tokenId } = certificate;
 
     // Buscar dados da posição de vesting
     const position = await safeContractCall(State.rewardManagerContract, 'vestingPositions', [tokenId], {totalAmount: 0n, startTime: 0n});
     const totalAmount = position.totalAmount;
-    const formattedAmount = formatBigNumber(totalAmount); // Converter para número
+    const formattedAmount = formatBigNumber(totalAmount); 
     const startTime = Number(position.startTime);
+
+    if (startTime === 0) {
+         console.warn(`Certificado #${tokenId} encontrado pela API, mas dados on-chain (vestingPositions) não encontrados.`);
+         return ''; // Não renderiza se os dados on-chain não existirem
+    }
+
     const vestingDuration = Number(await safeContractCall(State.rewardManagerContract, 'VESTING_DURATION', [], 5n * 365n * 86400n));
     const endTime = startTime + vestingDuration;
     const now = Math.floor(Date.now() / 1000);
@@ -51,14 +62,14 @@ async function getFullCertificateHTML(certificate) {
 
     // Construir a URI e buscar metadados
     const tokenURI = VESTING_CERT_BASE_URI + metadataFileName;
-    let imageUrl = './assets/bkc_logo_3d.png'; // Fallback image
-    let displayName = `Vesting Certificate #${tokenId.toString()}`; // Fallback name
+    let imageUrl = './assets/bkc_logo_3d.png'; 
+    let displayName = `Vesting Certificate #${tokenId.toString()}`; 
 
     try {
-        const response = await fetch(tokenURI.replace("ipfs://", ipfsGateway)); //
+        const response = await fetch(tokenURI.replace("ipfs://", ipfsGateway)); 
         if (response.ok) {
             const metadata = await response.json();
-            imageUrl = metadata.image ? metadata.image.replace("ipfs://", ipfsGateway) : imageUrl; //
+            imageUrl = metadata.image ? metadata.image.replace("ipfs://", ipfsGateway) : imageUrl; 
             displayName = metadata.name || displayName;
         } else {
             console.warn(`Metadata not found for ${tierName} certificate (${tokenId}): ${response.status}`);
@@ -70,7 +81,7 @@ async function getFullCertificateHTML(certificate) {
     // Calcula valores de retirada (simulação frontend)
     let amountToOwner = 0n;
     let penaltyAmount = 0n;
-    const initialPenaltyBips = Number(await safeContractCall(State.rewardManagerContract, 'INITIAL_PENALTY_BIPS', [], 5000n)); //
+    const initialPenaltyBips = Number(await safeContractCall(State.rewardManagerContract, 'INITIAL_PENALTY_BIPS', [], 5000n)); 
     if (now >= endTime) {
         amountToOwner = totalAmount;
     } else {
@@ -117,20 +128,20 @@ async function getFullCertificateHTML(certificate) {
     `;
 }
 
-// --- Funções de Renderização da Página ---
+// --- Funções de Renderização da Página (Mantidas) ---
 async function renderPaginatedCertificates(page) {
-    const containerEl = document.getElementById('certificates-list-container'); //
+    const containerEl = document.getElementById('certificates-list-container'); 
     if (!containerEl) return;
 
-    if (!State.isConnected || !State.myCertificates || State.myCertificates.length === 0) { //
-        renderNoData(containerEl, "You don't have any Vesting Certificates yet."); //
+    if (!State.isConnected || !State.myCertificates || State.myCertificates.length === 0) { 
+        renderNoData(containerEl, "You don't have any Vesting Certificates yet."); 
         return;
     }
 
-    renderLoading(containerEl); //
+    renderLoading(containerEl); 
 
-    renderPaginatedList( //
-        State.myCertificates, //
+    renderPaginatedList( 
+        State.myCertificates, 
         containerEl,
         (cert) => `<div class="loading-placeholder h-64 bg-sidebar border border-border-color rounded-xl flex items-center justify-center"><div class="loader inline-block"></div></div>`, // Placeholder
         ITEMS_PER_PAGE,
@@ -145,7 +156,7 @@ async function renderPaginatedCertificates(page) {
     // Carrega o HTML completo para os itens da página atual
     const start = (page - 1) * ITEMS_PER_PAGE;
     const end = start + ITEMS_PER_PAGE;
-    const pageItems = State.myCertificates.slice(start, end); //
+    const pageItems = State.myCertificates.slice(start, end); 
     const htmlPromises = pageItems.map(getFullCertificateHTML);
     const itemsHtml = await Promise.all(htmlPromises);
 
@@ -155,19 +166,19 @@ async function renderPaginatedCertificates(page) {
         if (itemsHtml[index]) {
             ph.outerHTML = itemsHtml[index];
         } else {
-            ph.remove(); // Remove placeholders extras se houver menos itens que o esperado
+            ph.remove(); 
         }
     });
 }
 
 
 async function renderClaimableRewards() {
-    const panelEl = document.getElementById('claimable-rewards-panel'); //
-    const contentEl = document.getElementById('rewards-details-content'); //
-    const loaderEl = document.getElementById('rewards-loader'); //
+    const panelEl = document.getElementById('claimable-rewards-panel'); 
+    const contentEl = document.getElementById('rewards-details-content'); 
+    const loaderEl = document.getElementById('rewards-loader'); 
     if (!panelEl || !contentEl || !loaderEl) return;
 
-    if (!State.isConnected) { //
+    if (!State.isConnected) { 
         panelEl.classList.add('hidden');
         return;
     }
@@ -177,10 +188,10 @@ async function renderClaimableRewards() {
     contentEl.innerHTML = '';
 
     // 1. Calcular Recompensas Brutas
-    const { stakingRewards, minerRewards, totalRewards } = await calculateUserTotalRewards(); //
+    const { stakingRewards, minerRewards, totalRewards } = await calculateUserTotalRewards(); 
 
     // 2. Obter Eficiência Atual do Booster
-    const efficiencyData = await getHighestBoosterBoost(); //
+    const efficiencyData = await getHighestBoosterBoostFromAPI(); 
     const currentEfficiency = efficiencyData.efficiency; // Ex: 50, 70, 100
 
     // 3. Calcular Valores de Reivindicação
@@ -202,19 +213,21 @@ async function renderClaimableRewards() {
         <button id="claimAllRewardsBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-md transition-colors ${totalRewards === 0n ? 'btn-disabled' : ''}" ${totalRewards === 0n ? 'disabled' : ''}>
             <i class="fa-solid fa-gift mr-2"></i> Claim All Rewards (${formatBigNumber(claimedAmount).toFixed(4)} $BKC)
         </button>
-    `; //
-
-    // O listener do botão de claim agora está em initListeners
+    `; 
 }
 
 
 export const RewardsPage = {
-    hasInitializedListeners: false, // Flag para garantir que os listeners sejam adicionados apenas uma vez
+    hasInitializedListeners: false, 
 
     async render() {
         // Carrega dados necessários antes de renderizar
-        await getHighestBoosterBoost(); //
-        await loadMyCertificates(); //
+        await getHighestBoosterBoostFromAPI(); 
+        
+        // =================================================================
+        // ### ALTERAÇÃO DE CHAMADA (Linha 287) ###
+        await loadMyCertificatesFromAPI(); // Chamando a nova função
+        // =================================================================
 
         // Renderiza as seções da página
         await renderClaimableRewards();
@@ -228,45 +241,46 @@ export const RewardsPage = {
     },
 
     initListeners() {
-        // *** AGORA USA DOMElements.rewards ***
-        const container = DOMElements.rewards; //
+        const container = DOMElements.rewards; 
         if (!container) {
              console.error("Rewards page container not found for listeners.");
              return;
         }
-         console.log("Initializing RewardsPage listeners..."); // Log para confirmação
+         console.log("Initializing RewardsPage listeners..."); 
 
         // Listener único no container principal para delegação de eventos
         container.addEventListener('click', async (e) => {
-            const withdrawBtn = e.target.closest('.withdraw-btn'); // Renomeado de '.withdraw-cert-btn' para corresponder ao HTML
+            const withdrawBtn = e.target.closest('.withdraw-btn'); 
             const nftImage = e.target.closest('.nft-clickable-image');
-            const claimAllBtn = e.target.closest('#claimAllRewardsBtn'); // Adicionado listener para claim all aqui
+            const claimAllBtn = e.target.closest('#claimAllRewardsBtn'); 
 
             if (withdrawBtn && !withdrawBtn.disabled) {
-                const tokenId = withdrawBtn.dataset.tokenid; // Corrigido para minúsculas
+                const tokenId = withdrawBtn.dataset.tokenid; 
                 console.log(`Withdraw button clicked for token ID: ${tokenId}`);
-                const success = await executeWithdraw(tokenId, withdrawBtn); //
+                const success = await executeWithdraw(tokenId, withdrawBtn); 
                 if (success) {
-                    rewardsCurrentPage = 1; // Volta para a primeira página
-                    await loadMyCertificates(); // Recarrega certificados
-                    await renderClaimableRewards(); // Re-renderiza painel de claim
-                    await renderPaginatedCertificates(rewardsCurrentPage); // Re-renderiza certificados
+                    rewardsCurrentPage = 1; 
+                    // =================================================================
+                    // ### ALTERAÇÃO DE CHAMADA (Linha 328) ###
+                    State.myCertificates = []; // Limpa o cache para forçar recarga da API
+                    await loadMyCertificatesFromAPI(); // Recarrega certificados da API
+                    // =================================================================
+                    await renderClaimableRewards(); 
+                    await renderPaginatedCertificates(rewardsCurrentPage); 
                 }
             } else if (nftImage) {
                  e.preventDefault();
                  const address = nftImage.dataset.address;
-                 const tokenId = nftImage.dataset.tokenid; // Corrigido para minúsculas
-                 if (address && tokenId && address.toLowerCase() === addresses.rewardManager.toLowerCase()) { //
-                    addNftToWallet(address, tokenId); //
+                 const tokenId = nftImage.dataset.tokenid; 
+                 if (address && tokenId && address.toLowerCase() === addresses.rewardManager.toLowerCase()) { 
+                    addNftToWallet(address, tokenId); 
                  }
             } else if (claimAllBtn && !claimAllBtn.disabled) {
                  console.log("Claim All button clicked via event listener");
                  try {
-                     // Recalcula recompensas antes de chamar a transação
-                     const { stakingRewards, minerRewards } = await calculateUserTotalRewards(); //
-                     const success = await executeUniversalClaim(stakingRewards, minerRewards, claimAllBtn); //
+                     const { stakingRewards, minerRewards } = await calculateUserTotalRewards(); 
+                     const success = await executeUniversalClaim(stakingRewards, minerRewards, claimAllBtn); 
                      if (success) {
-                         // Re-renderiza para atualizar os saldos e o painel
                          await renderClaimableRewards();
                      }
                  } catch (error) {
@@ -276,5 +290,4 @@ export const RewardsPage = {
         });
         console.log("RewardsPage listeners attached.");
     }
-    // init() foi removido, lógica agora está em render()
 };

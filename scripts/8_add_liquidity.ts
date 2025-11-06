@@ -3,13 +3,20 @@
 //
 // LÓGICA: Cunha NFTs "não vendidos" (95% - Vendidos) e adiciona-os ao AMM de NFT.
 
-import { HardhatRuntimeEnvironment } from "hardhat/types";
-// REMOVIDO: import addressesJson from "../deployment-addresses.json";
+// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { LogDescription, ContractTransactionReceipt, ethers, Log } from "ethers";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from 'url'; // <--- CORREÇÃO DE ESM
+import { dirname } from 'path'; // <--- CORREÇÃO DE ESM
 
-// REMOVIDO: const addresses: { [key: string]: string } = addressesJson;
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -76,7 +83,7 @@ const CHUNK_SIZE_BIGINT = BigInt(CHUNK_SIZE);
 // ######################################################################
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: HardhatRuntimeEnvironment) {
+export async function runScript(hre: any) { // Mudamos para 'any'
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
 
@@ -270,9 +277,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
 // ====================================================================
 // Ponto de entrada para execução standalone (se necessário)
 // ====================================================================
-// (Removido o bloco de execução automática para garantir que seja chamado apenas pelo run_master.ts)
-
-// ADICIONADO BLOCO DE CORREÇÃO:
+// ADICIONADO BLOCO DE CORREÇÃO: Usa import dinâmico para carregar o Hardhat
 if (require.main === module) {
   console.log("Executando 8_add_liquidity.ts como script standalone...");
   // Precisamos importar o 'hre' (Hardhat Runtime Environment)

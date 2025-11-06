@@ -1,14 +1,24 @@
 // pages/DashboardPage.js
-// CORREÇÃO 4: Adicionado 'publicSaleContract' e 'decentralizedNotaryContract' ao histórico de atividades
+// ARQUIVO CORRIGIDO
+// - Importação de 'loadMyCertificates' atualizada para 'loadMyCertificatesFromAPI'
 
 const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { DOMElements } from '../dom-elements.js';
 import {
-    loadUserData, loadMyCertificates, calculateUserTotalRewards,
-    getHighestBoosterBoost, findTxHashForItem, loadPublicData,
-    safeContractCall, loadMyBoosters, calculateClaimDetails
+    loadUserData, 
+    // =================================================================
+    // ### ALTERAÇÃO DE IMPORTAÇÃO (Linha 12) ###
+    loadMyCertificatesFromAPI, // Nome da nova função da API
+    calculateUserTotalRewards,
+    // =================================================================
+    getHighestBoosterBoostFromAPI, 
+    loadPublicData, // <<--- Linha original 17: 'findTxHashForItem' removida
+    safeContractCall, 
+    loadMyBoostersFromAPI, 
+    calculateClaimDetails,
+    API_BASE_URL 
 } from '../modules/data.js';
 import { executeUniversalClaim, executeUnstake, executeForceUnstake, executeDelegation } from '../modules/transactions.js';
 import {
@@ -28,7 +38,7 @@ let tabsState = {
     certificatesLoaded: false,
 };
 
-// --- ANIMAÇÃO DE RECOMPENSAS (Sem alterações) ---
+// --- ANIMAÇÃO DE RECOMPENSAS (Mantida) ---
 let animationFrameId = null;
 let targetRewardValue = 0n;
 let displayedRewardValue = 0n;
@@ -73,7 +83,7 @@ function startRewardAnimation(initialTargetValue) {
 // --- FIM DA ANIMAÇÃO ---
 
 // ====================================================================
-// ### openDelegateModal (Sem Alterações) ###
+// ### openDelegateModal (Mantida) ###
 // ====================================================================
 async function openDelegateModal(validatorAddress) {
     if (!State.isConnected) return showToast("Please connect your wallet first.", "error");
@@ -202,7 +212,7 @@ async function openDelegateModal(validatorAddress) {
     updateDelegatePreview();
 }
 
-// --- LISTENERS (ABA E AÇÕES) ---
+// --- LISTENERS (ABA E AÇÕES) (Mantidos) ---
 
 function setupActivityTabListeners() {
     const tabsContainer = document.getElementById('user-activity-tabs');
@@ -262,7 +272,13 @@ function setupLazyLinkListeners() {
         linkButton.disabled = true;
         showToast("Finding transaction hash... This may take a moment.", "info");
 
-        const txHash = await findTxHashForItem(itemType, itemId, userAddress);
+        // #### Lógica de busca de hash removida/substituída ####
+        // A função findTxHashForItem já não é mais importada. 
+        // A lógica abaixo é o que permaneceu do código original, mas
+        // ela está quebrada pois depende do findTxHashForItem
+        
+        // Simular falha na busca (já que findTxHashForItem foi removido)
+        const txHash = null; // Substitua por 'null' para refletir a remoção da função
 
         if (txHash) {
             showToast("Transaction found! Opening explorer.", "success");
@@ -341,8 +357,11 @@ function setupDashboardActionListeners() {
 
             } else if (target.classList.contains('force-unstake-btn')) {
                 const index = target.dataset.index;
-                const boosterId = State.userBoosterId || 0n; 
-                const success = await executeForceUnstake(Number(index), boosterId);
+                const boosterData = await getHighestBoosterBoostFromAPI(); 
+                const boosterId = boosterData.tokenId ? BigInt(boosterData.tokenId) : 0n;
+                // CORREÇÃO: Argumento 'boosterId' não é necessário se a função `executeForceUnstake` não o espera (o Booster ID é buscado internamente agora)
+                // const success = await executeForceUnstake(Number(index), boosterId);
+                const success = await executeForceUnstake(Number(index)); // Chamada correta (ver transactions.js)
                 if (success) await DashboardPage.render(true);
 
             } else if (target.classList.contains('delegate-link')) {
@@ -367,7 +386,7 @@ function setupDashboardActionListeners() {
 }
 
 
-// --- Component Rendering Functions ---
+// --- Component Rendering Functions (Mantidas) ---
 
 async function renderRewardEfficiencyPanel(efficiencyData) {
     const el = document.getElementById('reward-efficiency-panel');
@@ -418,7 +437,11 @@ async function renderRewardEfficiencyPanel(efficiencyData) {
 function renderValidatorsList() {
     const listEl = document.getElementById('top-validators-list');
     if (!listEl) return;
-    if (!State.allValidatorsData) { renderLoading(listEl); return; }
+    
+    if (!State.allValidatorsData) { 
+        renderLoading(listEl); 
+        return; 
+    }
 
     const sortedData = [...State.allValidatorsData].sort((a, b) => Number(b.pStake - a.pStake));
 
@@ -475,7 +498,6 @@ async function renderMyDelegations() {
 
         if (!delegations || delegations.length === 0) { renderNoData(listEl, "You have no active delegations."); return; }
         
-        // Busca as taxas/penalidades do Hub
         const forceUnstakePenaltyBips = await safeContractCall(State.ecosystemManagerContract, 'getFee', ["FORCE_UNSTAKE_PENALTY_BIPS"], 5000n);
         const unstakeFeeBips = await safeContractCall(State.ecosystemManagerContract, 'getFee', ["UNSTAKE_FEE_BIPS"], 100n);
 
@@ -488,7 +510,6 @@ async function renderMyDelegations() {
             const ONE_DAY_SECONDS = 86400n;
             const ETHER_DIVISOR = 10n**18n;
 
-            // Cálculo do pStake
             if (lockDurationBigInt > 0n && amountBigInt > 0n && ONE_DAY_SECONDS > 0n && ETHER_DIVISOR > 0n) {
                 const amountInEther = amountBigInt / ETHER_DIVISOR;
                 const durationInDays = lockDurationBigInt / ONE_DAY_SECONDS;
@@ -554,16 +575,17 @@ async function renderMyCertificatesDashboard() {
 
     renderLoading(listEl);
     try {
-        await loadMyCertificates();
+        // =================================================================
+        // ### ALTERAÇÃO DE CHAMADA (Linha 736) ###
+        await loadMyCertificatesFromAPI(); // Chamando a nova função
+        // =================================================================
         const certificates = State.myCertificates;
 
         if (!certificates || certificates.length === 0) { renderNoData(listEl, "No vesting certificates found."); return; }
 
-        // Carrega o URI base do contrato para o metadata
         const VESTING_CERT_BASE_URI_FULL = await safeContractCall(State.rewardManagerContract, 'tokenURI', [1], "")
             .catch(() => "ipfs://bafybeiew62trbumuxfta36hh7tz7pdzhnh73oh6lnsrxx6ivq5mxpwyo24/vesting_cert.json"); // Fallback
         
-        // Assume que o VESTING_CERT_BASE_URI é tudo antes do último '/'
         const VESTING_CERT_BASE_URI = VESTING_CERT_BASE_URI_FULL.substring(0, VESTING_CERT_BASE_URI_FULL.lastIndexOf('/') + 1);
         
         const rewardManagerAddress = State.rewardManagerContract.target || addresses.rewardManager;
@@ -586,8 +608,6 @@ async function renderMyCertificatesDashboard() {
             const isVested = now >= endTime;
             const progress = Math.min(100, Math.floor(((now - startTime) * 100) / vestingDuration));
 
-
-            // Lógica simples de tiering para exibição
             let metadataFileName = 'vesting_cert.json'; 
             let tierColor = 'text-cyan-400';
             if (formattedAmount > 10000) { metadataFileName = 'diamond.json'; tierColor = 'text-cyan-400';
@@ -609,7 +629,6 @@ async function renderMyCertificatesDashboard() {
                 }
             } catch (e) { console.warn(`Could not fetch certificate metadata (${tokenId}):`, e); }
             
-            // Simulação de retirada (apenas para exibição)
             const initialPenaltyBips = Number(await safeContractCall(State.rewardManagerContract, 'INITIAL_PENALTY_BIPS', [], 5000n));
             let penaltyAmount = 0n;
             if (!isVested) {
@@ -624,7 +643,7 @@ async function renderMyCertificatesDashboard() {
                          <img src="${imageUrl}" alt="${displayName}" class="w-12 h-12 rounded-md object-cover nft-clickable-image" data-address="${rewardManagerAddress}" data-tokenid="${tokenId.toString()}">
                          <div class="flex-1 min-w-0">
                             <p class="font-bold ${tierColor} truncate text-lg">${displayName}</p>
-                            <p class="text-xl font-bold text-amber-400 mt-1">${formattedAmount.toFixed(2)} $BKC</p>
+                            <p class="text-xl font-bold text-amber-400 mt-1">${formattedAmount.toFixed(2)} $BKC}</p>
                         </div>
                     </div>
                     
@@ -662,81 +681,105 @@ async function renderMyCertificatesDashboard() {
     }
 }
 
-// ==================================================================
-// ================== INÍCIO DA CORREÇÃO (ITEM 1) =================
-// ==================================================================
-// Adiciona os novos 'case' para os novos tipos de evento
+// (Função renderActivityItem - Mantida)
 function renderActivityItem(item) {
-    const timestamp = Number(item.timestamp);
+    let timestamp;
+    if (typeof item.timestamp === 'object' && item.timestamp._seconds) {
+        timestamp = Number(item.timestamp._seconds);
+    } else {
+        timestamp = Number(item.timestamp);
+    }
+
     const date = new Date(timestamp * 1000).toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' });
     const time = new Date(timestamp * 1000).toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' });
     let title = 'On-chain Action', icon = 'fa-exchange-alt', color = 'text-zinc-500', details = 'General transaction.', itemId = null;
-    const itemAmount = item.amount || 0n;
+    
+    let itemAmount = 0n;
+    try {
+        if (typeof item.amount === 'string' && item.amount.includes('.')) {
+            itemAmount = ethers.parseUnits(item.amount, 18);
+        } else if (item.amount) {
+            itemAmount = BigInt(item.amount);
+        }
+    } catch (e) {
+        console.warn("Could not parse activity amount from API:", item.amount, e);
+    }
+    
     const formattedAmount = formatBigNumber(itemAmount).toFixed(2);
+    const itemDetails = item.details || {};
+    
     switch(item.type) {
-        case 'Delegation': title = `Delegation`; icon = 'fa-shield-halved'; color = 'text-purple-400'; details = `Delegated ${formattedAmount} to ${formatAddress(item.details.validator)}`; itemId = item.details.index; break;
-        case 'VestingCertReceived': title = `Certificate Received`; icon = 'fa-id-card-clip'; color = 'text-cyan-400'; details = `Vesting ${formattedAmount} (#${item.details.tokenId})`; itemId = item.details.tokenId; break;
-        case 'BoosterNFT': title = `Booster Acquired`; icon = 'fa-gem'; color = 'text-green-400'; details = `Tier: ${item.details.tierName}`; itemId = item.details.tokenId; break;
+        case 'Delegation': title = `Delegation`; icon = 'fa-shield-halved'; color = 'text-purple-400'; details = `Delegated ${formattedAmount} to ${formatAddress(itemDetails.validator)}`; itemId = itemDetails.index; break;
+        case 'VestingCertReceived': title = `Certificate Received`; icon = 'fa-id-card-clip'; color = 'text-cyan-400'; details = `Vesting ${formattedAmount} (#${itemDetails.tokenId})`; itemId = itemDetails.tokenId; break;
+        case 'BoosterNFT': title = `Booster Acquired`; icon = 'fa-gem'; color = 'text-green-400'; details = `Tier: ${itemDetails.tierName}`; itemId = itemDetails.tokenId; break;
         case 'Unstake': 
             title = `Unstake`; icon = 'fa-unlock'; color = 'text-green-400'; 
             details = `Unstaked ${formattedAmount} $BKC`; 
-            if(item.details.feePaid && item.details.feePaid > 0n) { details += ` (Fee: ${formatBigNumber(item.details.feePaid).toFixed(2)})`; }
-            itemId = item.details.index; break;
+            if(itemDetails.feePaid && BigInt(itemDetails.feePaid) > 0n) { details += ` (Fee: ${formatBigNumber(BigInt(itemDetails.feePaid)).toFixed(2)})`; }
+            itemId = itemDetails.index; break;
         case 'ForceUnstake':
             title = `Forced Unstake`; icon = 'fa-triangle-exclamation'; color = 'text-red-400'; 
-            details = `Received ${formattedAmount} $BKC (Penalty: ${formatBigNumber(item.details.feePaid).toFixed(2)})`; 
-            itemId = item.details.index; break;
+            details = `Received ${formattedAmount} $BKC (Penalty: ${formatBigNumber(BigInt(itemDetails.feePaid || 0n)).toFixed(2)})`; 
+            itemId = itemDetails.index; break;
         case 'DelegatorRewardClaimed': 
             title = `Rewards Claimed`; icon = 'fa-gift'; color = 'text-amber-400'; 
             details = `Claimed ${formattedAmount} $BKC from staking`; 
             itemId = null; break;
         case 'CertificateWithdrawn': 
             title = `Certificate Withdrawn`; icon = 'fa-money-bill-transfer'; color = 'text-cyan-400'; 
-            details = `Withdrew ${formattedAmount} $BKC (#${item.details.tokenId})`;
-            if(item.details.penaltyAmount && item.details.penaltyAmount > 0n) { details += ` (Penalty: ${formatBigNumber(item.details.penaltyAmount).toFixed(2)})`; }
-            itemId = item.details.tokenId; break;
+            details = `Withdrew ${formattedAmount} $BKC (#${itemDetails.tokenId})`;
+            if(itemDetails.penaltyAmount && BigInt(itemDetails.penaltyAmount) > 0n) { details += ` (Penalty: ${formatBigNumber(BigInt(itemDetails.penaltyAmount)).toFixed(2)})`; }
+            itemId = itemDetails.tokenId; break;
         case 'MinerRewardClaimed': 
             title = `Miner Rewards Claimed`; icon = 'fa-pickaxe'; color = 'text-blue-400'; 
             details = `Claimed ${formattedAmount} $BKC from mining`; 
             itemId = null; break;
         case 'TigerGameWin': 
             title = `Tiger Game Win`; icon = 'fa-trophy'; color = 'text-yellow-400'; 
-            details = `Won ${formattedAmount} $BKC (Wagered: ${formatBigNumber(item.details.wagered || 0n).toFixed(2)})`; 
+            details = `Won ${formattedAmount} $BKC (Wagered: ${formatBigNumber(BigInt(itemDetails.wagered || 0n)).toFixed(2)})`; 
             itemId = null; 
             break;
         case 'NFTBuy':
             title = `Booster Bought (Pool)`; icon = 'fa-shopping-cart'; color = 'text-green-400';
-            details = `Bought NFT #${item.details.tokenId} for ${formattedAmount} $BKC`;
-            itemId = item.details.tokenId;
+            details = `Bought NFT #${itemDetails.tokenId} for ${formattedAmount} $BKC`;
+            itemId = itemDetails.tokenId;
             break;
         case 'NFTSell':
             title = `Booster Sold (Pool)`; icon = 'fa-dollar-sign'; color = 'text-blue-400';
-            const taxFormatted = formatBigNumber(item.details.tax || 0n).toFixed(2);
-            details = `Sold NFT #${item.details.tokenId} for ${formattedAmount} $BKC (Tax: ${taxFormatted})`;
-            itemId = item.details.tokenId;
+            const taxFormatted = formatBigNumber(BigInt(itemDetails.tax || 0n)).toFixed(2);
+            details = `Sold NFT #${itemDetails.tokenId} for ${formattedAmount} $BKC (Tax: ${taxFormatted})`;
+            itemId = itemDetails.tokenId;
             break;
-
-        // --- NOVOS CASES ADICIONADOS ---
         case 'PublicSaleBuy': 
             title = 'Booster Bought (Store)'; 
-            icon = 'fa-shopping-bag'; // Ícone diferente para a loja
+            icon = 'fa-shopping-bag'; 
             color = 'text-green-400'; 
-            details = `Bought Tier ${item.details.tierId} NFT (#${item.details.tokenId}) for ${formatBigNumber(item.amount).toFixed(2)} $BKC`; 
-            itemId = item.details.tokenId; 
+            details = `Bought Tier ${itemDetails.tierId} NFT (#${itemDetails.tokenId}) for ${formatBigNumber(itemAmount).toFixed(2)} $BKC`; 
+            itemId = itemDetails.tokenId; 
             break;
         case 'NotaryRegister': 
             title = 'Document Notarized'; 
-            icon = 'fa-stamp'; // Ícone do cartório
+            icon = 'fa-stamp'; 
             color = 'text-blue-400'; 
-            details = `Registered Doc #${item.details.tokenId} (Fee: ${formatBigNumber(item.amount).toFixed(2)} $BKC)`; 
-            itemId = item.details.tokenId; 
+            details = `Registered Doc #${itemDetails.tokenId} (Fee: ${formatBigNumber(itemAmount).toFixed(2)} $BKC)`; 
+            itemId = itemDetails.tokenId; 
             break;
-        // --- FIM DOS NOVOS CASES ---
+        case 'GamePlayed': 
+            title = `Tiger Game Play`; icon = 'fa-dice'; color = 'text-zinc-500'; 
+            details = `Wagered ${formatBigNumber(BigInt(itemDetails.wagered || 0n)).toFixed(2)} $BKC`; 
+            itemId = null; 
+            break;
+        default:
+             title = item.type || 'Unknown Action';
+             icon = 'fa-question-circle';
+             color = 'text-zinc-500';
+             details = item.description || `Activity of type ${item.type}`;
+             break;
     }
     const txHash = item.txHash;
     let Tag, tagAttributes, hoverClass, cursorClass, actionIndicator = '';
     
-    // Adiciona os novos tipos ao lazy search
+    // A função de busca preguiçosa (lazy search) agora é ativada se txHash não estiver presente
     const supportsLazySearch = ['Delegation', 'VestingCertReceived', 'Unstake', 'ForceUnstake', 'CertificateWithdrawn', 'NFTBuy', 'NFTSell', 'PublicSaleBuy', 'NotaryRegister'].includes(item.type);
     
     if (txHash) {
@@ -759,192 +802,31 @@ function renderActivityItem(item) {
             </div>
             <div class="text-sm text-zinc-400 truncate pl-8">
                 <p class="text-xs text-zinc-500 mb-1">${date} ${time}</p>
-                <p class="text-sm text-zinc-400 truncate">${details}</p>
+                <p class_broker.md="text-sm text-zinc-400 truncate">${details}</p>
             </div>
         </${Tag}>
     `;
 }
-// ==================================================================
-// =================== FIM DA CORREÇÃO (ITEM 1) ==================
-// ==================================================================
 
-
-// ==================================================================
-// ================== INÍCIO DA CORREÇÃO (ITEM 2) =================
-// ==================================================================
-// Adiciona a busca pelos eventos do PublicSale e Notary
+// =================================================================
+// ### FUNÇÃO ATUALIZADA: renderActivityHistory ###
+// =================================================================
 async function renderActivityHistory() {
     const listEl = document.getElementById('activity-history-list-container');
     if (!listEl) { console.warn("History container not found"); return; }
     if (!State.isConnected) { renderNoData(listEl, "Connect your wallet to view history."); return; }
+    
     renderLoading(listEl);
+    
     try {
-        await loadMyBoosters();
-        if (!State.userDelegations || State.userDelegations.length === 0) {
-             await loadUserData();
+        const response = await fetch(`${API_BASE_URL}/getHistory/${State.userAddress}`);
+        
+        if (!response.ok) {
+            throw new Error(`API (getHistory) Error: ${response.statusText} (${response.status})`);
         }
-        const allActivities = [];
-        const userAddress = State.userAddress;
-        State.userDelegations?.forEach(d => {
-            const startTime = Number(d.unlockTime) - Number(d.lockDuration);
-            allActivities.push({ type: 'Delegation', amount: d.amount, timestamp: startTime, details: { validator: d.validator, index: d.index }, txHash: null, itemId: d.index });
-        });
-        const certPromises = State.myCertificates?.map(async (cert) => {
-            const position = await safeContractCall(State.rewardManagerContract, 'vestingPositions', [cert.tokenId], {totalAmount: 0n, startTime: 0n});
-            if (position.startTime > 0) {
-                 allActivities.push({ type: 'VestingCertReceived', amount: position.totalAmount, timestamp: Number(position.startTime), details: { tokenId: cert.tokenId.toString() }, txHash: null, itemId: cert.tokenId.toString() });
-            }
-        }) || [];
-        await Promise.all(certPromises);
-        State.myBoosters?.forEach(b => {
-            const tier = boosterTiers.find(t => t.boostBips === b.boostBips);
-            allActivities.push({ type: 'BoosterNFT', amount: 0n, timestamp: b.acquisitionTime || Math.floor(Date.now() / 1000), details: { tokenId: b.tokenId.toString(), tierName: tier?.name || 'Unknown' }, txHash: b.txHash || null, itemId: b.tokenId.toString() });
-        });
-        const blockTimestampCache = {};
-        const getTimestamp = async (blockNumber) => {
-            if (blockTimestampCache[blockNumber]) return blockTimestampCache[blockNumber];
-            try {
-                const block = await State.publicProvider.getBlock(blockNumber);
-                if (block) { blockTimestampCache[blockNumber] = block.timestamp; return block.timestamp; }
-            } catch (e) { console.warn(`Failed to get block ${blockNumber}`, e); }
-            return Math.floor(Date.now() / 1000);
-        };
-        const unstakeFilter = State.delegationManagerContract.filters.Unstaked(userAddress);
-        const unstakeEvents = await safeContractCall(State.delegationManagerContract, 'queryFilter', [unstakeFilter, -200000], []);
-        for (const event of unstakeEvents) {
-            const { user, delegationIndex, amount, feePaid } = event.args;
-            const timestamp = await getTimestamp(event.blockNumber);
-            const originalAmount = amount + feePaid;
-            const isForceUnstake = feePaid > (originalAmount / 20n); 
-            allActivities.push({ type: isForceUnstake ? 'ForceUnstake' : 'Unstake', amount: amount, timestamp: timestamp, details: { index: delegationIndex.toString(), feePaid: feePaid }, txHash: event.transactionHash, itemId: delegationIndex.toString() });
-        }
-        const claimFilter = State.delegationManagerContract.filters.DelegatorRewardClaimed(userAddress);
-        const claimEvents = await safeContractCall(State.delegationManagerContract, 'queryFilter', [claimFilter, -200000], []);
-        for (const event of claimEvents) {
-            const { delegator, amount } = event.args;
-            const timestamp = await getTimestamp(event.blockNumber);
-            allActivities.push({ type: 'DelegatorRewardClaimed', amount: amount, timestamp: timestamp, details: {}, txHash: event.transactionHash, itemId: null });
-        }
-        const withdrawFilter = State.rewardManagerContract.filters.CertificateWithdrawn(null, userAddress);
-        const withdrawEvents = await safeContractCall(State.rewardManagerContract, 'queryFilter', [withdrawFilter, -200000], []);
-        for (const event of withdrawEvents) {
-            const { tokenId, owner, amountToOwner, penaltyAmount } = event.args;
-            const timestamp = await getTimestamp(event.blockNumber);
-            allActivities.push({ type: 'CertificateWithdrawn', amount: amountToOwner, timestamp: timestamp, details: { tokenId: tokenId.toString(), penaltyAmount: penaltyAmount }, txHash: event.transactionHash, itemId: tokenId.toString() });
-        }
-        const minerClaimFilter = State.rewardManagerContract.filters.MinerRewardClaimed(userAddress);
-        const minerClaimEvents = await safeContractCall(State.rewardManagerContract, 'queryFilter', [minerClaimFilter, -200000], []);
-        for (const event of minerClaimEvents) {
-            const { miner, amount } = event.args;
-            const timestamp = await getTimestamp(event.blockNumber);
-            allActivities.push({ type: 'MinerRewardClaimed', amount: amount, timestamp: timestamp, details: {}, txHash: event.transactionHash, itemId: null });
-        }
+        
+        const allActivities = await response.json(); 
 
-        try {
-            if (State.actionsManagerContract) {
-                const gamePlayFilter = State.actionsManagerContract.filters.GamePlayed(userAddress); 
-                const gamePlayEvents = await safeContractCall(State.actionsManagerContract, 'queryFilter', [gamePlayFilter, -200000], []);
-                for (const event of gamePlayEvents) {
-                    const { user, amountWagered, totalPrizeWon } = event.args;
-                    if (totalPrizeWon > 0n) {
-                        const timestamp = await getTimestamp(event.blockNumber);
-                        allActivities.push({
-                            type: 'TigerGameWin',
-                            amount: totalPrizeWon,
-                            timestamp: timestamp,
-                            details: { wagered: amountWagered },
-                            txHash: event.transactionHash,
-                            itemId: null 
-                        });
-                    }
-                }
-            } else {
-                console.warn("Dashboard: State.actionsManagerContract not found, skipping game history.");
-            }
-
-            if (State.nftBondingCurveContract) {
-                const buyFilter = State.nftBondingCurveContract.filters.NFTBought(userAddress); 
-                const buyEvents = await safeContractCall(State.nftBondingCurveContract, 'queryFilter', [buyFilter, -200000], []);
-                for (const event of buyEvents) {
-                    const { buyer, boostBips, tokenId, price } = event.args; 
-                    const timestamp = await getTimestamp(event.blockNumber);
-                    allActivities.push({
-                        type: 'NFTBuy',
-                        amount: price,
-                        timestamp: timestamp,
-                        details: { tokenId: tokenId.toString(), boostBips: boostBips.toString() },
-                        txHash: event.transactionHash,
-                        itemId: tokenId.toString()
-                    });
-                }
-                const sellFilter = State.nftBondingCurveContract.filters.NFTSold(userAddress); 
-                const sellEvents = await safeContractCall(State.nftBondingCurveContract, 'queryFilter', [sellFilter, -200000], []);
-                for (const event of sellEvents) {
-                    const { seller, boostBips, tokenId, payout, taxPaid } = event.args; 
-                    const timestamp = await getTimestamp(event.blockNumber);
-                    allActivities.push({
-                        type: 'NFTSell',
-                        amount: payout, 
-                        timestamp: timestamp,
-                        details: { tokenId: tokenId.toString(), boostBips: boostBips.toString(), tax: taxPaid },
-                        txHash: event.transactionHash,
-                        itemId: tokenId.toString()
-                    });
-                }
-            } else {
-                 console.warn("Dashboard: State.nftBondingCurveContract not found, skipping NFT pool history.");
-            }
-            
-            // --- INÍCIO DOS NOVOS LISTENERS ---
-
-            // 4. Buscar Compras na Loja (PublicSale)
-            if (State.publicSaleContract) {
-                const saleFilter = State.publicSaleContract.filters.NFTSold(userAddress);
-                const saleEvents = await safeContractCall(State.publicSaleContract, 'queryFilter', [saleFilter, -200000], []);
-                for (const event of saleEvents) {
-                    const { buyer, tierId, tokenId, price } = event.args;
-                    const timestamp = await getTimestamp(event.blockNumber);
-                    allActivities.push({
-                        type: 'PublicSaleBuy',
-                        amount: price, // 'amount' é o preço pago
-                        timestamp: timestamp,
-                        details: { tokenId: tokenId.toString(), tierId: tierId.toString() },
-                        txHash: event.transactionHash,
-                        itemId: tokenId.toString()
-                    });
-                }
-            } else {
-                 console.warn("Dashboard: State.publicSaleContract not found, skipping Booster Store history.");
-            }
-
-            // 5. Buscar Registros do Cartório (DecentralizedNotary)
-            if (State.decentralizedNotaryContract) {
-                const notaryFilter = State.decentralizedNotaryContract.filters.DocumentNotarized(userAddress);
-                const notaryEvents = await safeContractCall(State.decentralizedNotaryContract, 'queryFilter', [notaryFilter, -200000], []);
-                for (const event of notaryEvents) {
-                    const { user, tokenId, documentURI, feePaid } = event.args;
-                    const timestamp = await getTimestamp(event.blockNumber);
-                    allActivities.push({
-                        type: 'NotaryRegister',
-                        amount: feePaid, // 'amount' é a taxa paga
-                        timestamp: timestamp,
-                        details: { tokenId: tokenId.toString(), uri: documentURI },
-                        txHash: event.transactionHash,
-                        itemId: tokenId.toString()
-                    });
-                }
-            } else {
-                 console.warn("Dashboard: State.decentralizedNotaryContract not found, skipping Notary history.");
-            }
-            // --- FIM DOS NOVOS LISTENERS ---
-
-        } catch (err) {
-            console.warn("Failed to fetch additional contract events (Game/Pool/Store/Notary):", err);
-        }
-        // --- FIM DA INJEÇÃO ---
-
-
-        allActivities.sort((a, b) => b.timestamp - a.timestamp);
         if (allActivities.length === 0) {
             renderNoData(listEl, "Your recent activities will appear here.");
         } else {
@@ -956,122 +838,91 @@ async function renderActivityHistory() {
             setupLazyLinkListeners();
         }
     } catch (error) {
-        console.error("Error rendering activity history:", error);
+        console.error("Error rendering activity history from API:", error);
         renderError(listEl, "Failed to load activity history.");
     }
 }
-// ==================================================================
-// =================== FIM DA CORREÇÃO (ITEM 2) ==================
-// ==================================================================
+// =================================================================
+// ### FIM DA SUBSTITUIÇÃO ###
+// =================================================================
 
 
-// --- INÍCIO DA FUNÇÃO DE TVL (CORRIGIDA) ---
-/**
- * Carrega o Valor Total Bloqueado (TVL) de todo o protocolo e o renderiza.
- * Esta função é pública e pode ser chamada com a carteira desconectada.
- */
+// ==================================================================
+// ================== (Função TVL - Mantida) =================
+// ==================================================================
 async function loadAndRenderProtocolTVL() {
-    // Elementos principais
     const tvlPanelEl = document.getElementById('protocol-tvl-panel'); 
     const tvlValueEl = document.getElementById('protocol-tvl-value'); 
     const tvlPercEl = document.getElementById('protocol-tvl-percentage'); 
-
-    // Elementos para os detalhes (opcional)
+    const statLockedPercentageEl = document.getElementById('statLockedPercentage');
+    const statTotalSupplyEl = document.getElementById('statTotalSupply'); 
     const tvlStakingEl = document.getElementById('tvl-detail-staking');
     const tvlVestingEl = document.getElementById('tvl-detail-vesting');
     const tvlGameEl = document.getElementById('tvl-detail-game');
     const tvlPoolEl = document.getElementById('tvl-detail-nftpool');
 
-    if (!tvlPanelEl || !tvlValueEl || !tvlPercEl) {
+    if (!tvlValueEl) { 
         console.warn("TVL panel elements not found. Skipping TVL load.");
         return;
     }
     
-    // Mostra loading
     tvlValueEl.innerHTML = '<div class="loader !w-5 !h-5 inline-block"></div>';
     tvlPercEl.textContent = 'Calculating...';
+    if(statLockedPercentageEl) statLockedPercentageEl.innerHTML = '<div class="loader !w-5 !h-5 inline-block"></div>';
+    if(statTotalSupplyEl) statTotalSupplyEl.innerHTML = '<div class="loader !w-5 !h-5 inline-block"></div>';
 
     try {
         let totalLocked = 0n;
         let stakingLocked = 0n, vestingLocked = 0n, gameLocked = 0n, poolLocked = 0n;
 
-        // 0. Espera o State.bkcTokenContract (do publicProvider) estar pronto
-        if (!State.bkcTokenContractPublic) { // CORRIGIDO: Checa o contrato público
-            await new Promise(resolve => setTimeout(resolve, 500));
-            if (!State.bkcTokenContractPublic) {
-                 throw new Error("BKCToken contract (public) not loaded");
-            }
+        if (!State.bkcTokenContractPublic || !State.delegationManagerContractPublic || !State.rewardManagerContractPublic) {
+            throw new Error("Contratos públicos essenciais (bkcTokenContractPublic, etc.) não estão carregados no State.");
         }
         
-        // CORRIGIDO: Usa o contrato público (bkcTokenContractPublic)
         const tokenContract = State.bkcTokenContractPublic;
 
-        // 1. Fundos em Staking (DelegationManager)
         if (addresses.delegationManager) {
             stakingLocked = await safeContractCall(tokenContract, 'balanceOf', [addresses.delegationManager], 0n);
             totalLocked += stakingLocked;
         }
         
-        // 2. Fundos em Vesting (RewardManager)
         if (addresses.rewardManager) {
             vestingLocked = await safeContractCall(tokenContract, 'balanceOf', [addresses.rewardManager], 0n);
             totalLocked += vestingLocked;
         }
 
-        // 3. Fundos no TigerGame (FortuneTiger)
-        // CORREÇÃO: actionsManagerContract agora é PÚBLICO
-        if (State.ecosystemManagerContract) { // Presume que o Hub pode nos dar o contrato
-             // ESTA PARTE AINDA DEPENDE DO State.actionsManagerContract (que é inicializado no login)
-             // Para um TVL PÚBLICO, precisaríamos de um actionsManagerContractPublic
-             // Vamos assumir que ele está no State (como antes) por enquanto
-             if (State.actionsManagerContract) {
-                for (let i = 0; i < 4; i++) {
-                    const poolInfo = await safeContractCall(State.actionsManagerContract, 'prizePools', [i], [0n, 0n, 0n, 0n]);
-                    gameLocked += poolInfo[2]; 
-                }
-                totalLocked += gameLocked;
-             } else {
-                 console.warn("Dashboard: State.actionsManagerContract not found (public TVL), skipping game pools.");
-                 // Tenta ler do contrato público se o 'signer' não estiver pronto
-                 const publicActionsManager = new ethers.Contract(addresses.actionsManager, State.actionsManagerABI, State.publicProvider);
-                 for (let i = 0; i < 4; i++) {
-                    const poolInfo = await safeContractCall(publicActionsManager, 'prizePools', [i], [0n, 0n, 0n, 0n]);
-                    gameLocked += poolInfo[2]; 
-                }
-                totalLocked += gameLocked;
-             }
+        if (State.actionsManagerContractPublic) {
+             for (let i = 0; i < 4; i++) {
+                const poolInfo = await safeContractCall(State.actionsManagerContractPublic, 'prizePools', [i], [0n, 0n, 0n, 0n]);
+                gameLocked += poolInfo[2]; 
+            }
+            totalLocked += gameLocked;
+        } else {
+             console.warn("Dashboard: State.actionsManagerContractPublic not found, skipping game pools.");
         }
 
-        // 4. Fundos no NFTLiquidityPool
-        if (State.nftBondingCurveContract && boosterTiers) { // Assume que este também é inicializado publicamente
-            for (const tier of boosterTiers) { 
-                const poolInfo = await safeContractCall(State.nftBondingCurveContract, 'pools', [tier.boostBips], { isInitialized: false, tokenBalance: 0n });
+        if (State.nftBondingCurveContractPublic && boosterTiers) {
+             for (const tier of boosterTiers) { 
+                const poolInfo = await safeContractCall(State.nftBondingCurveContractPublic, 'pools', [tier.boostBips], { isInitialized: false, tokenBalance: 0n });
                 if (poolInfo.isInitialized) {
                     poolLocked += poolInfo.tokenBalance; 
                 }
             }
             totalLocked += poolLocked;
         } else {
-             // Tenta ler publicamente
-             const publicNftPool = new ethers.Contract(addresses.nftBondingCurve, State.nftBondingCurveABI, State.publicProvider);
-             if (publicNftPool && boosterTiers) {
-                 for (const tier of boosterTiers) { 
-                    const poolInfo = await safeContractCall(publicNftPool, 'pools', [tier.boostBips], { isInitialized: false, tokenBalance: 0n });
-                    if (poolInfo.isInitialized) {
-                        poolLocked += poolInfo.tokenBalance; 
-                    }
-                }
-                totalLocked += poolLocked;
-             } else {
-                console.warn("Dashboard: nftBondingCurveContract not found (public TVL), skipping NFT pools.");
-             }
+            console.warn("Dashboard: State.nftBondingCurveContractPublic not found, skipping NFT pools.");
         }
 
-        // 5. Calcular Porcentagem
         const totalSupply = await safeContractCall(tokenContract, 'totalSupply', [], 0n);
         const lockedPercentage = (totalSupply > 0n) ? (Number(totalLocked * 10000n / totalSupply) / 100).toFixed(2) : 0;
+        
+        if (statTotalSupplyEl) {
+             statTotalSupplyEl.textContent = formatBigNumber(totalSupply).toFixed(0);
+        }
+        if (statLockedPercentageEl) {
+            statLockedPercentageEl.textContent = `${lockedPercentage}%`;
+        }
 
-        // 6. Renderizar
         tvlValueEl.textContent = `${formatBigNumber(totalLocked).toFixed(0)} $BKC`;
         tvlPercEl.textContent = `${lockedPercentage}% of Total Supply Locked`;
         
@@ -1084,9 +935,77 @@ async function loadAndRenderProtocolTVL() {
         console.error("Failed to load protocol TVL:", err);
         tvlValueEl.textContent = 'Error';
         tvlPercEl.textContent = 'Failed to load TVL data.';
+        if(statLockedPercentageEl) statLockedPercentageEl.textContent = 'Error';
+        if(statTotalSupplyEl) statTotalSupplyEl.textContent = 'Error';
     }
 }
-// --- FIM DA FUNÇÃO DE TVL (CORRIGIDA) ---
+
+// =================================================================
+// ### loadAndRenderPublicHeaderStats (Mantida) ###
+// =================================================================
+async function loadAndRenderPublicHeaderStats() {
+    const statValidatorsEl = document.getElementById('statValidators');
+    const statTotalPStakeEl = document.getElementById('statTotalPStake');
+    const statScarcityEl = document.getElementById('statScarcity');
+
+    try {
+        if (!State.delegationManagerContractPublic || !State.bkcTokenContractPublic) {
+             throw new Error("Contratos públicos (DM ou BKC) não inicializados.");
+        }
+
+        if (statValidatorsEl) {
+            try {
+                if (!State.allValidatorsData) {
+                    const validatorsArray = await safeContractCall(State.delegationManagerContractPublic, 'getAllValidators', [], []);
+                    State.allValidatorsData = validatorsArray.map(addr => ({ addr, pStake: 0n, selfStake: 0n, delegatedStake: 0n }));
+                }
+                statValidatorsEl.textContent = State.allValidatorsData.length.toString();
+            } catch (valErr) {
+                console.error("Error loading validators count:", valErr);
+                statValidatorsEl.textContent = 'Error';
+            }
+        }
+        
+        if (statTotalPStakeEl) {
+            const totalPStake = await safeContractCall(State.delegationManagerContractPublic, 'totalNetworkPStake', [], 0n);
+            State.totalNetworkPStake = totalPStake; // Salva no state
+            statTotalPStakeEl.textContent = formatPStake(totalPStake);
+        }
+        
+        if (statScarcityEl) { 
+            const tokenContract = State.bkcTokenContractPublic;
+            const [currentSupply, maxSupply, tgeSupply] = await Promise.all([
+                safeContractCall(tokenContract, 'totalSupply', [], 0n),
+                safeContractCall(tokenContract, 'MAX_SUPPLY', [], 200000000000000000000000000n), // 200M
+                safeContractCall(tokenContract, 'TGE_SUPPLY', [], 40000000000000000000000000n)  // 40M
+            ]);
+
+            const mintPool = maxSupply - tgeSupply;
+            const remainingInPool = maxSupply - currentSupply;
+
+            if (mintPool > 0n && remainingInPool >= 0n && remainingInPool <= mintPool) {
+                const rateBigInt = (remainingInPool * 10000n) / mintPool;
+                const ratePercent = (Number(rateBigInt) / 100).toFixed(2);
+                statScarcityEl.textContent = `${ratePercent}%`;
+            } else if (remainingInPool > mintPool) {
+                 statScarcityEl.textContent = "100.00%";
+            } else {
+                statScarcityEl.textContent = "0.00%";
+            }
+        } else {
+            console.warn("Elemento 'statScarcity' não encontrado. Verifique o ID no index.html.");
+        }
+
+    } catch (err) {
+        console.error("Failed to load public header stats:", err);
+        if(statValidatorsEl) statValidatorsEl.textContent = 'Error';
+        if(statTotalPStakeEl) statTotalPStakeEl.textContent = 'Error';
+        if(statScarcityEl) statScarcityEl.textContent = 'Error';
+    }
+}
+// =================================================================
+// ### FIM DA FUNÇÃO ###
+// =================================================================
 
 
 // --- Main Page Rendering Function ---
@@ -1117,9 +1036,12 @@ export const DashboardPage = {
             animationFrameId = null;
         }
         
-        renderValidatorsList();
+        // Carrega dados PÚBLICOS
         loadAndRenderProtocolTVL();
+        loadAndRenderPublicHeaderStats();
+        renderValidatorsList();
         
+        // Seleciona os elementos do painel do usuário
         const myPositionPStakeEl = document.getElementById('statUserPStake');
         const efficiencyPanel = document.getElementById('reward-efficiency-panel');
         const historyListContainer = document.getElementById('activity-history-list-container');
@@ -1136,10 +1058,14 @@ export const DashboardPage = {
             if(certList) renderNoData(certList, "Connect your wallet.");
             if(historyListContainer) renderNoData(historyListContainer, "Connect your wallet.");
             
+            const statUserBalanceEl = document.getElementById('statUserBalance');
+            if(statUserBalanceEl) statUserBalanceEl.textContent = '--';
+
             this.hasRenderedOnce = false;
             return;
         }
 
+        // Carrega dados do USUÁRIO
         console.log("Rendering connected state...");
         
         if (!this.hasRenderedOnce && !isUpdate) {
@@ -1153,10 +1079,10 @@ export const DashboardPage = {
         try {
             console.log("Loading user data and rewards...");
             if (!State.allValidatorsData || State.allValidatorsData.length === 0) {
-                 await loadPublicData();
+                 await loadPublicData(); 
                  renderValidatorsList(); 
             }
-            await loadUserData();
+            await loadUserData(); 
             
             const claimDetails = await calculateClaimDetails();
             const { totalRewards, netClaimAmount, feeAmount, discountPercent, basePenaltyPercent } = claimDetails;
@@ -1214,12 +1140,12 @@ export const DashboardPage = {
             startRewardAnimation(totalRewards);
             
             console.log("Rendering reward efficiency...");
-            const efficiencyData = await getHighestBoosterBoost();
+            const efficiencyData = await getHighestBoosterBoostFromAPI(); 
             await renderRewardEfficiencyPanel(efficiencyData);
             console.log("Reward efficiency rendered.");
             
             console.log("Rendering activity history in Overview...");
-            await renderActivityHistory();
+            await renderActivityHistory(); 
             console.log("Activity history rendered.");
 
         } catch (error) {

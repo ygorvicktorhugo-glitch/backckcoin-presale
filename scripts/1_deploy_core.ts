@@ -1,14 +1,24 @@
 // scripts/1_deploy_core.ts
-import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
+// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
 
 // Helper function for delays between deployments
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEPLOY_DELAY_MS = 2000; // 2-second delay
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: HardhatRuntimeEnvironment) {
+export async function runScript(hre: any) { // Mudamos para 'any'
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;

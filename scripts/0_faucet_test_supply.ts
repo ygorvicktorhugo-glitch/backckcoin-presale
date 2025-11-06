@@ -1,8 +1,18 @@
 // scripts/0_faucet_test_supply.ts (PASSO ZERO - TRANSFERÊNCIA DE SUPPLY DE TESTE)
-import { HardhatRuntimeEnvironment } from "hardhat/types";
+// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 import { ethers } from "ethers";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
 
 // --- CONFIGURAÇÃO ---
 const TEST_SUPPLY_AMOUNT_BKC = "10000000"; 
@@ -12,7 +22,7 @@ const TEST_SUPPLY_AMOUNT_BKC = "10000000";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: HardhatRuntimeEnvironment) {
+export async function runScript(hre: any) { // Mudamos para 'any'
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
@@ -28,7 +38,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   console.log("----------------------------------------------------");
 
   // --- 1. Carregar Endereços ---
-  // Nota: Remoção do atraso de 5s, pois o script mestre (run_master.ts) fará a pausa.
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
     console.error("❌ Erro: 'deployment-addresses.json' não encontrado. Execute o Passo 1 primeiro.");

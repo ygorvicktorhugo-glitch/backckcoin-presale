@@ -1,10 +1,18 @@
 // scripts/5_create_pools.ts
-import { HardhatRuntimeEnvironment } from "hardhat/types";
+// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
-// REMOVIDO: import addressesJson from "../deployment-addresses.json";
+// Adicionando imports para compatibilidade __dirname
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
-// REMOVIDO: const addresses: { [key: string]: string } = addressesJson;
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
 
 // --- ⚙️ CONFIGURATION ---
 // Esta lista DEVE corresponder aos descontos imutáveis
@@ -21,7 +29,7 @@ const TIERS_TO_CREATE = [
 // ------------------------
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: HardhatRuntimeEnvironment) {
+export async function runScript(hre: any) { // Mudamos para 'any'
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;

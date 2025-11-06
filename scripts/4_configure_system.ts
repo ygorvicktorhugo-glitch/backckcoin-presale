@@ -3,6 +3,18 @@ import hre from "hardhat";
 import { ethers } from "ethers";
 import fs from "fs";
 import path from "path";
+// Adicionando imports para compatibilidade __dirname
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
+
 
 // Helper function for delays between deployments
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,7 +61,7 @@ export async function runScript(hre: any) { // Usamos 'any' para facilitar a tip
   console.log("Carregando instâncias de contratos implantados...");
   
   // Verificação de que todos os endereços necessários estão presentes
-  const requiredAddresses = ['bkcToken', 'delegationManager', 'rewardManager', 'rewardBoosterNFT', 'fortuneTiger'];
+  const requiredAddresses = ['bkcToken', 'delegationManager', 'rewardManager', 'rewardBoosterNFT', 'fortuneTiger', 'publicSale']; 
   for (const key of requiredAddresses) {
       if (!addresses[key]) {
           throw new Error(`Endereço '${key}' não encontrado no JSON. O Passo 3 falhou ou o arquivo não foi atualizado.`);

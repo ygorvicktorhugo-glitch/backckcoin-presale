@@ -1,8 +1,18 @@
 // scripts/7_configure_fees.ts
-import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 import { ethers } from "ethers";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import hre from 'hardhat'; // Importa o HRE para uso no bloco de auto-execução
+
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,13 +54,13 @@ const LIQUIDITY_CONFIG = [
     // --- SUA NOVA PISCINA (Pool 3) ---
     { 
       poolId: 3, 
-      multiplier: 3, // ATUALIZADO: Multiplicador 3x (Era 4)
-      chanceDenominator: 3, // ATUALIZADO: 1 em 3 = ~33.3% de chance (Era 4)
+      multiplier: 3, // ATUALIZADO: Multiplicador 3x
+      chanceDenominator: 3, // ATUALIZADO: 1 em 3 = ~33.3% de chance
       bipsContribution: 7000, // Recebe 70% dos fundos
       amount: ethers.parseEther("20000") // 20K BKC de liquidez inicial
     }
 ];
-// Total BIPS = 2000 + 700 + 300 + 7000 = 10000 BIPS (100%)
+// Total BIPS = 10000 BIPS (100%)
 const TOTAL_INITIAL_LIQUIDITY = LIQUIDITY_CONFIG.reduce((sum, pool) => sum + pool.amount, 0n);
 
 // ==================================================================
@@ -59,7 +69,6 @@ const TOTAL_INITIAL_LIQUIDITY = LIQUIDITY_CONFIG.reduce((sum, pool) => sum + poo
 
 
 // --- CONFIGURAÇÃO DE SERVIÇOS (TAXAS) ---
-// (O teto de 50% do prêmio é definido no TigerGame.sol, não aqui)
 const SERVICE_SETTINGS = {
   // --- DecentralizedNotary ---
   NOTARY_FEE: ethers.parseUnits("100", 18), // 100 BKC
@@ -81,13 +90,15 @@ const SERVICE_SETTINGS = {
   NFT_POOL_TAX_DELEGATOR_SHARE_BIPS: 4000, // 40% da taxa
   NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS: 2000, // 20% da taxa
 };
-// ######################################################################
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: HardhatRuntimeEnvironment) {
-  const { ethers } = hre;
-  const [deployer] = await ethers.getSigners();
-  const networkName = hre.network.name;
+export async function runScript(localHre: any) { // Usamos 'any' para simplificar a tipagem do hre
+  // Desestruturando ethers A PARTIR DO hre injetado
+  const { ethers } = localHre;
+  
+  // A falha anterior (getSigners) estava aqui se 'ethers' fosse undefined.
+  const [deployer] = await ethers.getSigners(); 
+  const networkName = localHre.network.name;
 
   console.log(`🚀 (Passo 7/8) Configurando Game, Liquidez e Regras do Sistema na rede: ${networkName}`);
   console.log(`Usando a conta: ${deployer.address}`);
@@ -214,7 +225,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   console.log("\nPróximo passo: Execute '8_add_liquidity.ts'");
 }
 
-// --- Funções Auxiliares (Não Modificadas) ---
+// --- Funções Auxiliares (Estas funções são chamadas por runScript) ---
 
 async function setFee(manager: any, key: string, value: number | bigint) {
   try {
@@ -246,16 +257,20 @@ async function setService(manager: any, serviceKey: string, feeValue: number | b
 }
 
 // ====================================================================
-// =================== Bloco de execução standalone ==================
+// =========== Bloco de Execução e Exportação (Compatível ESM) ===========
 // ====================================================================
-if (require.main === module) {
-  console.log("Executando 7_configure_fees.ts como script standalone...");
-  import("hardhat").then(hre => {
-    runScript(hre)
-      .then(() => process.exit(0))
-      .catch((error) => {
-        console.error(error);
-        process.exit(1);
-      });
-  });
+
+// Exporta a função 'runScript' como padrão. 
+// Isso a torna executável via 'npx hardhat run' e importável por outros scripts.
+export default runScript;
+
+// Bloco de auto-execução para Hardhat (Standalone)
+// O Hardhat injeta o HRE automaticamente
+if (import.meta.url === new URL(process.argv[1], 'file:').href) {
+  runScript(hre)
+    .then(() => process.exit(0))
+    .catch(error => {
+      console.error(error);
+      process.exit(1);
+    });
 }

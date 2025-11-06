@@ -1,11 +1,21 @@
 // scripts/2_configure_hub_addresses.ts
-import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 import { ethers } from "ethers";
+// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: HardhatRuntimeEnvironment) {
+export async function runScript(hre: any) { // Mudamos para 'any'
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;

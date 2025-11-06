@@ -4,8 +4,11 @@ const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { DOMElements } from '../dom-elements.js';
-// Importa loadUserData para checar o pStake e safeContractCall
-import { loadUserData, loadMyBoosters, safeContractCall } from '../modules/data.js';
+// =================================================================
+// ### CORREÇÃO DE IMPORTAÇÃO (Linha 8) ###
+// 'loadMyBoosters' foi renomeado para 'loadMyBoostersFromAPI'
+import { loadUserData, loadMyBoostersFromAPI, safeContractCall } from '../modules/data.js';
+// =================================================================
 import { executeBuyBooster, executeSellBooster } from '../modules/transactions.js';
 import { formatBigNumber, renderLoading, renderError } from '../utils.js';
 import { boosterTiers } from '../config.js';
@@ -68,7 +71,10 @@ async function renderActiveTabContent() {
     el.innerHTML = `<p class="loading-message">Loading booster data...</p>`;
     
     try {
-        await loadMyBoosters(); // Carrega os boosters do usuário (necessário para a aba "Sell")
+        // =================================================================
+        // ### CORREÇÃO DE CHAMADA (Linha 82) ###
+        await loadMyBoostersFromAPI(); // Carrega os boosters do usuário (da API)
+        // =================================================================
 
         let contentPromises;
 
@@ -149,7 +155,7 @@ async function renderActiveTabContent() {
                                 <img src="${tier.img}" alt="${tier.name}"/>
                             </div>
                             <div class="trade-row-info">
-                                <h4>${tier.name}</h4>
+                                H4>${tier.name}</h4>
                                 <p class="text-zinc-400" style="font-size: 0.8rem;">Token ID #${booster.tokenId}</p>
                             </div>
                             <div class="trade-row-stats">
@@ -180,7 +186,7 @@ async function renderActiveTabContent() {
                                 <div class="stat-value">Failed to load</div>
                             </div>
                             <div class="trade-row-action">
-                                <button class="trade-action-btn sell" disabled>Sell</button>
+                                <button classA="trade-action-btn sell" disabled>Sell</button>
                             </div>
                         </div>
                     `;

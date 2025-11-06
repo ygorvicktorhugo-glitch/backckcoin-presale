@@ -6,14 +6,16 @@ import { State } from '../state.js';
 import { showToast, closeModal } from '../ui-feedback.js';
 import { addresses, FAUCET_AMOUNT_WEI } from '../config.js';
 import { formatBigNumber } from '../utils.js';
-// --- CORREÇÃO: Importar getHighestBoosterBoost ---
-import { loadUserData, getHighestBoosterBoost, safeContractCall } from './data.js';
+// =================================================================
+// --- CORREÇÃO DE IMPORTAÇÃO (Linha 10) ---
+import { loadUserData, getHighestBoosterBoostFromAPI, safeContractCall } from './data.js';
+// =================================================================
 
 // --- Constantes de Tolerância ---
 const APPROVAL_TOLERANCE_BIPS = 100; // 1% em BIPS
 const BIPS_DENOMINATOR = 10000;
 
-// Transação Genérica de Wrapper
+// Transação Genérica de Wrapper (Mantida)
 async function executeTransaction(txPromise, successMessage, failMessage, btnElement) {
     if (!btnElement) {
         console.warn("Transaction executed without a button element for feedback.");
@@ -86,7 +88,7 @@ async function executeTransaction(txPromise, successMessage, failMessage, btnEle
 }
 
 
-// --- Funções Auxiliares para Aprovação ---
+// --- Funções Auxiliares para Aprovação (Mantida) ---
 async function ensureApproval(spenderAddress, requiredAmount, btnElement, purpose) {
     if (!State.signer) return false;
 
@@ -130,7 +132,7 @@ async function ensureApproval(spenderAddress, requiredAmount, btnElement, purpos
 }
 
 
-// --- DELEGAÇÃO / UNSTAKE ---
+// --- DELEGAÇÃO / UNSTAKE (Mantida) ---
 export async function executeDelegation(validatorAddr, totalAmount, durationSeconds, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     const approved = await ensureApproval(addresses.delegationManager, totalAmount, btnElement, "Delegation");
@@ -158,8 +160,9 @@ export async function executeUnstake(index) {
 export async function executeForceUnstake(index) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
 
+    // =================================================================
     // --- CORREÇÃO: Obter o ID do booster para o desconto de penalidade ---
-    const { tokenId: boosterTokenId } = await getHighestBoosterBoost();
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- NOME DA FUNÇÃO CORRIGIDO
     const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
     // --- FIM DA CORREÇÃO ---
     
@@ -181,7 +184,7 @@ export async function executeForceUnstake(index) {
 // ====================================================================
 
 
-// --- VALIDADOR ---
+// --- VALIDADOR (Mantida) ---
 export async function payValidatorFee(feeAmount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     const approved = await ensureApproval(addresses.delegationManager, feeAmount, btnElement, "Validator Fee");
@@ -198,7 +201,7 @@ export async function registerValidator(stakeAmount, btnElement) {
 }
 
 
-// --- POP MINING / CERTIFICADOS ---
+// --- POP MINING / CERTIFICADOS (Mantida) ---
 export async function createVestingCertificate(recipientAddress, amount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     if (!ethers.isAddress(recipientAddress)) return showToast('Invalid beneficiary address.', 'error');
@@ -224,8 +227,9 @@ export async function createVestingCertificate(recipientAddress, amount, btnElem
 export async function executeWithdraw(tokenId, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
 
+    // =================================================================
     // --- CORREÇÃO: Obter o ID do booster para o desconto de penalidade ---
-    const { tokenId: boosterTokenId } = await getHighestBoosterBoost();
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- NOME DA FUNÇÃO CORRIGIDO
     const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
     // --- FIM DA CORREÇÃO ---
 
@@ -237,7 +241,7 @@ export async function executeWithdraw(tokenId, btnElement) {
 // ====================================================================
 
 
-// --- CLAIM DE RECOMPENSAS ---
+// --- CLAIM DE RECOMPENSAS (Mantida) ---
 export async function executeUniversalClaim(stakingRewards, minerRewards, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     if (stakingRewards === 0n && minerRewards === 0n) {
@@ -317,8 +321,9 @@ export async function executeBuyBooster(boostBips, price, btnElement) {
         // Se a aprovação foi ok, atualiza o botão para "Buying"
         if (btnElement) btnElement.innerHTML = '<div class="loader inline-block"></div> Buying...';
 
+        // =================================================================
         // --- CORREÇÃO: Obter o ID do booster para a verificação de pStake ---
-        const { tokenId: boosterTokenId } = await getHighestBoosterBoost();
+        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- NOME DA FUNÇÃO CORRIGIDO
         const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
         // --- FIM DA CORREÇÃO ---
 
@@ -388,10 +393,11 @@ export async function executeSellBooster(tokenId, btnElement) {
         if (btnElement) btnElement.innerHTML = '<div class="loader inline-block"></div> Selling...';
         showToast("Submitting sell transaction...", "info");
 
+        // =================================================================
         // --- CORREÇÃO: Obter o ID do booster para pStake e desconto de taxa ---
         // Nota: O usuário pode querer usar um booster diferente do que está vendendo.
         // Usar o 'highest' é a melhor lógica padrão.
-        const { tokenId: boosterTokenId } = await getHighestBoosterBoost();
+        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- NOME DA FUNÇÃO CORRIGIDO
         const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
         // --- FIM DA CORREÇÃO ---
 
@@ -421,7 +427,7 @@ export async function executeSellBooster(tokenId, btnElement) {
 // ====================================================================
 
 
-// --- FAUCET CLAIM ---
+// --- FAUCET CLAIM (Mantida) ---
 export async function executeFaucetClaim(btnElement) {
     if (!State.signer || !State.faucetContract) {
         showToast("Wallet not connected or Faucet not configured.", "error");
@@ -437,7 +443,7 @@ export async function executeFaucetClaim(btnElement) {
     );
 }
 
-// =A função executeNotarizeDocument já estava correta e foi mantida como estava =
+// --- NOTARY (Mantida) ---
 
 /**
  * Executa a transação para notarizar um documento (V2 - Corrigido).

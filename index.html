@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
-    <title>Backchain | Dashboard</title>
+    <title>Backcoin.org | Dashboard</title>
 
     <link rel="icon" href="./assets/bkc_logo_3d.png" type="image/png">
 
@@ -159,7 +159,11 @@
         <div id="sidebar-backdrop" class="fixed inset-0 bg-black/90 z-30 hidden lg:hidden"></div>
 
         <aside id="sidebar" class="fixed top-0 left-0 z-40 w-64 h-full bg-sidebar p-4 flex flex-col transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0">
-            <div class="flex items-center gap-3 px-2 mb-8"><img src="./assets/bkc_logo_3d.png" alt="Backchain Logo" class="h-10 w-auto rounded-full"><span class="text-2xl font-bold text-amber-400">Backchain</span></div>
+            
+            <div class="flex items-center gap-3 px-2 mb-8">
+                <img src="./assets/bkc_logo_3d.png" alt="Backcoin.org Logo" class="h-10 w-auto rounded-full">
+                <span class="text-2xl font-bold text-amber-400">Backcoin.org</span>
+            </div>
 
             <nav id="nav-links" class="flex flex-col flex-1 overflow-y-auto">
                  <div class="space-y-2">
@@ -216,8 +220,10 @@
             <header class="sticky top-0 z-20 flex justify-between items-center p-4 bg-sidebar/80 backdrop-blur-sm border-b border-border-color">
                 <div class="flex items-center gap-3">
                     <button id="menu-btn" class="lg:hidden text-xl text-zinc-400 hover:text-white h-10 w-10"><i class="fa-solid fa-bars"></i></button>
-                    <img src="./assets/bkc_logo_3d.png" alt="Backchain Logo" class="h-8 w-auto rounded-full lg:hidden">
-                    <span id="mobileAppDisplay" class="text-xl font-bold text-amber-400 lg:hidden">Backchain</span>
+                    
+                    <img src="./assets/bkc_logo_3d.png" alt="Backcoin.org Logo" class="h-8 w-auto rounded-full lg:hidden">
+                    <span id="mobileAppDisplay" class="text-xl font-bold text-amber-400 lg:hidden">Backcoin.org</span>
+
                 </div>
                 
                 <div class="flex items-center ml-auto gap-2 sm:gap-3">
@@ -254,8 +260,23 @@
                             <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-coins text-2xl text-amber-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">$BKC</p><p id="statUserBalance" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
                             <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-users text-2xl text-green-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Validators</p><p id="statValidators" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
                             <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-shield-halved text-2xl text-purple-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Net pStake</p><p id="statTotalPStake" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
-                            <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-vault text-2xl text-cyan-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Locked %</p><p id="statLockedPercentage" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
-                            <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4"><i class="fa-solid fa-fire text-2xl text-amber-400 w-8 text-center"></i><div class="min-w-0"><p class="text-zinc-400 text-sm">Scarcity Rate</p><p id_broker.md="statScarcity" class="text-base sm:text-xl font-bold mt-1 truncate">--</p></div></div>
+                            
+                            <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4">
+                                <i class="fa-solid fa-lock text-2xl text-cyan-400 w-8 text-center"></i>
+                                <div class="min-w-0">
+                                    <p class="text-zinc-400 text-sm">Locked %</p>
+                                    <p id="statLockedPercentage" class="text-base sm:text-xl font-bold mt-1 truncate">--</p>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4">
+                                <i class="fa-solid fa-fire text-2xl text-amber-400 w-8 text-center"></i>
+                                <div class="min-w-0">
+                                    <p class="text-zinc-400 text-sm">Scarcity Rate</p>
+                                    <p id="statScarcity" class="text-base sm:text-xl font-bold mt-1 truncate">--</p>
+                                </div>
+                            </div>
+
                         </div>
                         <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
                             <div class="flex flex-col gap-8">
@@ -290,8 +311,9 @@
                                 <div id="protocol-tvl-panel" class="bg-sidebar border border-border-color rounded-xl p-6">
                                     <div class="flex justify-between items-center mb-1">
                                         <p class="text-zinc-400 text-sm">Protocol TVL (Total Locked)</p>
-                                        <i class="fa-solid fa-database text-zinc-500"></i>
+                                        <i class="fa-solid fa-lock text-zinc-500"></i>
                                     </div>
+
                                     <p id="protocol-tvl-value" class="text-3xl font-bold text-white">--</p>
                                     <p id="protocol-tvl-percentage" class="text-sm text-zinc-500">--% Locked</p>
                                     
@@ -308,7 +330,30 @@
                     </section>
                     <section id="presale" style="background-color: var(--presale-bg-main); margin: -1.5rem;" class="hidden"></section>
 
-                    <section id="earn" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">Earn Rewards</h1><div class="border-b border-border-color mb-6"><nav id="earn-tabs" class="-mb-px flex gap-6"><button class="tab-btn active" data-target="delegate-tab">Delegate (pStake)</button><button class="tab-btn" data-target="distribute-tab" id="pop-mining-tab" style="display: none;">PoP Mining</button><button classs="tab-btn" data-target="validator-tab" id="validator-section-tab" style="display: none;">Become a Validator</button></nav></div><div id="delegate-tab" class="tab-content active"><div id="validatorsList" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div></div><div id="distribute-tab" class="tab-content"><div id="pop-mining-content" class="bg-sidebar border border-border-color rounded-xl max-w-3xl mx-auto overflow-hidden"></div></div><div id="validator-tab" class="tab-content"><div id="validator-content-wrapper" class="max-w-3xl mx-auto"></div></div></section>
+                    <section id="earn" class="hidden">
+                        <h1 class="text-2xl md:text-3xl font-bold mb-6">Earn Rewards</h1>
+                        
+                        <div class="border-b border-border-color mb-6">
+                            <nav id="earn-tabs" class="-mb-px flex gap-6">
+                                <button class="tab-btn active" data-target="delegate-tab">Delegate (pStake)</button>
+                                <button class="tab-btn" data-target="distribute-tab" id="pop-mining-tab" style="display: none;">PoP Mining</button>
+                                <button class="tab-btn" data-target="validator-tab" id="validator-section-tab" style="display: none;">Become a Validator</button>
+                            </nav>
+                        </div>
+                        
+                        <div id="delegate-tab" class="tab-content active">
+                            <div id="validatorsList" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                </div>
+                        </div>
+                        <div id="distribute-tab" class="tab-content hidden">
+                            <div id="pop-mining-content" class="bg-sidebar border border-border-color rounded-xl max-w-3xl mx-auto overflow-hidden">
+                                </div>
+                        </div>
+                        <div id="validator-tab" class="tab-content hidden">
+                            <div id="validator-content-wrapper" class="max-w-3xl mx-auto">
+                                </div>
+                        </div>
+                    </section>
                     <section id="store" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">Reward Booster Store</h1><p class="text-zinc-400 max-w-3xl mb-8">Increase your reward claim efficiency from a 50% base up to 100% by purchasing a Booster NFT. Prices are dynamic and increase as NFTs are sold.</p><div id="store-content-wrapper"><h2 class="text-xl font-bold mb-4">Booster Pools</h2><div id="store-items-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div><div class="mt-12"><h2 class="text-xl font-bold mb-4">My Locked & Ineligible Boosters</h2><div id="my-locked-boosters-container"></div></div></div></section>
                     <section id="rewards" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">My Rewards & Certificates</h1><div id="claimable-rewards-panel" class="mb-8 p-6 bg-sidebar border border-border-color rounded-xl max-w-2xl mx-auto"><h2 class="text-xl font-bold mb-4">Claimable Rewards</h2><div id="rewards-loader" class="text-center hidden"><div class="loader inline-block"></div></div><div id="rewards-details-content"></div></div><h2 class="text-xl font-bold mb-4">My Vesting Certificates</h2><div id="certificates-list-container"></div></section>
                     

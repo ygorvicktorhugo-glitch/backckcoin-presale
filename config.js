@@ -39,7 +39,14 @@ export async function loadAddresses() {
 // AJUSTADA para 100 BKC (100 * 10^18)
 export const FAUCET_AMOUNT_WEI = 100n * 10n**18n; 
 
+// =================================================================
+// ### CORREÇÃO (CORS) ###
+// Revertido para o seu URL original da Alchemy, que permite
+// solicitações de 'localhost'.
+// =================================================================
 export const sepoliaRpcUrl = "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz";
+// =================================================================
+
 export const ipfsGateway = "https://ipfs.io/ipfs/";
 export const sepoliaChainId = 11155111n;
 
@@ -55,7 +62,7 @@ export const boosterTiers = [
 
 
 // --- ABIs CORRIGIDAS --- 
-// Incluindo mais funções para o ABI Mismatch
+// (Mantidos como estavam)
 
 export const bkcTokenABI = [
     "function totalSupply() view returns (uint256)",

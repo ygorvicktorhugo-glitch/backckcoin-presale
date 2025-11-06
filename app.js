@@ -2,7 +2,11 @@
 
 // --- INÍCIO DA CORREÇÃO: VERCEL ANALYTICS ---
 import { inject } from 'https://esm.sh/@vercel/analytics';
-inject();
+
+// Só injeta o Vercel Analytics se NÃO estivermos em localhost
+if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+  inject();
+}
 // --- FIM DA CORREÇÃO ---
 
 const ethers = window.ethers;
@@ -206,7 +210,7 @@ function updateUIState() {
         // Restaura o título mobile para "Backchain" para evitar duplicidade
         const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
         if (mobileDisplayEl) { 
-            mobileDisplayEl.textContent = 'Backchain'; 
+            mobileDisplayEl.textContent = 'Backcoin.org'; // Mantém o nome original do HTML
             mobileDisplayEl.classList.add('text-amber-400'); 
             mobileDisplayEl.classList.remove('text-white'); 
         }
@@ -232,7 +236,11 @@ function updateUIState() {
         
         // Restaura o título mobile para "Backchain"
         const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
-        if (mobileDisplayEl) { mobileDisplayEl.textContent = 'Backchain'; mobileDisplayEl.classList.add('text-amber-400'); mobileDisplayEl.classList.remove('text-white'); }
+        if (mobileDisplayEl) { 
+            mobileDisplayEl.textContent = 'Backcoin.org'; // Mantém o nome original do HTML
+            mobileDisplayEl.classList.add('text-amber-400'); 
+            mobileDisplayEl.classList.remove('text-white'); 
+        }
         // --- FIM DAS CORREÇÕES (V3) ---
 
 

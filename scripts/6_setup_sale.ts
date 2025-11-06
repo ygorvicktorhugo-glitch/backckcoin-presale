@@ -1,11 +1,18 @@
 // scripts/6_setup_sale.ts
-import { HardhatRuntimeEnvironment } from "hardhat/types";
+// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { ethers, LogDescription, Log } from "ethers";
 import fs from "fs";
 import path from "path";
-// REMOVIDO: import addressesJson from "../deployment-addresses.json";
+import { fileURLToPath } from 'url'; // <--- CORREÇÃO DE ESM
+import { dirname } from 'path'; // <--- CORREÇÃO DE ESM
 
-// REMOVIDO: const addresses: { [key: string]: string } = addressesJson;
+// ########################################################
+// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
+// ########################################################
+// Define __filename e __dirname, pois não existem no modo ESM.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// ########################################################
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,7 +35,7 @@ const TIERS_TO_SETUP = [
 const CHUNK_SIZE_BIGINT = BigInt(150); // Mintar em lotes de 150
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: HardhatRuntimeEnvironment) {
+export async function runScript(hre: any) { // Usamos 'any'
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;

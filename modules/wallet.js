@@ -159,12 +159,7 @@ export async function initPublicProvider() {
      try {
         State.publicProvider = new ethers.JsonRpcProvider(sepoliaRpcUrl);
 
-        // =================================================================
-        // ### CORREÇÃO DO TVL (Ponto A) ###
         // Inicializa os contratos PÚBLICOS que o TVL (DashboardPage.js) procura.
-        // Usamos '...ContractPublic' para não conflitar com os contratos
-        // do usuário logado (signer).
-        // =================================================================
         if (addresses.bkcToken)
             State.bkcTokenContractPublic = new ethers.Contract(addresses.bkcToken, bkcTokenABI, State.publicProvider);
         if (addresses.delegationManager)
@@ -176,12 +171,8 @@ export async function initPublicProvider() {
         if (addresses.nftBondingCurve) {
             State.nftBondingCurveContractPublic = new ethers.Contract(addresses.nftBondingCurve, nftBondingCurveABI, State.publicProvider);
         }
-        // =================================================================
-        // ### FIM DA CORREÇÃO DO TVL ###
-        // =================================================================
 
         // Carrega dados públicos (ex: lista de validadores, info pública)
-        // Esta função usa 'State.publicProvider' internamente
         await loadPublicData();
         
         console.log("Public provider and Web3Modal initialized.");
@@ -192,32 +183,21 @@ export async function initPublicProvider() {
 }
 
 /**
- * Assina as mudanças de estado do Web3Modal.
+ * Assina as mudanças de estado do Web3Modal e tenta reconectar.
  * @param {function} callback - A função em app.js que lidará com as mudanças.
  */
 export function subscribeToWalletChanges(callback) {
     
-    // =================================================================
-    // ### INFO: LÓGICA DE RECONEXÃO INTELIGENTE (Ponto B) ###
-    //
-    // Esta função já cuida da sua solicitação de "reconexão inteligente".
-    // O Web3Modal salva o estado da conexão. Quando o usuário dá F5
-    // ou retorna à aba, `subscribeProvider` é disparado IMEDIATAMENTE
-    // com o estado salvo (`isConnected: true`).
-    //
-    // A lógica abaixo então detecta `isConnected: true`, chama 
-    // `setupSignerAndLoadData`, e o `app.js` (via 'callback')
-    // atualiza a UI, importando os dados do usuário.
-    // =================================================================
-
-    let wasPreviouslyConnected = web3modal.getIsConnected(); // Checa estado inicial salvo
+    // VARIÁVEL LOCAL para rastrear o estado anterior, essencial para o Web3Modal
+    // Usa getState() para obter o estado inicial, o que é crucial para a primeira carga.
+    let wasPreviouslyConnected = web3modal.getIsConnected(); 
 
     web3modal.subscribeProvider(async ({ provider, address, chainId, isConnected }) => {
         console.log("Web3Modal State Change:", { isConnected, address, chainId });
 
         if (isConnected) {
             
-            // --- Lógica para Trocar de Rede (Já estava correta) ---
+            // --- Lógica para Trocar de Rede (Mantida) ---
             if (chainId !== Number(sepoliaChainId)) {
                 showToast(`Rede errada. Trocando para Sepolia...`, 'error');
                 const expectedChainIdHex = '0x' + (Number(sepoliaChainId)).toString(16);
@@ -272,15 +252,16 @@ export function subscribeToWalletChanges(callback) {
             const success = await setupSignerAndLoadData(ethersProvider, address);
             
             if (success) {
+                const isNewConnection = !wasPreviouslyConnected;
+                wasPreviouslyConnected = true; // Atualiza o rastreamento
+
                 // Chama o app.js para atualizar a UI
                 callback({ 
                     isConnected: true, 
                     address, 
                     chainId,
-                    // Informa ao app.js se é uma nova conexão ou uma reconexão (refresh)
-                    isNewConnection: !wasPreviouslyConnected 
+                    isNewConnection 
                 });
-                wasPreviouslyConnected = true;
             } else {
                 // Falha no setup (ex: Firebase)
                 await web3modal.disconnect();
@@ -303,7 +284,6 @@ export function subscribeToWalletChanges(callback) {
             State.userTotalPStake = 0n;
         
             // Recria os contratos do signer, mas com o provedor PÚBLICO
-            // (para que o app continue lendo dados públicos após o logout)
             if(State.publicProvider) {
                 instantiateContracts(State.publicProvider);
             }
@@ -316,7 +296,22 @@ export function subscribeToWalletChanges(callback) {
             wasPreviouslyConnected = false;
         }
     });
+
+    // =================================================================
+    // ### CORREÇÃO DA UX: TENTA FORÇAR A RECONEXÃO SALVA ###
+    // Este bloco garante que, se houver uma sessão salva, ela seja processada
+    // ativamente durante a inicialização da página.
+    // =================================================================
+    
+    // Tenta obter o estado atual salvo
+    const currentStatus = web3modal.getState();
+    if (currentStatus.isConnected && currentStatus.address) {
+        // Se houver uma sessão salva, dispara o evento manualmente no subscribe
+        // para forçar a reconexão.
+        web3modal.subscribeProvider(currentStatus);
+    }
 }
+
 
 /**
  * Abre o modal de conexão.

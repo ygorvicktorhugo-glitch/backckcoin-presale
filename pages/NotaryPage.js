@@ -3,9 +3,8 @@
 import { State } from '../state.js';
 import { formatBigNumber, formatPStake, renderLoading, renderError, renderNoData, ipfsGateway } from '../utils.js';
 // =================================================================
-// ### CORREÇÃO DE IMPORTAÇÃO (BUG OCULTO) ###
-// Importa a nova função da API e mantém a 'safeContractCall'
-import { safeContractCall, getHighestBoosterBoostFromAPI } from '../modules/data.js';
+// ### CORREÇÃO DE IMPORTAÇÃO: Adiciona API_BASE_URL
+import { safeContractCall, getHighestBoosterBoostFromAPI, API_BASE_URL } from '../modules/data.js';
 // =================================================================
 import { showToast } from '../ui-feedback.js';
 import { executeNotarizeDocument } from '../modules/transactions.js';
@@ -380,7 +379,7 @@ async function renderMyNotarizedDocuments() {
 
 
 /**
- * handleFileUpload (Mantida)
+ * handleFileUpload (CORRIGIDO: URL de upload da API)
  */
 async function handleFileUpload(file) {
     const uploadPromptEl = document.getElementById('notary-upload-prompt');
@@ -405,14 +404,21 @@ async function handleFileUpload(file) {
         const formData = new FormData();
         formData.append('file', file); 
 
-        const response = await fetch('/api/upload', {
+        // =================================================================
+        // ### CORREÇÃO CRÍTICA DO ERRO 405/CORS ###
+        // Usa o API_BASE_URL (definido em data.js como Cloud Function) e anexa '/upload'.
+        // O 404/CORS ainda existe e deve ser corrigido no backend.
+        const UPLOAD_URL = `${API_BASE_URL}/upload`; //
+
+        const response = await fetch(UPLOAD_URL, { //
             method: 'POST',
             body: formData,
         });
+        // =================================================================
 
         if (!response.ok) {
-            const errorResult = await response.json();
-            throw new Error(errorResult.error || `Server failed: ${response.statusText}`);
+            const errorResult = await response.json().catch(() => ({ error: 'Unknown JSON error' }));
+            throw new Error(errorResult.error || `Server failed: ${response.statusText} (${response.status})`);
         }
 
         const result = await response.json();

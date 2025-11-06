@@ -47,14 +47,22 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
 
 // ====================================================================
 // NOVO: loadSystemDataFromAPI (Busca todas as regras do Hub)
+// AJUSTADO: Garante que State.systemFees e State.boosterDiscounts sejam inicializados
 // ====================================================================
 export async function loadSystemDataFromAPI() {
+    
+    // Garante que o State seja inicializado mesmo se a API falhar
+    if (!State.systemFees) State.systemFees = {};
+    if (!State.systemPStakes) State.systemPStakes = {};
+    if (!State.boosterDiscounts) State.boosterDiscounts = {};
+
     if (!API_BASE_URL) return false;
 
     try {
         console.log("Loading system rules from API...");
         const response = await fetch(`${API_BASE_URL}/getSystemData`);
         if (!response.ok) {
+            // Lança um erro para ser capturado no catch
             throw new Error(`API (getSystemData) Error: ${response.statusText} (${response.status})`);
         }
         const systemData = await response.json(); 
@@ -78,6 +86,8 @@ export async function loadSystemDataFromAPI() {
 
     } catch (e) {
         console.error("CRITICAL Error loading system data from API:", e);
+        // O erro já está capturado e o State já foi inicializado acima
+        // Se a API falhar, o app continuará usando os fallbacks de contrato.
         return false;
     }
 }
@@ -149,6 +159,7 @@ export async function loadPublicData() {
         State.totalNetworkPStake = recalculatedTotalPStake;
         
         // Chamar o carregamento de dados do sistema (regras)
+        // Isso tentará inicializar State.systemFees/PStakes/Discounts
         await loadSystemDataFromAPI();
 
     } catch (e) { console.error("Error loading public data", e)}

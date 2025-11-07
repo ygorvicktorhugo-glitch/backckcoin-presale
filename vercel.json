@@ -9,5 +9,17 @@
         }
       ]
     }
-  ]
+  ],
+  
+  "rewrites": [
+    {
+      "source": "/api/upload",
+      "destination": "/api/upload.js"
+    }
+  ],
+  "functions": {
+    "api/upload.js": {
+      "runtime": "nodejs20.x"
+    }
+  }
 }

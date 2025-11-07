@@ -8,29 +8,8 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <meta http-equiv="Content-Security-Policy" content="
-        default-src 'self' data: https: wss: ws:; 
-        script-src 'self' 'unsafe-inline' 'unsafe-eval' 
-                   https://cdn.tailwindcss.com https://cdn.jsdelivr.net 
-                   https://pay.coinbase.com https://static.moonpay.com 
-                   https://esm.sh https://www.google-analytics.com https://*.vercel.app
-                   https://www.gstatic.com https://*.firebaseio.com https://apis.google.com; 
-        
-        style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com 
-                  https://fonts.googleapis.com; 
-        
-        img-src 'self' data: blob: https:; 
-        font-src 'self' https: data: https://fonts.gstatic.com; 
-        connect-src 'self' https: wss: ws:; 
-        
-        /* CORREÇÃO CRÍTICA DO WALLETCONNECT (Curingas) */
-        frame-ancestors 'self' http://127.0.0.1 http://localhost:* http://localhost:5500 http://localhost:8080 
-                             https://backcoin.org https://www.backcoin.org 
-                             https://*.walletconnect.com https://*.walletconnect.org 
-                             https://airdropbackchainnew.firebaseapp.com;
-        
-        frame-src 'self' https:;
-    ">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: https: wss: ws:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://pay.coinbase.com https://static.moonpay.com https://esm.sh https://www.google-analytics.com https://*.vercel.app https://www.gstatic.com https://*.firebaseio.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https: data: https://fonts.gstatic.com; connect-src 'self' https: wss: ws:; frame-ancestors 'self' http://127.0.0.1 http://localhost:* http://localhost:5500 http://localhost:8080 https://backcoin.org https://www.backcoin.org https://*.walletconnect.com https://*.walletconnect.org https://airdropbackchainnew.firebaseapp.com; frame-src 'self' https:;">
+    
     <link rel="icon" href="./assets/bkc_logo_3d.png" type="image/png">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
@@ -46,7 +25,6 @@
     
     <style>
         /* Estilos CSS (sem alterações) */
-        /* [SEUS ESTILOS INLINE AQUI] */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         :root {
             --bg-main: #18181b; --bg-sidebar: #27272a; --bg-card: #3f3f46; --border-color: #52525b; --text-primary: #f4f4f5; --text-secondary: #a1a1aa; --accent: #f59e0b; --accent-hover: #d97706;
@@ -297,8 +275,7 @@
                             <div class="bg-sidebar border border-border-color rounded-xl p-4 flex items-center gap-4">
                                 <i class="fa-solid fa-fire text-2xl text-amber-400 w-8 text-center"></i>
                                 <div class="min-w-0">
-                                    <p class="text-zinc-400 text-sm">Scarcity Rate</p>
-                                    <p id="statScarcity" class="text-base sm:text-xl font-bold mt-1 truncate">--</p>
+                                    <p class="text-zinc-400 text-sm">Scarcity Rate</p><p id="statScarcity" class="text-base sm:text-xl font-bold mt-1 truncate">--</p>
                                 </div>
                             </div>
 
@@ -325,7 +302,7 @@
                                                 <div id="reward-efficiency-panel"></div>
                                                 <div class="mt-8 pt-6 border-t border-border-color"><h3 class="text-lg font-bold mb-4">Recent Activity</h3><div id="activity-history-list-container"></div></div>
                                             </div>
-                                            <div id="tab-delegations" class="tab-content hidden"><h3 class="text-lg font-bold mb-3">Active Delegations</h3><div id="my-delegations-list" class="space-y-4"></div></div>
+                                            <div id="tab-delegations" class="tab-content hidden"><h3 class="text-lg font-bold mb-3">Active Delegations</h3 ><div id="my-delegations-list" class="space-y-4"></div></div>
                                             <div id="tab-certificates" class="tab-content hidden"><h3 class="text-lg font-bold mb-3">My Certificates</h3><div id="my-certificates-list" class="space-y-3"></div></div>
                                         </div>
                                     </div>

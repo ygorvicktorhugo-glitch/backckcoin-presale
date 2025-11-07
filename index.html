@@ -6,6 +6,27 @@
     
     <title>Backcoin.org | Dashboard</title>
 
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self' data: https: wss: ws:; 
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' 
+                   https://cdn.tailwindcss.com https://cdn.jsdelivr.net 
+                   https://pay.coinbase.com https://static.moonpay.com 
+                   https://esm.sh https://www.google-analytics.com https://*.vercel.app
+                   https://www.gstatic.com https://*.firebaseio.com https://apis.google.com; 
+        
+        style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com 
+                  https://fonts.googleapis.com; 
+        
+        img-src 'self' data: blob: https:; 
+        font-src 'self' https: data: https://fonts.gstatic.com; 
+        connect-src 'self' https: wss: ws:; 
+        
+        
+        frame-ancestors 'self' http://127.0.0.1 http://localhost:* http://localhost:5500 http://localhost:8080 https://backcoin.org https://www.backcoin.org 
+                        https://secure-mobile.walletconnect.com https://secure.walletconnect.org;
+        
+        frame-src 'self' https:;
+    ">
     <link rel="icon" href="./assets/bkc_logo_3d.png" type="image/png">
 
     <script src="https://cdn.tailwindcss.com"></script>

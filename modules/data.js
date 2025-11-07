@@ -1,5 +1,5 @@
 // data.js
-// ARQUIVO ATUALIZADO: Adicionada função loadSystemDataFromAPI
+// ARQUIVO ATUALIZADO: Substituído API_BASE_URL por API_ENDPOINTS e ajustado CORS.
 
 const ethers = window.ethers;
 
@@ -8,14 +8,32 @@ import { DOMElements } from '../dom-elements.js';
 import { formatBigNumber, formatPStake } from '../utils.js';
 import { addresses, boosterTiers, ipfsGateway } from '../config.js';
 
-export const API_BASE_URL = 'https://us-central1-backchain-backand.cloudfunctions.net';
+// ====================================================================
+// !!! CORREÇÃO CRÍTICA !!!
+// ENDPOINTS ATUALIZADOS PARA AS NOVAS URLS DO CLOUD RUN / PROJETO AIRDROP SEPARADO
+// ESTE OBJETO SUBSTITUIU O 'API_BASE_URL' ANTIGO.
+// ====================================================================
+export const API_ENDPOINTS = {
+    // 1. APIs do Projeto Principal: backchain-backand (NOVAS URLs Cloud Run)
+    getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
+    getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
+    getCertificates: 'https://getcertificates-4wvdcuoouq-uc.a.run.app',
+    getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
+
+    // 2. API Pinata/Upload (Função 'uploadFileToIPFS' - NOVA URL Cloud Run)
+    uploadFileToIPFS: 'https://uploadfiletoipfs-4wvdcuoouq-uc.a.run.app', 
+    
+    // 3. API Airdrop (Projeto SEPARADO: airdropbackchainnew)
+    // Usando a URL específica do projeto e endpoint '/claimAirdrop'
+    claimAirdrop: 'https://us-central1-airdropbackchainnew.cloudfunctions.net/claimAirdrop'
+};
+
 
 // ====================================================================
-// NOVO: Funções de Segurança e Resiliência (Mantidas)
+// Funções de Segurança e Resiliência (Mantidas)
 // ====================================================================
 
 export const safeBalanceOf = async (contract, address) => {
-// ... (lógica mantida) ...
     try {
         return await contract.balanceOf(address);
     } catch (e) {
@@ -28,7 +46,6 @@ export const safeBalanceOf = async (contract, address) => {
 };
 
 export const safeContractCall = async (contract, method, args = [], fallbackValue = 0n) => {
-// ... (lógica mantida) ...
     try {
         const result = await contract[method](...args);
         return result;
@@ -46,23 +63,22 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
 };
 
 // ====================================================================
-// NOVO: loadSystemDataFromAPI (Busca todas as regras do Hub)
-// AJUSTADO: Garante que State.systemFees e State.boosterDiscounts sejam inicializados
+// loadSystemDataFromAPI (Busca todas as regras do Hub)
 // ====================================================================
 export async function loadSystemDataFromAPI() {
     
-    // Garante que o State seja inicializado mesmo se a API falhar
     if (!State.systemFees) State.systemFees = {};
     if (!State.systemPStakes) State.systemPStakes = {};
     if (!State.boosterDiscounts) State.boosterDiscounts = {};
 
-    if (!API_BASE_URL) return false;
+    // Removido a checagem if (!API_BASE_URL)
 
     try {
         console.log("Loading system rules from API...");
-        const response = await fetch(`${API_BASE_URL}/getSystemData`);
+        // !!! CORREÇÃO: Usa o endpoint COMPLETO !!!
+        const response = await fetch(API_ENDPOINTS.getSystemData); 
+        
         if (!response.ok) {
-            // Lança um erro para ser capturado no catch
             throw new Error(`API (getSystemData) Error: ${response.statusText} (${response.status})`);
         }
         const systemData = await response.json(); 
@@ -86,8 +102,6 @@ export async function loadSystemDataFromAPI() {
 
     } catch (e) {
         console.error("CRITICAL Error loading system data from API:", e);
-        // O erro já está capturado e o State já foi inicializado acima
-        // Se a API falhar, o app continuará usando os fallbacks de contrato.
         return false;
     }
 }
@@ -95,11 +109,11 @@ export async function loadSystemDataFromAPI() {
 
 
 // ====================================================================
-// LÓGICA DE DADOS PÚBLICOS E PRIVADOS (Ajustada para usar State.systemFees)
+// LÓGICA DE DADOS PÚBLICOS E PRIVADOS (Mantida)
 // ====================================================================
 
 export async function loadPublicData() {
-    // (Esta função permanece inalterada)
+    // (Esta função permanece inalterada, exceto pela chamada loadSystemDataFromAPI)
     if (!State.publicProvider || !State.bkcTokenContractPublic || !State.delegationManagerContractPublic) return;
 
     try {
@@ -159,14 +173,13 @@ export async function loadPublicData() {
         State.totalNetworkPStake = recalculatedTotalPStake;
         
         // Chamar o carregamento de dados do sistema (regras)
-        // Isso tentará inicializar State.systemFees/PStakes/Discounts
         await loadSystemDataFromAPI();
 
     } catch (e) { console.error("Error loading public data", e)}
 }
 
 export async function loadUserData() {
-// ... (lógica mantida) ...
+    // ... (lógica mantida) ...
     if (!State.signer || !State.userAddress) return;
 
     try {
@@ -192,7 +205,7 @@ export async function loadUserData() {
 }
 
 export async function calculateUserTotalRewards() {
-// ... (lógica mantida) ...
+    // ... (lógica mantida) ...
     if (!State.delegationManagerContract || !State.rewardManagerContract || !State.userAddress) {
         return { stakingRewards: 0n, minerRewards: 0n, totalRewards: 0n };
     }
@@ -211,7 +224,7 @@ export async function calculateUserTotalRewards() {
 }
 
 export async function calculateClaimDetails() {
-    // AJUSTADO: Tenta usar State.systemFees para obter a taxa
+    // ... (lógica mantida) ...
     if (!State.delegationManagerContract || !State.ecosystemManagerContract || !State.userAddress) {
         return { netClaimAmount: 0n, feeAmount: 0n, discountPercent: 0, totalRewards: 0n, basePenaltyPercent: 0 };
     }
@@ -221,7 +234,6 @@ export async function calculateClaimDetails() {
         return { netClaimAmount: 0n, feeAmount: 0n, discountPercent: 0, totalRewards: 0n, basePenaltyPercent: 0 };
     }
     
-    // Tenta usar a taxa salva da API (se disponível)
     let baseFeeBips = State.systemFees?.CLAIM_REWARD_FEE_BIPS;
     if (!baseFeeBips) {
          // Fallback LENTO: Chama o contrato
@@ -232,7 +244,6 @@ export async function calculateClaimDetails() {
     
     const boosterData = await getHighestBoosterBoostFromAPI(); 
     
-    // Tenta usar o desconto salvo da API (se disponível)
     let discountBips = State.boosterDiscounts?.[boosterData.highestBoost];
     if (!discountBips) {
         // Fallback LENTO: Chama o contrato
@@ -258,7 +269,7 @@ export async function calculateClaimDetails() {
 }
 
 export async function getHighestBoosterBoostFromAPI() {
-// ... (lógica mantida) ...
+    // ... (lógica mantida) ...
     if (!State.rewardBoosterContract || !State.userAddress) {
         return { highestBoost: 0, boostName: 'None', imageUrl: '', tokenId: null, efficiency: 50 };
     }
@@ -304,7 +315,7 @@ export async function getHighestBoosterBoostFromAPI() {
 }
 
 export async function loadMyCertificatesFromAPI() {
-// ... (lógica mantida) ...
+    // ... (lógica mantida) ...
     if (State.myCertificates && State.myCertificates.length > 0) {
         return State.myCertificates;
     }
@@ -317,7 +328,8 @@ export async function loadMyCertificatesFromAPI() {
         console.log("Loading user certificates from API...");
         const userAddress = State.userAddress;
 
-        const response = await fetch(`${API_BASE_URL}/getCertificates/${userAddress}`);
+        // !!! CORREÇÃO: Usa o endpoint COMPLETO !!!
+        const response = await fetch(`${API_ENDPOINTS.getCertificates}/${userAddress}`);
         
         if (!response.ok) {
             throw new Error(`API (getCertificates) Error: ${response.statusText} (${response.status})`);
@@ -352,7 +364,7 @@ export async function loadMyCertificatesFromAPI() {
 }
 
 export async function loadMyBoostersFromAPI() {
-// ... (lógica mantida) ...
+    // ... (lógica mantida) ...
     if (State.myBoosters && State.myBoosters.length > 0) {
         return State.myBoosters;
     }
@@ -364,7 +376,8 @@ export async function loadMyBoostersFromAPI() {
         console.log("Loading user boosters from API...");
         const userAddress = State.userAddress;
         
-        const response = await fetch(`${API_BASE_URL}/getBoosters/${userAddress}`);
+        // !!! CORREÇÃO: Usa o endpoint COMPLETO !!!
+        const response = await fetch(`${API_ENDPOINTS.getBoosters}/${userAddress}`);
         
         if (!response.ok) {
             throw new Error(`API (getBoosters) Error: ${response.statusText} (${response.status})`);

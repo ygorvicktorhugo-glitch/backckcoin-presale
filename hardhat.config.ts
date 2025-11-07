@@ -20,25 +20,17 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
-      // ====================================================================
-      // ======================= INÍCIO DA CORREÇÃO =======================
-      // ====================================================================
-      
-      // Esta linha ativa o novo otimizador e corrige o erro "Stack too deep"
+      // Ativa o novo otimizador e corrige o erro "Stack too deep"
       viaIR: true, 
-      
-      // ==================================================================
-      // ======================== FIM DA CORREÇÃO =========================
-      // ==================================================================
     },
   },
   networks: {
     sepolia: {
       url: SEPOLIA_RPC_URL,
+      // Se SEPOLIA_PRIVATE_KEY não estiver vazia, usa-a. Caso contrário, deixa a lista vazia.
       accounts: SEPOLIA_PRIVATE_KEY !== "" ? [SEPOLIA_PRIVATE_KEY] : [],
       
-      // +++ CORREÇÃO: Define o preço do gás de forma compatível com a sua versão +++
-      // "auto" tentará estimar um bom preço. Se falhar, aumentaremos para um valor fixo.
+      // Define o preço do gás de forma compatível
       gasPrice: "auto", 
     },
   },

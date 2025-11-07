@@ -9,7 +9,7 @@ import { DOMElements } from '../dom-elements.js';
 import {
     loadUserData, 
     // =================================================================
-    // ### ALTERAÇÃO DE IMPORTAÇÃO (Linha 12) ###
+    // ### CORREÇÃO DE IMPORTAÇÃO (Linha 12) ###
     loadMyCertificatesFromAPI, // Nome da nova função da API
     calculateUserTotalRewards,
     // =================================================================
@@ -18,7 +18,10 @@ import {
     safeContractCall, 
     loadMyBoostersFromAPI, 
     calculateClaimDetails,
-    API_BASE_URL 
+    // =================================================================
+    // ### CORREÇÃO CRÍTICA DO ERRO DE SINTAXE (Linha 21) ###
+    API_ENDPOINTS 
+    // =================================================================
 } from '../modules/data.js';
 import { executeUniversalClaim, executeUnstake, executeForceUnstake, executeDelegation } from '../modules/transactions.js';
 import {
@@ -54,11 +57,6 @@ function animateClaimableRewards() {
     const now = performance.now();
     const deltaTime = lastUpdateTime ? (now - lastUpdateTime) / 1000 : 0;
     lastUpdateTime = now;
-    if (targetRewardValue > 0n && deltaTime > 0) {
-        const onePercent = targetRewardValue / 100n;
-        const increasePerSecond = onePercent / 600n; 
-        const incrementThisFrame = (increasePerSecond * BigInt(Math.floor(deltaTime * 1000))) / 1000n;
-    }
     const difference = targetRewardValue - displayedRewardValue;
     if (difference > -10n && difference < 10n && displayedRewardValue !== targetRewardValue) {
         displayedRewardValue = targetRewardValue;
@@ -273,10 +271,6 @@ function setupLazyLinkListeners() {
         showToast("Finding transaction hash... This may take a moment.", "info");
 
         // #### Lógica de busca de hash removida/substituída ####
-        // A função findTxHashForItem já não é mais importada. 
-        // A lógica abaixo é o que permaneceu do código original, mas
-        // ela está quebrada pois depende do findTxHashForItem
-        
         // Simular falha na busca (já que findTxHashForItem foi removido)
         const txHash = null; // Substitua por 'null' para refletir a remoção da função
 
@@ -357,11 +351,8 @@ function setupDashboardActionListeners() {
 
             } else if (target.classList.contains('force-unstake-btn')) {
                 const index = target.dataset.index;
-                const boosterData = await getHighestBoosterBoostFromAPI(); 
-                const boosterId = boosterData.tokenId ? BigInt(boosterData.tokenId) : 0n;
-                // CORREÇÃO: Argumento 'boosterId' não é necessário se a função `executeForceUnstake` não o espera (o Booster ID é buscado internamente agora)
-                // const success = await executeForceUnstake(Number(index), boosterId);
-                const success = await executeForceUnstake(Number(index)); // Chamada correta (ver transactions.js)
+                // A função executeForceUnstake busca o ID do booster internamente
+                const success = await executeForceUnstake(Number(index)); 
                 if (success) await DashboardPage.render(true);
 
             } else if (target.classList.contains('delegate-link')) {
@@ -389,6 +380,7 @@ function setupDashboardActionListeners() {
 // --- Component Rendering Functions (Mantidas) ---
 
 async function renderRewardEfficiencyPanel(efficiencyData) {
+// ... (lógica mantida) ...
     const el = document.getElementById('reward-efficiency-panel');
     if (!el) return;
 
@@ -435,6 +427,7 @@ async function renderRewardEfficiencyPanel(efficiencyData) {
 }
 
 function renderValidatorsList() {
+// ... (lógica mantida) ...
     const listEl = document.getElementById('top-validators-list');
     if (!listEl) return;
     
@@ -484,6 +477,7 @@ function renderValidatorsList() {
 }
 
 async function renderMyDelegations() {
+// ... (lógica mantida) ...
     const listEl = document.getElementById('my-delegations-list');
     if (!listEl) return;
     if (!State.isConnected) { renderNoData(listEl, "Connect your wallet to view delegations."); return; }
@@ -575,10 +569,7 @@ async function renderMyCertificatesDashboard() {
 
     renderLoading(listEl);
     try {
-        // =================================================================
-        // ### ALTERAÇÃO DE CHAMADA (Linha 736) ###
         await loadMyCertificatesFromAPI(); // Chamando a nova função
-        // =================================================================
         const certificates = State.myCertificates;
 
         if (!certificates || certificates.length === 0) { renderNoData(listEl, "No vesting certificates found."); return; }
@@ -681,7 +672,7 @@ async function renderMyCertificatesDashboard() {
     }
 }
 
-// (Função renderActivityItem - Mantida)
+// (Função renderActivityItem - Corrigida)
 function renderActivityItem(item) {
     let timestamp;
     if (typeof item.timestamp === 'object' && item.timestamp._seconds) {
@@ -692,8 +683,13 @@ function renderActivityItem(item) {
 
     const date = new Date(timestamp * 1000).toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' });
     const time = new Date(timestamp * 1000).toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' });
-    let title = 'On-chain Action', icon = 'fa-exchange-alt', color = 'text-zinc-500', details = 'General transaction.', itemId = null;
+    let title = 'On-chain Action', icon = 'fa-exchange-alt', color = 'text-zinc-500', details = 'General transaction.';
     
+    // =================================================================
+    // ### CORREÇÃO CRÍTICA DO ReferenceError: itemId is not defined ###
+    let itemId = null; // Inicializa a variável itemId (Correção do ReferenceError)
+    // =================================================================
+
     let itemAmount = 0n;
     try {
         if (typeof item.amount === 'string' && item.amount.includes('.')) {
@@ -774,6 +770,8 @@ function renderActivityItem(item) {
              icon = 'fa-question-circle';
              color = 'text-zinc-500';
              details = item.description || `Activity of type ${item.type}`;
+             // Garante que itemId seja nulo no caso default
+             itemId = null;
              break;
     }
     const txHash = item.txHash;
@@ -809,7 +807,7 @@ function renderActivityItem(item) {
 }
 
 // =================================================================
-// ### FUNÇÃO ATUALIZADA: renderActivityHistory ###
+// ### FUNÇÃO ATUALIZADA: renderActivityHistory (CORREÇÃO DE URL) ###
 // =================================================================
 async function renderActivityHistory() {
     const listEl = document.getElementById('activity-history-list-container');
@@ -819,9 +817,13 @@ async function renderActivityHistory() {
     renderLoading(listEl);
     
     try {
-        const response = await fetch(`${API_BASE_URL}/getHistory/${State.userAddress}`);
+        // ### CORREÇÃO: Usa o endpoint COMPLETO e ESPECÍFICO do getHistory ###
+        const historyUrl = `${API_ENDPOINTS.getHistory}/${State.userAddress}`;
+        const response = await fetch(historyUrl);
+        // ### FIM DA CORREÇÃO ###
         
         if (!response.ok) {
+            // NOTE: A função getHistory usa o novo formato /getHistory/{address}
             throw new Error(`API (getHistory) Error: ${response.statusText} (${response.status})`);
         }
         
@@ -851,6 +853,7 @@ async function renderActivityHistory() {
 // ================== (Função TVL - Mantida) =================
 // ==================================================================
 async function loadAndRenderProtocolTVL() {
+// ... (lógica mantida) ...
     const tvlPanelEl = document.getElementById('protocol-tvl-panel'); 
     const tvlValueEl = document.getElementById('protocol-tvl-value'); 
     const tvlPercEl = document.getElementById('protocol-tvl-percentage'); 
@@ -944,6 +947,7 @@ async function loadAndRenderProtocolTVL() {
 // ### loadAndRenderPublicHeaderStats (Mantida) ###
 // =================================================================
 async function loadAndRenderPublicHeaderStats() {
+// ... (lógica mantida) ...
     const statValidatorsEl = document.getElementById('statValidators');
     const statTotalPStakeEl = document.getElementById('statTotalPStake');
     const statScarcityEl = document.getElementById('statScarcity');

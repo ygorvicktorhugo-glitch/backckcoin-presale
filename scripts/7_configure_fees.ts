@@ -1,18 +1,8 @@
 // scripts/7_configure_fees.ts
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 import { ethers } from "ethers";
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import hre from 'hardhat'; // Importa o HRE para uso no bloco de auto-execução
-
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois não existem no modo ESM.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,7 +50,7 @@ const LIQUIDITY_CONFIG = [
       amount: ethers.parseEther("20000") // 20K BKC de liquidez inicial
     }
 ];
-// Total BIPS = 10000 BIPS (100%)
+// Total BIPS = 2000 + 700 + 300 + 7000 = 10000 BIPS (100%)
 const TOTAL_INITIAL_LIQUIDITY = LIQUIDITY_CONFIG.reduce((sum, pool) => sum + pool.amount, 0n);
 
 // ==================================================================
@@ -90,15 +80,13 @@ const SERVICE_SETTINGS = {
   NFT_POOL_TAX_DELEGATOR_SHARE_BIPS: 4000, // 40% da taxa
   NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS: 2000, // 20% da taxa
 };
+// ######################################################################
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(localHre: any) { // Usamos 'any' para simplificar a tipagem do hre
-  // Desestruturando ethers A PARTIR DO hre injetado
-  const { ethers } = localHre;
-  
-  // A falha anterior (getSigners) estava aqui se 'ethers' fosse undefined.
-  const [deployer] = await ethers.getSigners(); 
-  const networkName = localHre.network.name;
+export async function runScript(hre: HardhatRuntimeEnvironment) {
+  const { ethers } = hre;
+  const [deployer] = await ethers.getSigners();
+  const networkName = hre.network.name;
 
   console.log(`🚀 (Passo 7/8) Configurando Game, Liquidez e Regras do Sistema na rede: ${networkName}`);
   console.log(`Usando a conta: ${deployer.address}`);
@@ -225,11 +213,12 @@ export async function runScript(localHre: any) { // Usamos 'any' para simplifica
   console.log("\nPróximo passo: Execute '8_add_liquidity.ts'");
 }
 
-// --- Funções Auxiliares (Estas funções são chamadas por runScript) ---
+// --- Funções Auxiliares (Não Modificadas) ---
 
 async function setFee(manager: any, key: string, value: number | bigint) {
   try {
-    const tx = await manager.setFee(key, value);
+    // Usando getFunction para compatibilidade com ethers v6
+    const tx = await manager.getFunction("setFee")(key, value);
     await tx.wait();
     console.log(`   -> Taxa definida: ${key} = ${value.toString()}`);
     await sleep(CONFIG_DELAY_MS / 2); 
@@ -240,7 +229,8 @@ async function setFee(manager: any, key: string, value: number | bigint) {
 
 async function setPStake(manager: any, key: string, value: number) {
   try {
-    const tx = await manager.setPStakeMinimum(key, value);
+    // Usando getFunction para compatibilidade com ethers v6
+    const tx = await manager.getFunction("setPStakeMinimum")(key, value);
     await tx.wait();
     console.log(`   -> pStake definido: ${key} = ${value}`);
     await sleep(CONFIG_DELAY_MS / 2);
@@ -257,20 +247,16 @@ async function setService(manager: any, serviceKey: string, feeValue: number | b
 }
 
 // ====================================================================
-// =========== Bloco de Execução e Exportação (Compatível ESM) ===========
+// =================== Bloco de execução standalone ==================
 // ====================================================================
-
-// Exporta a função 'runScript' como padrão. 
-// Isso a torna executável via 'npx hardhat run' e importável por outros scripts.
-export default runScript;
-
-// Bloco de auto-execução para Hardhat (Standalone)
-// O Hardhat injeta o HRE automaticamente
-if (import.meta.url === new URL(process.argv[1], 'file:').href) {
-  runScript(hre)
-    .then(() => process.exit(0))
-    .catch(error => {
-      console.error(error);
-      process.exit(1);
-    });
+if (require.main === module) {
+  console.log("Executando 7_configure_fees.ts como script standalone...");
+  import("hardhat").then(hre => {
+    runScript(hre)
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+  });
 }

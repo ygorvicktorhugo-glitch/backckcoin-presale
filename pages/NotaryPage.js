@@ -3,8 +3,8 @@
 import { State } from '../state.js';
 import { formatBigNumber, formatPStake, renderLoading, renderError, renderNoData, ipfsGateway } from '../utils.js';
 // =================================================================
-// ### CORREÇÃO DE IMPORTAÇÃO: Adiciona API_BASE_URL
-import { safeContractCall, getHighestBoosterBoostFromAPI, API_BASE_URL } from '../modules/data.js';
+// ### CORREÇÃO DE IMPORTAÇÃO: Adiciona API_ENDPOINTS
+import { safeContractCall, getHighestBoosterBoostFromAPI, API_ENDPOINTS } from '../modules/data.js';
 // =================================================================
 import { showToast } from '../ui-feedback.js';
 import { executeNotarizeDocument } from '../modules/transactions.js';
@@ -151,11 +151,7 @@ async function loadNotaryPublicData() {
 }
 
 /**
- * ==================================================================
- * ============== ATUALIZAÇÃO (FEATURE DESCONTO - Mantida) =============
- * ==================================================================
- * Esta função agora depende dos dados do booster (State.userBoosterBips)
- * que são carregados nas funções 'render' e 'update'.
+ * updateNotaryUserStatus (Mantida)
  */
 function updateNotaryUserStatus() {
     const userStatusEl = document.getElementById('notary-user-status');
@@ -182,26 +178,20 @@ function updateNotaryUserStatus() {
 
     // --- LÓGICA DE CÁLCULO DE DESCONTO ---
     const baseFee = State.notaryFee;
-    // =================================================================
-    // ### CORREÇÃO (BUG OCULTO) ###
-    // Pega os BIPS do booster (que agora são carregados por 'render' e 'update')
     const boosterBips = State.userBoosterBips || 0n; 
-    // =================================================================
     
     let discount = 0n;
     let finalFee = baseFee;
     let discountPercent = "0%";
 
     if (boosterBips > 0n && baseFee > 0n) {
-        // BIPS é "basis points", 10000 = 100%
         discount = (baseFee * boosterBips) / 10000n;
         finalFee = baseFee - discount;
-        discountPercent = `${(Number(boosterBips) / 100).toFixed(0)}%`; // Converte BIPS (ex: 500) para % (ex: 5%)
+        discountPercent = `${(Number(boosterBips) / 100).toFixed(0)}%`; 
     }
 
     const hasEnoughPStake = State.notaryMinPStake === 0n || userPStake >= State.notaryMinPStake;
     const needsFee = finalFee > 0n;
-    // Verifica se o usuário tem saldo para a TAXA FINAL
     const hasEnoughFee = !needsFee || userBalance >= finalFee; 
     // --- FIM DA LÓGICA DE DESCONTO ---
 
@@ -272,7 +262,6 @@ function updateNotaryUserStatus() {
      }
     userStatusEl.innerHTML = statusHTML;
 
-    // A lógica do botão agora usa 'hasEnoughFee' (que já considera a taxa final)
     if (hasEnoughPStake && hasEnoughFee && isFileUploaded) {
         submitBtn.classList.remove('btn-disabled');
         submitBtn.disabled = false;
@@ -406,11 +395,10 @@ async function handleFileUpload(file) {
 
         // =================================================================
         // ### CORREÇÃO CRÍTICA DO ERRO 405/CORS ###
-        // Usa o API_BASE_URL (definido em data.js como Cloud Function) e anexa '/upload'.
-        // O 404/CORS ainda existe e deve ser corrigido no backend.
-        const UPLOAD_URL = `${API_BASE_URL}/upload`; //
+        // Usa o endpoint COMPLETO e ESPECÍFICO do Pinata/Upload
+        const UPLOAD_URL = API_ENDPOINTS.uploadFileToIPFS; 
 
-        const response = await fetch(UPLOAD_URL, { //
+        const response = await fetch(UPLOAD_URL, { 
             method: 'POST',
             body: formData,
         });
@@ -467,20 +455,16 @@ async function handleAddNFTToWallet(e) {
     const address = btn.dataset.address;
     const tokenId = btn.dataset.tokenid;
 
-    // A hipótese é que 'State.web3Provider' (definido em wallet.js)
-    // é o provedor EIP-1193 raw (ex: window.ethereum)
     const rawProvider = State.web3Provider; 
 
     if (!rawProvider || typeof rawProvider.request !== 'function') { 
          console.error("Failed to find .request function on State.web3Provider.", { web3Provider: State.web3Provider });
-         // Mostra a mensagem de erro que o usuário está vendo na imagem
          showToast("The connected wallet does not support 'wallet_watchAsset'.", "error");
          return;
     }
 
     try {
-        // Pede ao MetaMask (ou outra carteira) para "assistir" (adicionar) este NFT
-        const wasAdded = await rawProvider.request({ // <--- Chamada no provedor correto
+        const wasAdded = await rawProvider.request({ 
             method: 'wallet_watchAsset',
             params: {
                 type: 'ERC721',
@@ -497,7 +481,6 @@ async function handleAddNFTToWallet(e) {
             showToast("NFT was not added (request rejected or failed).", "info");
         }
     } catch (error) {
-        // Se a *própria* carteira rejeitar (ex: ela não suporta o método), o erro será pego aqui.
         console.error("Failed to add NFT to wallet:", error);
         showToast(`Failed to add NFT: ${error.message}`, "error");
     }
@@ -537,11 +520,7 @@ function initNotaryListeners() {
 
             // Recalcula as taxas no momento do clique (garantia)
             const baseFee = State.notaryFee || 0n;
-            // =================================================================
-            // ### CORREÇÃO (BUG OCULTO) ###
-            // Lê o Bips do State (que foi carregado no 'render'/'update')
             const boosterBips = State.userBoosterBips || 0n;
-            // =================================================================
             let finalFee = baseFee;
             if (boosterBips > 0n && baseFee > 0n) {
                  finalFee = baseFee - ((baseFee * boosterBips) / 10000n);
@@ -555,11 +534,7 @@ function initNotaryListeners() {
             if (!hasEnoughPStake) return showToast("Insufficient pStake.", "error");
             if (!hasEnoughFee) return showToast("Insufficient $BKC balance for final fee.", "error");
 
-            // =================================================================
-            // ### CORREÇÃO (BUG OCULTO) ###
-            // Lê o ID do booster do State (carregado no 'render'/'update')
             const boosterId = State.userBoosterId || 0n; 
-            // =================================================================
 
             const success = await executeNotarizeDocument(
                 currentUploadedIPFS_URI,
@@ -580,7 +555,6 @@ function initNotaryListeners() {
 
                 await renderMyNotarizedDocuments();
                 
-                // Corrigido: 'updateNotaryUserS tatus()' -> 'updateNotaryUserStatus()'
                 updateNotaryUserStatus();
             }
         });
@@ -612,14 +586,9 @@ export const NotaryPage = {
         const loadedPublicData = await loadNotaryPublicData();
 
         if (State.isConnected && loadedPublicData) {
-            // =================================================================
-            // ### CORREÇÃO (BUG OCULTO) ###
-            // Carrega dados do booster do usuário para calcular descontos
-            // E armazena no State para 'updateNotaryUserStatus' e 'submitBtn' usarem
             const boosterData = await getHighestBoosterBoostFromAPI();
             State.userBoosterBips = BigInt(boosterData.highestBoost || 0);
             State.userBoosterId = boosterData.tokenId ? BigInt(boosterData.tokenId) : 0n;
-            // =================================================================
 
             updateNotaryUserStatus();
             await renderMyNotarizedDocuments();
@@ -640,13 +609,9 @@ export const NotaryPage = {
         const loadedPublicData = await loadNotaryPublicData();
 
         if (isConnected && loadedPublicData) {
-            // =================================================================
-            // ### CORREÇÃO (BUG OCULTO) ###
-            // Também carrega os dados do booster no 'update'
             const boosterData = await getHighestBoosterBoostFromAPI();
             State.userBoosterBips = BigInt(boosterData.highestBoost || 0);
             State.userBoosterId = boosterData.tokenId ? BigInt(boosterData.tokenId) : 0n;
-            // =================================================================
             
             updateNotaryUserStatus();
             await renderMyNotarizedDocuments();

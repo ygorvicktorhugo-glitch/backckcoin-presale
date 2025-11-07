@@ -1,25 +1,15 @@
 // scripts/3_deploy_spokes.ts
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 import { ethers } from "ethers";
-// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois não existem no modo ESM.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEPLOY_DELAY_MS = 2000; // 2-second delay
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: any) { // Mudamos para 'any'
+export async function runScript(hre: HardhatRuntimeEnvironment) { // Mantendo HardhatRuntimeEnvironment se disponível
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
@@ -34,7 +24,7 @@ export async function runScript(hre: any) { // Mudamos para 'any'
     console.error("❌ Erro: 'deployment-addresses.json' não encontrado.");
     throw new Error("Missing deployment-addresses.json");
   }
-  const addresses = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
+  const addresses: { [key: string]: string } = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
 
   if (!addresses.ecosystemManager || !addresses.bkcToken || !addresses.rewardManager) {
       console.error("❌ Erro: 'ecosystemManager', 'bkcToken', ou 'rewardManager' não encontrado. Execute os passos anteriores.");
@@ -42,30 +32,32 @@ export async function runScript(hre: any) { // Mudamos para 'any'
   }
 
   try {
-    // --- 1. Deploy NFTLiquidityPool (INALTERADO) ---
+    // --- 1. Deploy NFTLiquidityPool ---
     console.log("1. Implantando NFTLiquidityPool...");
     const nftLiquidityPool = await ethers.deployContract("NFTLiquidityPool", [
       addresses.ecosystemManager,
       deployer.address,
     ]);
     await nftLiquidityPool.waitForDeployment();
-    addresses.nftLiquidityPool = nftLiquidityPool.target as string;
+    // Usando target, que é o padrão para ethers v6
+    addresses.nftLiquidityPool = nftLiquidityPool.target as string; 
     console.log(
       `✅ NFTLiquidityPool implantado em: ${addresses.nftLiquidityPool}`
     );
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
-    // --- 2. Deploy FortuneTiger (AJUSTADO: Construtor tem 4 argumentos) ---
+    // --- 2. Deploy FortuneTiger (TigerGame) ---
     console.log("2. Implantando FortuneTiger (TigerGame)...");
     const fortuneTiger = await ethers.deployContract("FortuneTiger", [
       addresses.ecosystemManager, // _ecosystemManager
       addresses.bkcToken, // _bkcTokenAddress
-      addresses.rewardManager, // _rewardManagerAddress (NOVO ARGUMENTO)
+      addresses.rewardManager, // _rewardManagerAddress
       deployer.address, // _initialOwner
     ]);
     await fortuneTiger.waitForDeployment();
-    addresses.fortuneTiger = fortuneTiger.target as string;
+    // Usando target, que é o padrão para ethers v6
+    addresses.fortuneTiger = fortuneTiger.target as string; 
     console.log(`✅ FortuneTiger implantado em: ${addresses.fortuneTiger}`);
     console.log("----------------------------------------------------");
 

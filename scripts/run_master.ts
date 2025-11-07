@@ -1,40 +1,48 @@
 // scripts/run_master.ts
 import hre from "hardhat";
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois podem ser necessários em alguns ambientes Hardhat.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
+// IMPORTAR AS NOVAS FUNÇÕES EXPORTADAS DE CADA ARQUIVO (usando o nome 'runScript' que ajustamos em todos eles)
+import { runScript as run0_faucet_test_supply } from "./0_faucet_test_supply";
+import { runScript as run1_deploy_core } from "./1_deploy_core";
+import { runScript as run2_configure_hub_addresses } from "./2_configure_hub_addresses";
+import { runScript as run3_deploy_spokes } from "./3_deploy_spokes";
+import { runScript as run4_configure_system } from "./4_configure_system";
+import { runScript as run5_create_pools } from "./5_create_pools";
+import { runScript as run6_setup_sale } from "./6_setup_sale";
+import { runScript as run7_configure_fees } from "./7_configure_fees";
+import { runScript as run8_add_liquidity } from "./8_add_liquidity"; // Incluído para completar a lista, mas será executado manualmente.
+
 
 // --- 📋 SEQUÊNCIA DE EXECUÇÃO ---
 const SCRIPT_SEQUENCE = [
-    { name: "1_deploy_core.ts", path: "./1_deploy_core.ts", description: "Implantação dos Contratos Principais" },
-    { name: "0_faucet_test_supply.ts", path: "./0_faucet_test_supply.ts", description: "Financiamento Opcional de Teste (10M BKC)", isTest: true },
-    { name: "2_configure_hub_addresses.ts", path: "./2_configure_hub_addresses.ts", description: "Configuração dos Endereços Centrais no Hub" },
-    { name: "3_deploy_spokes.ts", path: "./3_deploy_spokes.ts", description: "Implantação dos Contratos Spoke (Pools/Game)" },
-    { name: "4_configure_system.ts", path: "./4_configure_system.ts", description: "Configuração de Posse e Interdependências" },
-    { name: "5_create_pools.ts", path: "./5_create_pools.ts", description: "Criação das Estruturas de Pool AMM" },
-    { name: "6_setup_sale.ts", path: "./6_setup_sale.ts", description: "Configuração da Pré-Venda e Tesouraria" },
-    { name: "7_configure_fees.ts", path: "./7_configure_fees.ts", description: "Definição de Taxas, pStake e Game Pools" },
+    { name: "1_deploy_core.ts", func: run1_deploy_core, description: "Implantação dos Contratos Principais" },
+    { name: "0_faucet_test_supply.ts", func: run0_faucet_test_supply, description: "Financiamento Opcional de Teste (10M BKC)", isTest: true }, 
+    { name: "2_configure_hub_addresses.ts", func: run2_configure_hub_addresses, description: "Configuração dos Endereços Centrais no Hub" },
+    { name: "3_deploy_spokes.ts", func: run3_deploy_spokes, description: "Implantação dos Contratos Spoke" },
+    { name: "4_configure_system.ts", func: run4_configure_system, description: "Transferência de Posse do Token e Definição de Dependências" },
+    { name: "5_create_pools.ts", func: run5_create_pools, description: "Criação das Estruturas de Pool AMM" },
+    { name: "6_setup_sale.ts", func: run6_setup_sale, description: "Configuração da Pré-Venda e Cunhagem da Tesouraria" },
+    { name: "7_configure_fees.ts", func: run7_configure_fees, description: "Definição de Todas as Taxas e pStake Mínimos no Hub" },
+    // O Passo 8 é manual (Pós-Venda) e não deve ser executado automaticamente, mas está aqui para referência.
+    // { name: "8_add_liquidity.ts", func: run8_add_liquidity, description: "Adição de Liquidez Pós-Venda e Renúncia de Posse", isManual: true },
 ];
-
+// ----------------------------------
 
 async function main() {
     const networkName = hre.network.name;
+
+    console.log(`\n\n======================================================`);
+    console.log(`🚀 INÍCIO DA EXECUÇÃO MASTER (IMPORTAÇÃO DIRETA)`);
+    console.log(`Rede Alvo: ${networkName}`);
+    console.log(`======================================================\n`);
+
+    // Redes de teste (onde o Passo 0 é executado)
     const isTestNet = (networkName === 'sepolia' || networkName === 'localhost' || networkName === 'hardhat');
     let successfulScripts = 0;
 
-    console.log(`\n======================================================`);
-    console.log(`=== INICIANDO EXECUÇÃO MASTER NA REDE: ${networkName.toUpperCase()} ===`);
-    console.log(`======================================================`);
-
     for (const script of SCRIPT_SEQUENCE) {
         
+        // Pula o Passo 0 se não for uma rede de teste
         if (script.isTest && !isTestNet) {
             console.log(`\n--- ⏭️ PULANDO ${script.name} (${script.description}) ---`);
             continue;
@@ -43,29 +51,13 @@ async function main() {
         console.log(`\n--- ⏳ EXECUTANDO PASSO: ${script.name} (${script.description}) ---`);
 
         try {
-            let module;
-            
-            // 1. Tentar importar com extensão .js (exigido pelo Node ESM)
-            try {
-                 // Converte o caminho para URL/URI antes da importação
-                 const modulePath = new URL(script.path.replace('.ts', '.js'), import.meta.url).toString();
-                 module = await import(modulePath);
-            } catch (e) {
-                 // 2. Tentar importar com a extensão .ts (necessário para o ts-node em alguns hardhats)
-                 const modulePath = new URL(script.path, import.meta.url).toString();
-                 module = await import(modulePath);
-            }
-            
-            // Verifica a função exportada e executa
-            if (module && typeof module.runScript === 'function') {
-                await module.runScript(hre);
-            } else {
-                throw new Error("Função 'runScript' não encontrada no módulo importado.");
-            }
+            // Chamada direta da função exportada, passando o Hardhat Runtime Environment
+            await script.func(hre); 
 
             console.log(`✅ ${script.name} CONCLUÍDO COM SUCESSO.`);
             successfulScripts++;
             
+            // Pausa entre scripts (Recomendado para redes públicas)
             await new Promise(resolve => setTimeout(resolve, 3000)); 
 
         } catch (error: any) {
@@ -73,7 +65,6 @@ async function main() {
             console.error(`❌ FALHA CRÍTICA NA EXECUÇÃO SEQUENCIAL: ${script.name}`);
             console.error(`ERRO: ${error.message}`);
             console.error(`======================================================`);
-            // Se falhar, encerra o processo
             process.exit(1);
         }
     }
@@ -81,10 +72,11 @@ async function main() {
     console.log(`\n\n======================================================`);
     console.log(`🎉 EXECUÇÃO MASTER CONCLUÍDA!`);
     console.log(`Total de scripts executados com sucesso: ${successfulScripts}`);
+    console.log(`⚠️ Lembre-se de executar '8_add_liquidity.ts' manualmente APÓS o término da pré-venda.`);
     console.log(`======================================================\n`);
 }
 
 main().catch((error) => {
-    console.error("ERRO FATAL NA FUNÇÃO MAIN:", error);
-    process.exit(1);
+    console.error(error);
+    process.exitCode = 1;
 });

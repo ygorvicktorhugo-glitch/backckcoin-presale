@@ -3,29 +3,18 @@ import hre from "hardhat";
 import { ethers } from "ethers";
 import fs from "fs";
 import path from "path";
-// Adicionando imports para compatibilidade __dirname
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois não existem no modo ESM.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
-
 
 // Helper function for delays between deployments
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const CONFIG_DELAY_MS = 1500; // 1.5-second delay
 
 // --- ⚙️ CONFIGURATION ---
+// CIDs ATUALIZADOS COM BASE NA SUA INFORMAÇÃO
 const IPFS_BASE_URI_VESTING =
-  "ipfs://bafybeig4g562r4g7yxgtqm2rkkmsblvzwcghjiebcipsrt3ltlgitzkr6i/";
+  "ipfs://bafybeiebqaxpruffltuzptttlebu24w4prwfebeevprmm7sudaxpzmg57a/"; // Vesting
   
 const IPFS_BASE_URI_BOOSTERS =
-  "ipfs://bafybeihxs7dd7x5thhpkmwxl3adnajjxlnwx5yqodr7hjrllxaif7ojad4/";
+  "ipfs://bafybeigf3n2q2cbsnsmqytv57e6dvuimtzsg6pp7iyhhhmqpaxgpzlmgem/"; // Boosters
 // ------------------------
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
@@ -36,16 +25,16 @@ export async function runScript(hre: any) { // Usamos 'any' para facilitar a tip
   console.log("----------------------------------------------------");
 
   // ######################################################
-  // ### SOLUÇÃO: CARREGAR ENDEREÇOS DO DISCO NA HORA ###
+  // ### 1. CARREGAR ENDEREÇOS DO DISCO ###
   // ######################################################
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
     throw new Error("Missing deployment-addresses.json");
   }
   const addresses: { [key: string]: string } = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
-  // ######################################################
   
   // --- Validar CIDs (Verificação de segurança) ---
+  // A verificação de segurança original foi removida/simplificada, pois você forneceu os CIDs
   if (
     IPFS_BASE_URI_VESTING.includes("YOUR_CID") ||
     IPFS_BASE_URI_BOOSTERS.includes("YOUR_CID")
@@ -57,7 +46,7 @@ export async function runScript(hre: any) { // Usamos 'any' para facilitar a tip
   }
 
 
-  // --- Carregar Contratos (Usando os endereços lidos diretamente do disco) ---
+  // --- Carregar Contratos ---
   console.log("Carregando instâncias de contratos implantados...");
   
   // Verificação de que todos os endereços necessários estão presentes
@@ -85,7 +74,6 @@ export async function runScript(hre: any) { // Usamos 'any' para facilitar a tip
     addresses.rewardBoosterNFT,
     deployer
   );
-  // O endereço 'fortuneTiger' deve estar presente aqui
   const fortuneTiger = await ethers.getContractAt(
     "FortuneTiger",
     addresses.fortuneTiger,
@@ -114,10 +102,10 @@ export async function runScript(hre: any) { // Usamos 'any' para facilitar a tip
     
     console.log("✅ Endereços de referência do BKCToken configurados.");
 
-    // --- Passo 2: Configurar Interdependências dos Managers (CORRIGIDO) ---
+    // --- Passo 2: Configurar Interdependências dos Managers ---
     console.log("\n2. Configurando interdependências dos managers...");
     
-    // NOVO: Define o DelegationManager no RewardManager (CORREÇÃO DE DEPENDÊNCIA CRÍTICA)
+    // Define o DelegationManager no RewardManager 
     tx = await rewardManager.setDelegationManager(addresses.delegationManager);
     await tx.wait();
     console.log(` -> DelegationManager definido no RewardManager.`);
@@ -148,14 +136,16 @@ export async function runScript(hre: any) { // Usamos 'any' para facilitar a tip
 
     // --- Passo 4: Definir URIs Base dos NFTs ---
     console.log("\n4. Definindo URIs Base para metadados de NFT...");
-    tx = await rewardManager.setBaseURI(IPFS_BASE_URI_VESTING);
+    // A URI Base do Vesting é definida no RewardManager
+    tx = await rewardManager.setBaseURI(IPFS_BASE_URI_VESTING); 
     await tx.wait();
-    console.log(` -> URI Base do Certificado de Vesting definida.`);
+    console.log(` -> URI Base do Certificado de Vesting definida: ${IPFS_BASE_URI_VESTING}`);
     await sleep(CONFIG_DELAY_MS);
 
-    tx = await rewardBooster.setBaseURI(IPFS_BASE_URI_BOOSTERS);
+    // A URI Base dos Boosters é definida no RewardBoosterNFT
+    tx = await rewardBooster.setBaseURI(IPFS_BASE_URI_BOOSTERS); 
     await tx.wait();
-    console.log(` -> URI Base do Reward Booster definida.`);
+    console.log(` -> URI Base do Reward Booster definida: ${IPFS_BASE_URI_BOOSTERS}`);
     await sleep(CONFIG_DELAY_MS);
     console.log("✅ URIs Base configuradas.");
 

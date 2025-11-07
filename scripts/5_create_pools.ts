@@ -1,18 +1,7 @@
 // scripts/5_create_pools.ts
-// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
-// Adicionando imports para compatibilidade __dirname
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois não existem no modo ESM.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
 
 // --- ⚙️ CONFIGURATION ---
 // Esta lista DEVE corresponder aos descontos imutáveis
@@ -29,7 +18,7 @@ const TIERS_TO_CREATE = [
 // ------------------------
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: any) { // Mudamos para 'any'
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
@@ -38,7 +27,7 @@ export async function runScript(hre: any) { // Mudamos para 'any'
   console.log(`Usando a conta: ${deployer.address}`);
   console.log("----------------------------------------------------");
 
-  // --- 1. Carregar Endereço (MOVIDO PARA DENTRO DA FUNÇÃO) ---
+  // --- 1. Carregar Endereço ---
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
     console.error("❌ Erro: 'deployment-addresses.json' não encontrado. O Passo 1 falhou?");

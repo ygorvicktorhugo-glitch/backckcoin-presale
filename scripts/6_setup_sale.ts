@@ -1,18 +1,8 @@
 // scripts/6_setup_sale.ts
-// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { ethers, LogDescription, Log } from "ethers";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from 'url'; // <--- CORREÇÃO DE ESM
-import { dirname } from 'path'; // <--- CORREÇÃO DE ESM
-
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois não existem no modo ESM.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,7 +25,7 @@ const TIERS_TO_SETUP = [
 const CHUNK_SIZE_BIGINT = BigInt(150); // Mintar em lotes de 150
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: any) { // Usamos 'any'
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
@@ -44,7 +34,7 @@ export async function runScript(hre: any) { // Usamos 'any'
   console.log(`Usando a conta: ${deployer.address}`);
   console.log("----------------------------------------------------");
 
-  // --- 1. Carregar Endereços (CORRIGIDO: Carregamento dinâmico) ---
+  // --- 1. Carregar Endereços ---
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
     console.error("❌ Erro: 'deployment-addresses.json' não encontrado. O Passo 1 falhou?");

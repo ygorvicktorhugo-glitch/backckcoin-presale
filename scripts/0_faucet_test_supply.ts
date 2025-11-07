@@ -1,35 +1,17 @@
-// scripts/0_faucet_test_supply.ts (PASSO ZERO - TRANSFERÊNCIA DE SUPPLY DE TESTE)
-// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
-import fs from "fs";
-import path from "path";
-import { ethers } from "ethers";
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+// scripts/0_faucet_test_supply.ts
+import * as fs from "fs";
+import * as path from "path";
 
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois não existem no modo ESM.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
-
-// --- CONFIGURAÇÃO ---
-const TEST_SUPPLY_AMOUNT_BKC = "10000000"; 
-// --- FIM CONFIGURAÇÃO ---
-
-// Helper function for delays
+const TEST_SUPPLY_AMOUNT_BKC = "10000000";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: any) { // Mudamos para 'any'
+export async function runScript(hre: any) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
 
-  // Verifica se o script deve ser executado (Teste vs. Produção)
   if (networkName !== 'sepolia' && networkName !== 'localhost' && networkName !== 'hardhat') {
-    console.log(`⚠️ IGNORANDO PASSO ZERO: Transferência de Supply de Teste desativada para rede: ${networkName}`);
+    console.log(`⚠️ IGNORANDO PASSO ZERO: Transferência desativada para rede: ${networkName}`);
     return;
   }
 
@@ -37,7 +19,7 @@ export async function runScript(hre: any) { // Mudamos para 'any'
   console.log(`Usando a conta: ${deployer.address}`);
   console.log("----------------------------------------------------");
 
-  // --- 1. Carregar Endereços ---
+  // __dirname funciona nativamente em CommonJS
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
     console.error("❌ Erro: 'deployment-addresses.json' não encontrado. Execute o Passo 1 primeiro.");
@@ -50,7 +32,6 @@ export async function runScript(hre: any) { // Mudamos para 'any'
       throw new Error("Missing bkcToken or faucet address in JSON.");
   }
 
-  // --- 2. Obter Instâncias dos Contratos ---
   const bkcToken = await ethers.getContractAt("BKCToken", addresses.bkcToken, deployer);
   const amountToTransferWei = ethers.parseEther(TEST_SUPPLY_AMOUNT_BKC);
   
@@ -58,7 +39,6 @@ export async function runScript(hre: any) { // Mudamos para 'any'
     const deployerBalance = await bkcToken.balanceOf(deployer.address);
     const faucetCurrentBalance = await bkcToken.balanceOf(addresses.faucet);
 
-    // 3. Verificação de Saldo e Execução
     if (deployerBalance < amountToTransferWei) {
         console.error(`❌ ERRO: Saldo insuficiente de BKC (${ethers.formatEther(deployerBalance)}) na conta do Deployer.`);
         throw new Error("Insufficient BKC TGE supply for test funding.");
@@ -71,7 +51,6 @@ export async function runScript(hre: any) { // Mudamos para 'any'
          return;
     }
 
-    // --- 4. Financiamento: Transfere os tokens do Deployer para o Faucet ---
     console.log(`\n1. Transferindo ${TEST_SUPPLY_AMOUNT_BKC} BKC do Deployer para o Faucet em: ${addresses.faucet}`);
     
     let tx = await bkcToken.transfer(addresses.faucet, amountToTransferWei);

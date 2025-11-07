@@ -3,20 +3,10 @@
 //
 // LÓGICA: Cunha NFTs "não vendidos" (95% - Vendidos) e adiciona-os ao AMM de NFT.
 
-// REMOVIDO: import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { LogDescription, ContractTransactionReceipt, ethers, Log } from "ethers";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from 'url'; // <--- CORREÇÃO DE ESM
-import { dirname } from 'path'; // <--- CORREÇÃO DE ESM
-
-// ########################################################
-// ### COMPATIBILIDADE ESM/CJS PARA __dirname (Mantida) ###
-// ########################################################
-// Define __filename e __dirname, pois não existem no modo ESM.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// ########################################################
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,11 +73,11 @@ const CHUNK_SIZE_BIGINT = BigInt(CHUNK_SIZE);
 // ######################################################################
 
 // A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
-export async function runScript(hre: any) { // Mudamos para 'any'
+export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
 
-  // --- Carregar Endereços (CORRIGIDO: Carregamento dinâmico) ---
+  // --- Carregar Endereços ---
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
     console.error("❌ Erro: 'deployment-addresses.json' não encontrado. O deploy master (passos 1-7) foi executado?");
@@ -277,12 +267,10 @@ export async function runScript(hre: any) { // Mudamos para 'any'
 // ====================================================================
 // Ponto de entrada para execução standalone (se necessário)
 // ====================================================================
-// ADICIONADO BLOCO DE CORREÇÃO: Usa import dinâmico para carregar o Hardhat
 if (require.main === module) {
   console.log("Executando 8_add_liquidity.ts como script standalone...");
-  // Precisamos importar o 'hre' (Hardhat Runtime Environment)
   import("hardhat").then(hre => {
-    runScript(hre) // Chama a função principal do script
+    runScript(hre) 
       .then(() => process.exit(0))
       .catch((error) => {
         console.error(error);

@@ -221,8 +221,22 @@ function getMultiplierByTier(approvedCount) {
 export async function getAirdropUser(walletAddress) {
     ensureAuthenticated(); 
     
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Bug Carteira Duplicada)
+    // ==========================================================
+    // Garante que o ID do documento seja SEMPRE minúsculo,
+    // independentemente de como esta função foi chamada.
+    if (!walletAddress) {
+        // Se por algum motivo o walletAddress for nulo, usa o global (que já é minúsculo)
+        walletAddress = currentWalletAddress;
+    }
+    const normalizedWallet = walletAddress.toLowerCase();
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
+
     // O ID do documento é a CARTEIRA
-    const userRef = doc(db, "airdrop_users", walletAddress); 
+    const userRef = doc(db, "airdrop_users", normalizedWallet); // <-- USA A VARIÁVEL NORMALIZADA
     const userSnap = await getDoc(userRef); 
 
     if (userSnap.exists()) { 
@@ -243,9 +257,9 @@ export async function getAirdropUser(walletAddress) {
         if (typeof userData.pointsMultiplier !== 'number') updates.pointsMultiplier = 1.0; 
         // --- FIM CORREÇÃO ---
         
-        // Garante que o endereço da carteira esteja no documento
-        if (userData.walletAddress !== walletAddress) {
-            updates.walletAddress = walletAddress;
+        // Garante que o endereço da carteira no documento seja minúsculo
+        if (userData.walletAddress !== normalizedWallet) {
+            updates.walletAddress = normalizedWallet; // <-- USA A VARIÁVEL NORMALIZADA
         }
 
         // Se precisa atualizar, salva no Firestore
@@ -267,7 +281,7 @@ export async function getAirdropUser(walletAddress) {
         // Usuário não existe, cria um novo perfil
         const referralCode = generateReferralCode(); 
         const newUser = { 
-            walletAddress: walletAddress, // <-- Salva a carteira (ID)
+            walletAddress: normalizedWallet, // <-- Salva a carteira (ID) minúscula
             referralCode: referralCode, 
             totalPoints: 0, 
             pointsMultiplier: 1.0, // <-- Mantém o campo por consistência
@@ -642,13 +656,14 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
         // Usuário diz que é legítimo, então APROVA e DÁ OS PONTOS
         
         // ==========================================================
-        //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados)
+        //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados / NaN)
         // ==========================================================
         let pointsToAward = submissionData._pointsCalculated;
         let multiplierApplied = submissionData._multiplierApplied;
 
-        if (typeof pointsToAward !== 'number' || pointsToAward <= 0) {
-            console.warn(`[ResolveFlagged] Legacy submission ${submissionId} missing _pointsCalculated. Recalculating...`);
+        // ADICIONADO: "isNaN(pointsToAward)"
+        if (typeof pointsToAward !== 'number' || isNaN(pointsToAward) || pointsToAward <= 0) {
+            console.warn(`[ResolveFlagged] Legacy/Invalid submission ${submissionId} missing/invalid _pointsCalculated. Recalculating...`);
             const basePoints = submissionData.basePoints || 0;
             const userSnap = await getDoc(userRef); // Precisa ler o usuário
             if (!userSnap.exists()) throw new Error("User profile not found for recalculation.");
@@ -658,7 +673,8 @@ export async function resolveFlaggedSubmission(submissionId, resolution) {
             multiplierApplied = getMultiplierByTier(currentApprovedCount); // Recalcula multiplicador
             pointsToAward = Math.round(basePoints * multiplierApplied);
 
-            if (pointsToAward <= 0) {
+            // ADICIONADO: "isNaN(pointsToAward)"
+            if (isNaN(pointsToAward) || pointsToAward <= 0) {
                  console.warn(`[ResolveFlagged] Recalculation failed (basePoints: ${basePoints}). Using fallback 1000.`);
                  pointsToAward = Math.round(1000 * multiplierApplied);
             }
@@ -765,7 +781,7 @@ export async function confirmSubmission(submissionId) {
     }
 
     // ==========================================================
-    //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados)
+    //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados / NaN)
     // ==========================================================
     
     // Pega os pontos a serem concedidos
@@ -773,8 +789,9 @@ export async function confirmSubmission(submissionId) {
     let multiplierApplied = submissionData._multiplierApplied; // Pega o multiplicador salvo
 
     // Fallback para submissões antigas (legacy) que não têm _pointsCalculated
-    if (typeof pointsToAward !== 'number' || pointsToAward <= 0) {
-        console.warn(`[ConfirmSubmission] Legacy submission ${submissionId} missing _pointsCalculated. Recalculating...`);
+    // ADICIONADO: "isNaN(pointsToAward)"
+    if (typeof pointsToAward !== 'number' || isNaN(pointsToAward) || pointsToAward <= 0) {
+        console.warn(`[ConfirmSubmission] Legacy/Invalid submission ${submissionId} missing/invalid _pointsCalculated. Recalculating...`);
         
         // 1. Pega os pontos base da submissão
         const basePoints = submissionData.basePoints || 0;
@@ -794,7 +811,8 @@ export async function confirmSubmission(submissionId) {
         pointsToAward = Math.round(basePoints * multiplierApplied);
 
         // Se ainda for 0, busca um fallback (ex: se basePoints também faltar)
-        if (pointsToAward <= 0) {
+        // ADICIONADO: "isNaN(pointsToAward)"
+        if (isNaN(pointsToAward) || pointsToAward <= 0) {
              console.warn(`[ConfirmSubmission] Recalculation failed (basePoints: ${basePoints}). Using fallback 1000.`);
              // Tenta um fallback final
              pointsToAward = Math.round(1000 * multiplierApplied); // Usa 1000 como base
@@ -1010,9 +1028,19 @@ export async function getAllSubmissionsForAdmin() {
  * @param {string} status Novo status ('approved' ou 'rejected').
  */
 export async function updateSubmissionStatus(userId, submissionId, status) {
+    
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Bug Carteira Duplicada)
+    // ==========================================================
+    if (!userId) throw new Error("User ID (walletAddress) is required.");
+    const normalizedUserId = userId.toLowerCase();
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
+
     // <-- NOTA: userId aqui é a CARTEIRA (vindo do log)
-    const userRef = doc(db, "airdrop_users", userId);
-    const submissionRef = doc(db, "airdrop_users", userId, "submissions", submissionId);
+    const userRef = doc(db, "airdrop_users", normalizedUserId); // <-- USA A VARIÁVEL NORMALIZADA
+    const submissionRef = doc(db, "airdrop_users", normalizedUserId, "submissions", submissionId); // <-- USA A VARIÁVEL NORMALIZADA
     const logSubmissionRef = doc(db, "all_submissions_log", submissionId);
 
     // Lê os 3 documentos
@@ -1046,14 +1074,15 @@ export async function updateSubmissionStatus(userId, submissionId, status) {
     if (status === 'approved') {
         
         // ==========================================================
-        //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados)
+        //  INÍCIO DA CORREÇÃO (Bug dos Pontos Legados / NaN)
         // ==========================================================
         
         let pointsToAward = submissionData._pointsCalculated;
 
         // Fallback para submissões antigas (legacy) que não têm _pointsCalculated
-        if (typeof pointsToAward !== 'number' || pointsToAward <= 0) {
-            console.warn(`[Admin] Legacy submission ${submissionId} missing _pointsCalculated. Recalculating...`);
+        // ADICIONADO: "isNaN(pointsToAward)"
+        if (typeof pointsToAward !== 'number' || isNaN(pointsToAward) || pointsToAward <= 0) {
+            console.warn(`[Admin] Legacy/Invalid submission ${submissionId} missing/invalid _pointsCalculated. Recalculating...`);
             
             // 1. Pega os pontos base da submissão (salvos em addSubmission)
             const basePoints = submissionData.basePoints || 0; 
@@ -1068,7 +1097,8 @@ export async function updateSubmissionStatus(userId, submissionId, status) {
             pointsToAward = Math.round(basePoints * multiplierApplied);
             
             // Se ainda for 0, busca um fallback
-            if (pointsToAward <= 0) {
+            // ADICIONADO: "isNaN(pointsToAward)"
+            if (isNaN(pointsToAward) || pointsToAward <= 0) {
                  console.warn(`[Admin] Recalculation failed (basePoints: ${basePoints}). Using fallback 1000.`);
                  const fallbackMultiplier = getMultiplierByTier(currentApprovedCount);
                  pointsToAward = Math.round(1000 * fallbackMultiplier); // Usa 1000 como base
@@ -1194,13 +1224,22 @@ export async function getAllAirdropUsers() {
  */
 export async function getUserSubmissionsForAdmin(userId, status) {
     if (!userId) throw new Error("User ID is required.");
+    
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Bug Carteira Duplicada)
+    // ==========================================================
+    const normalizedUserId = userId.toLowerCase();
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
+
     // <-- NOTA: userId aqui é a CARTEIRA
-    const submissionsCol = collection(db, "airdrop_users", userId, "submissions");
+    const submissionsCol = collection(db, "airdrop_users", normalizedUserId, "submissions"); // <-- USA A VARIÁVEL NORMALIZADA
     const q = query(submissionsCol, where("status", "==", status), orderBy("resolvedAt", "desc"));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({
         submissionId: doc.id,
-        userId: userId, // Adiciona o userId (carteira)
+        userId: normalizedUserId, // Adiciona o userId (carteira) normalizado
         ...doc.data(),
         submittedAt: doc.data().submittedAt?.toDate ? doc.data().submittedAt.toDate() : null,
         resolvedAt: doc.data().resolvedAt?.toDate ? doc.data().resolvedAt.toDate() : null,
@@ -1214,8 +1253,17 @@ export async function getUserSubmissionsForAdmin(userId, status) {
  */
 export async function setBanStatus(userId, isBanned) {
     if (!userId) throw new Error("User ID is required.");
+    
+    // ==========================================================
+    //  INÍCIO DA CORREÇÃO (Bug Carteira Duplicada)
+    // ==========================================================
+    const normalizedUserId = userId.toLowerCase();
+    // ==========================================================
+    //  FIM DA CORREÇÃO
+    // ==========================================================
+
     // <-- NOTA: userId aqui é a CARTEIRA
-    const userRef = doc(db, "airdrop_users", userId);
+    const userRef = doc(db, "airdrop_users", normalizedUserId); // <-- USA A VARIÁVEL NORMALIZADA
     // Atualiza o status de ban e zera as rejeições se for desbanido
     const updates = { isBanned: isBanned };
     if (isBanned === false) {

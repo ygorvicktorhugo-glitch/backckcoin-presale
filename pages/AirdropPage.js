@@ -514,30 +514,57 @@ async function handleResolveSubmission(e) {
     }
 }
 
-// --- [MODAL] Função para abrir o modal de confirmação ---
-function openConfirmationModal(submissionId) {
-    const modalTitle = "Confirm Post Authenticity"; // <-- Erro de digitação corrigido
+// ==========================================================
+//  INÍCIO DA ALTERAÇÃO (Modal de Confirmação)
+// ==========================================================
+
+// --- [MODAL] Função para abrir o modal de confirmação (MODIFICADO) ---
+/**
+ * Abre o modal de confirmação
+ * @param {object} submission O objeto da submissão (contém submissionId e url)
+ */
+function openConfirmationModal(submission) {
+    if (!submission || !submission.submissionId || !submission.url) {
+        return showToast("Error opening confirmation: Missing submission data.", "error");
+    }
+    
+    const modalTitle = "Confirm Post Authenticity";
     const modalContent = `
         <p class="text-zinc-300 text-sm mb-4 text-center">
-            Please ensure the submitted post link is valid, public, and includes your referral code + required hashtags.
+             Your post must be <strong class="text-amber-400">public</strong> and include your referral link + hashtags.
         </p>
+        
+        <a href="${submission.url}" target="_blank" rel="noopener noreferrer" 
+           class="btn bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg w-full text-center mb-4 block">
+            <i class="fa-solid fa-magnifying-glass mr-2"></i> Check Post Link
+        </a>
+        
         <p class="text-red-400 text-sm font-semibold mb-6 text-center">
-            <i class="fa-solid fa-triangle-exclamation mr-1"></i> Submitting invalid or fake links may result in a permanent ban from the Airdrop.
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i> Submitting private, invalid, or fake links <br> may result in a <strong class="text-red-300">permanent ban</strong>.
         </p>
+        
         <div class="flex justify-center gap-3 mt-4">
             <button id="cancelConfirmBtn" class="btn bg-zinc-600 hover:bg-zinc-700 text-white py-2 px-4 rounded-lg">Cancel</button>
-            <button id="finalConfirmBtn" data-submission-id="${submissionId}" class="btn bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg">
+            <button id="finalConfirmBtn" data-submission-id="${submission.submissionId}" class="btn bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg">
                 <i class="fa-solid fa-check mr-1"></i> Confirm Authenticity
             </button>
         </div>
     `;
 
+    // O bug do texto "shadow-2xl..." NÃO é daqui.
+    // Ele provavelmente vem da sua função 'openModal' em 'ui-feedback.js'
+    // ou do seu HTML principal, que pode estar injetando um título antigo ou texto de debug.
     openModal(modalTitle, modalContent, 'confirm-post-modal');
 
     // Adiciona listeners aos botões do modal
     document.getElementById('cancelConfirmBtn')?.addEventListener('click', closeModal);
     document.getElementById('finalConfirmBtn')?.addEventListener('click', handleConfirmAuthenticity);
 }
+
+// ==========================================================
+//  FIM DA ALTERAÇÃO
+// ==========================================================
+
 
 // --- [MODAL] Função chamada pelo botão "Confirm Authenticity" do modal ---
 async function handleConfirmAuthenticity(e) {
@@ -664,8 +691,19 @@ async function handleSubmissionAction(e) {
     if (!submissionId || !action) return;
 
     if (action === 'confirm') {
-        // [MODAL] Abre o modal em vez de confirmar diretamente
-        openConfirmationModal(submissionId);
+        // ==========================================================
+        //  INÍCIO DA ALTERAÇÃO (Modal de Confirmação)
+        // ==========================================================
+        // Busca a submissão para passar a URL ao modal
+        const submission = airdropState.userSubmissions.find(s => s.submissionId === submissionId);
+        if (!submission) {
+            return showToast("Submission data not found.", "error");
+        }
+        // [MODAL] Abre o modal com o objeto submission
+        openConfirmationModal(submission);
+        // ==========================================================
+        //  FIM DA ALTERAÇÃO
+        // ==========================================================
 
     } else if (action === 'report_error') {
         // Lógica de reportar erro permanece a mesma
@@ -772,20 +810,83 @@ function renderSectionContainer(title, iconClass, contentHtml) {
     `;
 }
 
-// --- (MODIFICADO) Content Submission Flow (4 Steps) - Correção Asteriscos ---
+// ==========================================================
+//  INÍCIO DA ALTERAÇÃO (Fluxo de 4 Passos + Tooltips)
+// ==========================================================
+
+// --- (MODIFICADO) Content Submission Flow (4 Steps) - Correção Asteriscos e Tooltips ---
 function renderContentSubmissionFlow() {
     if (!airdropState.isConnected || !airdropState.user) {
         return renderNoData(null, 'Connect your wallet to submit content.');
     }
+    
+    // --- CSS Para os Tooltips ---
+    // Injetado aqui para garantir que funcione onde a função for chamada
+    const tooltipCSS = `
+        <style>
+            .tooltip-trigger {
+                cursor: help;
+                position: relative;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                margin-left: 5px;
+                color: #f59e0b; /* amber-500 */
+                border: 1px solid #71717a; /* zinc-500 */
+                border-radius: 50%;
+                width: 18px;
+                height: 18px;
+                font-size: 0.75rem; /* 12px */
+                font-weight: bold;
+            }
+            .tooltip-trigger .tooltip-text {
+                visibility: hidden;
+                width: 280px;
+                background-color: #18181b; /* zinc-900 */
+                color: #d4d4d8; /* zinc-300 */
+                text-align: left;
+                font-size: 0.875rem; /* text-sm */
+                font-weight: normal; /* reseta o bold */
+                line-height: 1.4;
+                border-radius: 8px;
+                padding: 10px;
+                position: absolute;
+                z-index: 10;
+                bottom: 140%; /* Posição acima do ícone */
+                left: 50%;
+                margin-left: -140px; /* Centraliza o tooltip */
+                opacity: 0;
+                transition: opacity 0.3s;
+                border: 1px solid #3f3f46; /* zinc-700 */
+                box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            }
+            .tooltip-trigger:hover .tooltip-text {
+                visibility: visible;
+                opacity: 1;
+            }
+        </style>
+    `;
+
+    // --- Helper para criar o ícone de tooltip ---
+    const renderTooltip = (text) => `
+        <span class="tooltip-trigger">
+            ?
+            <span class="tooltip-text">${text}</span>
+        </span>
+    `;
 
     return `
+        ${tooltipCSS}
         <div class="bg-main border border-border-color rounded-xl p-6 mb-8">
-            <h3 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-arrow-right-to-bracket mr-2 text-amber-400"></i> Content Submission Flow (4 Steps)</h3>
+            <h3 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-arrow-right-to-bracket mr-2 text-amber-400"></i> Content Submission Flow</h3>
 
             <ol class="space-y-6">
                 <li class="submission-step-1 border-l-4 border-amber-500 pl-4 py-1">
-                    <p class="font-bold text-lg text-white mb-2 flex items-center gap-2"><span class="bg-amber-500 text-zinc-900 font-extrabold w-6 h-6 flex items-center justify-center rounded-full text-sm">1</span> Copy Your Referral Link</p>
-                    <p class="text-zinc-400 text-sm mb-3">Click the button below to automatically copy your unique referral link and the required hashtags.</p>
+                    <p class="font-bold text-lg text-white mb-2 flex items-center">
+                        <span class="step-circle bg-amber-500">1</span>
+                        Copy Link & Hashtags
+                        ${renderTooltip('Click the button below to copy your unique referral link and the required airdrop hashtags to your clipboard.')}
+                    </p>
                     <div class="flex flex-col sm:flex-row gap-2">
                         <button id="copyReferralBtn_submitArea" class="btn bg-blue-600 hover:bg-blue-700 text-white font-bold text-base w-full py-3 rounded-2xl animate-pulse-slow">
                             <i class="fa-solid fa-copy mr-2"></i> Copy Link & Hashtags
@@ -794,22 +895,30 @@ function renderContentSubmissionFlow() {
                 </li>
 
                 <li class="submission-step-2 border-l-4 border-zinc-500 pl-4 py-1">
-                    <p class="font-bold text-lg text-white mb-2 flex items-center gap-2"><span class="bg-zinc-500 text-zinc-900 font-extrabold w-6 h-6 flex items-center justify-center rounded-full text-sm">2</span> Create Your Social Media Post</p>
-                    <p class="text-zinc-400 text-sm">Create a post (video, tweet, reel, etc.) on your preferred platform (YouTube, X/Twitter, Instagram, etc.).</p>
-                    <p class="text-zinc-400 text-sm mt-1"><strong class="text-amber-400">MUST</strong> include your referral link (copied in Step 1) and the hashtags: <span class="font-mono text-amber-400 text-xs">${DEFAULT_HASHTAGS}</span></p>
+                     <p class="font-bold text-lg text-white mb-2 flex items-center">
+                        <span class="step-circle bg-zinc-500">2</span>
+                        Create Your Social Post
+                        ${renderTooltip(`Create a high-quality post (video, tweet, reel, article) on any social platform. Your post <strong>MUST</strong> include the link and hashtags copied from Step 1.`)}
+                    </p>
+                    <p class="text-zinc-400 text-sm">Include: Your Referral Link + <span class="font-mono text-amber-400 text-xs">${DEFAULT_HASHTAGS}</span></p>
                 </li>
 
                 <li class="submission-step-3 border-l-4 border-zinc-500 pl-4 py-1">
-                    <p class="font-bold text-lg text-white mb-2 flex items-center gap-2"><span class="bg-zinc-500 text-zinc-900 font-extrabold w-6 h-6 flex items-center justify-center rounded-full text-sm">3</span> Publish the Content</p>
-                    <p class="text-zinc-400 text-sm">Publish your post and ensure it is set to <strong class="text-amber-400">Public</strong> for verification.</p>
+                    <p class="font-bold text-lg text-white mb-2 flex items-center">
+                        <span class="step-circle bg-zinc-500">3</span>
+                        Publish Publicly
+                        ${renderTooltip('Your post must be set to <strong>Public</strong>. We cannot verify private or "friends-only" posts, and they will be rejected.')}
+                    </p>
+                    <p class="text-zinc-400 text-sm">Ensure your post is set to <strong class="text-amber-400">Public</strong> for verification.</p>
                 </li>
 
                 <li class="submission-step-4 border-l-4 border-red-500 pl-4 py-1">
-                    <p class="font-bold text-lg text-white mb-2 flex items-center gap-2"><span class="bg-red-500 text-zinc-900 font-extrabold w-6 h-6 flex items-center justify-center rounded-full text-sm">4</span> Submit the Post Link for Audit</p>
-                    <label for="contentUrlInput_submitArea" class="block text-sm font-medium text-zinc-300 mb-2">
-                        Paste the direct link to your published post:
-                    </label>
-
+                    <p class="font-bold text-lg text-white mb-2 flex items-center">
+                        <span class="step-circle bg-red-500">4</span>
+                        Submit Link for Audit
+                        ${renderTooltip('Copy the direct URL of your published post (e.g., https://x.com/user/status/123...) and paste it below to submit it for review.')}
+                    </p>
+                    
                     <input type="url" id="contentUrlInput_submitArea" required placeholder="https://..." class="contentUrlInput form-input w-full p-3 mb-3 rounded-2xl border-zinc-600 focus:border-red-500 focus:ring-red-500">
 
                     <button id="submitContentLinkBtn_submitArea" class="submitContentLinkBtn btn bg-green-600 hover:bg-green-700 text-white font-bold text-base w-full py-3 rounded-2xl">
@@ -818,13 +927,37 @@ function renderContentSubmissionFlow() {
 
                      <p class="text-xs text-red-400 mt-2 font-semibold">
                         <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                        All posts undergo auditing. Submitting fake links or spam may result in a **permanent ban** from the Airdrop program.
+                        All posts undergo auditing. Submitting fake links or spam may result in a <strong class="text-red-300">permanent ban</strong>.
                     </p>
                 </li>
             </ol>
         </div>
+        
+        <style>
+            .step-circle {
+                background-color: var(--step-bg);
+                color: #1a1a1a;
+                font-weight: 800;
+                width: 24px;
+                height: 24px;
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                font-size: 0.875rem;
+                margin-right: 10px;
+            }
+            .submission-step-1 .step-circle { --step-bg: #f59e0b; } /* amber-500 */
+            .submission-step-2 .step-circle, .submission-step-3 .step-circle { --step-bg: #71717a; } /* zinc-500 */
+            .submission-step-4 .step-circle { --step-bg: #ef4444; } /* red-500 */
+        </style>
     `;
 }
+
+// ==========================================================
+//  FIM DA ALTERAÇÃO
+// ==========================================================
 
 
 // --- TAB 1: PROFILE ---

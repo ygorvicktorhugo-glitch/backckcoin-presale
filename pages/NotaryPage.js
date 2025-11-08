@@ -652,7 +652,11 @@ function initNotaryListeners() {
                 submitBtn // Passa o elemento <a> para a função de transação
             );
 
+            // ==========================================================
+            //  INÍCIO DA CORREÇÃO (Bug "NFT not owned")
+            // ==========================================================
             if (success) {
+                // Limpa a UI imediatamente
                 currentFileToUpload = null;
                 currentUploadedIPFS_URI = null;
                 document.getElementById('notary-document-uri').value = '';
@@ -663,9 +667,24 @@ function initNotaryListeners() {
                 statusEl.classList.add('hidden');
                 statusEl.innerHTML = '';
 
-                await renderMyNotarizedDocuments();
-                updateNotaryUserStatus();
+                showToast("Transaction Confirmed! Refreshing list...", "info");
+
+                // Adiciona um atraso de 3 segundos (3000ms) antes de
+                // tentar ler os dados da blockchain novamente.
+                // Isso dá tempo ao nó RPC para indexar a nova propriedade do NFT.
+                setTimeout(async () => {
+                    console.log("Re-fetching notarized documents after 3s delay...");
+                    
+                    // Agora, estas chamadas lerão dados atualizados
+                    await renderMyNotarizedDocuments();
+                    updateNotaryUserStatus();
+                    
+                    showToast("Document list refreshed!", "success");
+                }, 3000); // 3 segundos de atraso
             }
+            // ==========================================================
+            //  FIM DA CORREÇÃO
+            // ==========================================================
         });
     }
     

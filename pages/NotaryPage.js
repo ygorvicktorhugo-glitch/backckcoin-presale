@@ -5,11 +5,11 @@ import { State } from '../state.js';
 import { formatBigNumber, formatPStake, renderLoading, renderError, renderNoData, ipfsGateway } from '../utils.js';
 import { safeContractCall, getHighestBoosterBoostFromAPI, API_ENDPOINTS } from '../modules/data.js';
 import { showToast } from '../ui-feedback.js';
-// ATUALIZADO: A função agora será chamada com 3 argumentos + o botão
 import { executeNotarizeDocument } from '../modules/transactions.js';
 
 let currentFileToUpload = null;
 let currentUploadedIPFS_URI = null;
+let notaryButtonState = 'initial'; 
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_MIMES = [
@@ -36,24 +36,24 @@ function renderNotaryPageLayout() {
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-            <div class="lg:col-span-2 bg-sidebar border border-border-color rounded-xl p-6 shadow-xl">
+            <div id="notary-main-box" class="lg:col-span-2 bg-sidebar border border-border-color rounded-xl p-6 shadow-xl">
                 <h2 class="text-xl font-bold mb-5">Notarize Document</h2>
 
                 <div class="space-y-6">
                     <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-2">1. Select File (Image, PDF, or Audio)</label>
+                        <label for="notary-file-upload" class="block text-sm font-medium text-zinc-300 mb-2 cursor-pointer">1. Select File (Image, PDF, or Audio)</label>
                         <div class="flex items-center justify-center w-full">
+                            
                             <label id="notary-file-dropzone" for="notary-file-upload" class="flex flex-col items-center justify-center w-full h-48 border-2 border-border-color border-dashed rounded-lg cursor-pointer bg-main hover:bg-zinc-800 transition-colors">
-                                <div id="notary-upload-prompt" class="flex flex-col items-center justify-center pt-5 pb-6 text-center">
-                                    <i class="fa-solid fa-cloud-arrow-up text-4xl text-zinc-500 mb-3"></i>
+                                <div id="notary-upload-prompt" class="flex flex-col items-center justify-center pt-5 pb-6 text-center pointer-events-none"> <i class="fa-solid fa-cloud-arrow-up text-4xl text-zinc-500 mb-3"></i>
                                     <p class="mb-2 text-sm text-zinc-400"><span class="font-semibold">Click to upload</span> or drag & drop</p>
                                     <p class="text-xs text-zinc-500">Image, PDF, or Audio (Max ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB)</p>
                                 </div>
-                                <div id="notary-upload-status" class="hidden flex-col items-center justify-center text-center p-4">
+                                <div id="notary-upload-status" class="hidden flex-col items-center justify-center text-center p-4 pointer-events-none">
                                     </div>
-                                <input id="notary-file-upload" type="file" class="hidden" accept="image/*,.pdf,audio/*"/>
                             </label>
                         </div>
+                        <input id="notary-file-upload" type="file" class="hidden" accept="image/*,.pdf,audio/*"/>
                         
                         <p id="notary-lib-error" class="text-xs text-red-400 mt-2 font-semibold hidden"></p>
                     
@@ -61,15 +61,17 @@ function renderNotaryPageLayout() {
 
                     <div>
                         <label for="notary-user-description" class="block text-sm font-medium text-zinc-300 mb-2">2. Add a Public Description (Optional)</label>
-                        <textarea id="notary-user-description" rows="3" class="w-full bg-main border border-border-color rounded-md p-3 text-sm text-zinc-200 focus:ring-blue-500 focus:border-blue-500 transition-colors" placeholder="e.g., This is my official university diploma... (Max 256 characters)"></textarea>
+                        
+                        <textarea id="notary-user-description" rows="3" class="w-full bg-main border border-border-color rounded-md p-3 text-sm text-zinc-200 focus:ring-blue-500 focus:border-blue-500 transition-colors placeholder-zinc-500" placeholder="e.g., This is my official university diploma... (Max 256 characters)"></textarea>
+                        
                         <p id="notary-description-counter" class="text-xs text-zinc-500 text-right">0 / 256</p>
                     </div>
                     <input type="hidden" id="notary-document-uri">
 
                     <a id="notarize-submit-btn" href="#" class="w-full block text-center bg-blue-600 text-white font-bold py-3 px-5 rounded-md transition-colors text-lg btn-disabled shadow-lg">
-                        <i class="fa-solid fa-stamp mr-2"></i> 3. Pay Fee & Notarize
+                        <i class="fa-solid fa-file-certificate mr-2"></i> Select File to Notarize
                     </a>
-                    </div>
+                </div>
             </div>
 
             <div class="lg:col-span-1 space-y-6">
@@ -82,7 +84,7 @@ function renderNotaryPageLayout() {
                  <div class="bg-sidebar border border-border-color rounded-xl p-6 shadow-xl">
                     <h2 class="text-xl font-bold mb-4">My Status</h2>
                     <div id="notary-user-status" class="space-y-4">
-                         <div class="text-center p-4 text-zinc-500 italic">Connect wallet...</div>
+                         <div class="text-center p-4 text-zinc-500 italic">Please connect your wallet to see your status.</div>
                     </div>
                 </div>
             </div>
@@ -101,6 +103,7 @@ function renderNotaryPageLayout() {
  * (Sem alterações)
  */
 async function loadNotaryPublicData() {
+    // ... (código original sem alterações) ...
     const statsEl = document.getElementById('notary-stats-container');
     if (!statsEl) return false;
     statsEl.innerHTML = '<div class="text-center p-4"><div class="loader inline-block"></div> Loading Requirements...</div>';
@@ -160,37 +163,78 @@ async function loadNotaryPublicData() {
 
 
 /**
+ * Atualiza os textos dos botões (com ícones)
+ * (Sem alterações)
+ */
+function updateNotaryButtonUI() {
+    const btn = document.getElementById('notarize-submit-btn');
+    if (!btn) return;
+
+    // Reset styles
+    btn.classList.remove('btn-disabled', 'bg-blue-600', 'bg-amber-500', 'bg-green-600', 'bg-purple-600', 'hover:bg-blue-700', 'hover:bg-amber-600', 'hover:bg-green-700', 'hover:bg-purple-700', 'opacity-50');
+    btn.href = '#';
+    btn.target = '';
+
+    switch (notaryButtonState) {
+        case 'file_ready':
+            btn.innerHTML = '<i class="fa-solid fa-signature mr-2"></i> Sign to Authenticate File';
+            btn.classList.add('bg-blue-600', 'hover:bg-blue-700'); 
+            break;
+        case 'signing':
+            btn.innerHTML = '<div class="loader-sm inline-block mr-2"></div> Signing... Please check wallet';
+            btn.classList.add('bg-blue-600', 'opacity-50', 'btn-disabled');
+            break;
+        case 'uploading':
+            btn.innerHTML = '<div class="loader-sm inline-block mr-2"></div> Uploading to IPFS...';
+            btn.classList.add('bg-amber-500', 'opacity-50', 'btn-disabled'); 
+            break;
+        case 'upload_ready':
+            btn.innerHTML = '<i class="fa-solid fa-stamp mr-2"></i> Notarize on Blockchain';
+            btn.classList.add('bg-green-600', 'hover:bg-green-700'); 
+            break;
+        case 'notarizing':
+            btn.innerHTML = '<div class="loader-sm inline-block mr-2"></div> Confirming Transaction...';
+            btn.classList.add('bg-green-600', 'opacity-50', 'btn-disabled');
+            break;
+        case 'initial':
+        default:
+            btn.innerHTML = '<i class="fa-solid fa-file-certificate mr-2"></i> Select File to Notarize';
+            btn.classList.add('btn-disabled');
+            break;
+    }
+}
+
+
+/**
  * Atualiza o status do usuário (pStake, saldo, taxas) e o botão principal.
- * (Sem alterações lógicas, apenas o texto do botão atualizado)
+ * (Sem alterações)
  */
 function updateNotaryUserStatus() {
+    // ... (código original sem alterações) ...
     const userStatusEl = document.getElementById('notary-user-status');
     const submitBtn = document.getElementById('notarize-submit-btn'); 
     
     if (!userStatusEl || !submitBtn) return;
 
     if (!State.isConnected) {
-        userStatusEl.innerHTML = renderNoData(userStatusEl, "Connect your wallet to see your status.", true);
-        submitBtn.classList.add('btn-disabled');
-        submitBtn.href = '#';
-        submitBtn.target = '';
-        submitBtn.innerHTML = '<i class="fa-solid fa-stamp mr-2"></i> 3. Pay Fee & Notarize'; // Texto atualizado
-        submitBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600');
-        submitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        userStatusEl.innerHTML = `<div class="text-center p-4 text-zinc-500 italic">Please connect your wallet to see your status.</div>`;
+        
+        notaryButtonState = 'initial'; 
+        updateNotaryButtonUI(); 
         return;
     }
 
     if (typeof State.notaryMinPStake === 'undefined' || typeof State.notaryFee === 'undefined') {
         userStatusEl.innerHTML = renderError(userStatusEl, "Could not load requirements.", true);
-        submitBtn.classList.add('btn-disabled');
-        submitBtn.href = '#';
-        submitBtn.target = '';
+        notaryButtonState = 'initial';
+        updateNotaryButtonUI();
         return;
     }
 
     const userPStake = State.userTotalPStake || 0n;
     const userBalance = State.currentUserBalance || 0n;
-    const isFileUploaded = !!currentUploadedIPFS_URI;
+    const isFileUploaded = (notaryButtonState === 'upload_ready'); 
+
     const swapLink = addresses.swapLink || '#';
 
     const baseFee = State.notaryFee;
@@ -210,7 +254,6 @@ function updateNotaryUserStatus() {
     const needsFee = finalFee > 0n;
     const hasEnoughFee = !needsFee || userBalance >= finalFee; 
     
-    // --- Renderização do Painel "My Status" (Sem alterações) ---
      let statusHTML = `
         <div class="flex items-center justify-between text-sm">
             <span class="text-zinc-400 flex items-center">
@@ -266,11 +309,11 @@ function updateNotaryUserStatus() {
 
          <div class="flex items-center justify-between text-sm">
             <span class="text-zinc-400 flex items-center">
-                <i class="fa-solid ${isFileUploaded ? 'fa-check-circle text-green-400' : 'fa-times-circle text-red-400'} w-5 mr-2"></i>
-                File Uploaded:
+                <i class="fa-solid ${isFileUploaded || notaryButtonState === 'file_ready' ? 'fa-check-circle text-green-400' : 'fa-times-circle text-red-400'} w-5 mr-2"></i>
+                File Status:
             </span>
-            <span class="font-bold ${isFileUploaded ? 'text-green-400' : 'text-red-400'} text-base">
-                ${isFileUploaded ? 'Ready' : 'No'}
+            <span class="font-bold ${isFileUploaded || notaryButtonState === 'file_ready' ? 'text-green-400' : 'text-red-400'} text-base">
+                ${isFileUploaded ? 'Uploaded' : (notaryButtonState === 'file_ready' ? 'Ready to Sign' : 'No File')}
             </span>
         </div>
     `;
@@ -284,26 +327,25 @@ function updateNotaryUserStatus() {
      }
     userStatusEl.innerHTML = statusHTML;
 
-    // --- LÓGICA DO BOTÃO PRINCIPAL (Texto atualizado) ---
-    
-    submitBtn.innerHTML = '<i class="fa-solid fa-stamp mr-2"></i> 3. Pay Fee & Notarize'; // Texto atualizado
-    submitBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600', 'btn-disabled');
-    submitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-    submitBtn.href = '#';
-    submitBtn.target = '';
-
-    if (hasEnoughPStake && hasEnoughFee && isFileUploaded) {
-        submitBtn.classList.remove('btn-disabled');
+    if (!hasEnoughPStake) {
+        submitBtn.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket mr-2"></i> Delegate to Start';
+        submitBtn.classList.remove('btn-disabled', 'bg-blue-600', 'bg-green-600', 'bg-amber-500');
+        submitBtn.classList.add('bg-purple-600', 'hover:bg-purple-700');
+        submitBtn.href = '#'; 
+        submitBtn.target = '';
+        submitBtn.dataset.delegate = 'true'; 
     }
-    else if (!hasEnoughFee && finalFee > 0n) {
-        submitBtn.innerHTML = '<i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC to Notarize';
-        submitBtn.classList.remove('btn-disabled', 'bg-blue-600', 'hover:bg-blue-700');
+    else if (needsFee && !hasEnoughFee) {
+        submitBtn.innerHTML = '<i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC to Start';
+        submitBtn.classList.remove('btn-disabled', 'bg-blue-600', 'bg-green-600', 'bg-amber-500');
         submitBtn.classList.add('bg-amber-500', 'hover:bg-amber-600');
         submitBtn.href = swapLink;
         submitBtn.target = '_blank';
+        submitBtn.dataset.delegate = 'false';
     }
     else {
-        submitBtn.classList.add('btn-disabled');
+        submitBtn.dataset.delegate = 'false';
+        updateNotaryButtonUI();
     }
 }
 
@@ -313,6 +355,7 @@ function updateNotaryUserStatus() {
  * (Sem alterações)
  */
 async function renderMyNotarizedDocuments() {
+    // ... (código original sem alterações) ...
     const docsEl = document.getElementById('my-notarized-documents');
     if (!docsEl) return;
 
@@ -337,29 +380,27 @@ async function renderMyNotarizedDocuments() {
             const tokenId = await safeContractCall(State.decentralizedNotaryContract, 'tokenOfOwnerByIndex', [State.userAddress, i]);
             const docURI = await safeContractCall(State.decentralizedNotaryContract, 'tokenURI', [tokenId]);
             
-            // O docURI agora é um JSON Base64. Precisamos decodificá-lo.
-            let gatewayLink = docURI; // Fallback
+            let gatewayLink = docURI; 
             let fileType = 'IPFS File', typeColor = 'text-blue-400';
             let isImage = false, isPdf = false, isAudio = false; 
+            let description = 'No description available.'; // Default
             
             if (docURI.startsWith('data:application/json;base64,')) {
                 try {
                     const jsonString = atob(docURI.substring(29));
                     const metadata = JSON.parse(jsonString);
-                    gatewayLink = metadata.image || docURI; // O link para a imagem está dentro do JSON
+                    gatewayLink = metadata.image || docURI;
+                    description = metadata.description || description; // Pega a descrição
                     
-                    // Otimização: Se o gatewayLink for o mesmo, não precisamos do HEAD
                 } catch (e) {
                     console.error("Failed to parse on-chain JSON URI:", e);
                 }
             }
 
-            // Converte IPFS para HTTP Gateway
             if (gatewayLink.startsWith('ipfs://')) {
                  gatewayLink = gatewayLink.replace('ipfs://', ipfsGateway);
             }
             
-            // Tenta detectar o tipo de arquivo (HEAD request)
             try {
                 const response = await fetch(gatewayLink, { method: 'HEAD' });
                 if (response.ok) {
@@ -400,6 +441,9 @@ async function renderMyNotarizedDocuments() {
                     <div class="p-4">
                         <p class="text-xs ${typeColor} font-bold uppercase">${fileType}</p>
                         <p class="text-base font-bold text-white truncate mt-1">Document #${tokenId}</p>
+                        
+                        <p class="text-xs text-zinc-400 mt-1 truncate" title="${description}">${description || 'No description'}</p>
+                        
                         <a href="${gatewayLink}" target="_blank" rel="noopener noreferrer" class="text-sm text-amber-400 hover:text-amber-300 mt-2 inline-block">
                             View on IPFS <i class="fa-solid fa-arrow-up-right-from-square text-xs ml-1"></i>
                         </a>
@@ -425,14 +469,13 @@ async function renderMyNotarizedDocuments() {
  * (Sem alterações)
  */
 async function handleFileUpload(file) {
+    // ... (código original sem alterações) ...
     const uploadPromptEl = document.getElementById('notary-upload-prompt');
     const uploadStatusEl = document.getElementById('notary-upload-status');
-    const uriInput = document.getElementById('notary-document-uri');
     const errorEl = document.getElementById('notary-lib-error');
     
     if (errorEl) errorEl.classList.add('hidden');
 
-    // Validação de Segurança
     const fileName = file.name || "";
     const fileExtension = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
     
@@ -452,67 +495,20 @@ async function handleFileUpload(file) {
          return;
     }
 
-    // Inicia UI de upload
     currentFileToUpload = file;
-    currentUploadedIPFS_URI = null;
+    currentUploadedIPFS_URI = null; 
+    
     uploadPromptEl.classList.add('hidden');
     uploadStatusEl.classList.remove('hidden');
     uploadStatusEl.innerHTML = `
-        <div class="loader inline-block"></div>
-        <p class="text-sm text-zinc-300 mt-3">Sending file to server...</p>
-        <p class="text-xs text-zinc-500">${file.name}</p>
+        <i class="fa-solid fa-file-circle-check text-5xl text-blue-400 mb-3"></i>
+        <p class="text-sm font-bold text-blue-400">File Selected</p>
+        <p class="text-xs text-zinc-400">${file.name}</p>
+        <p class="text-xs text-zinc-500 mt-1">Ready to be signed for upload.</p>
     `;
-    updateNotaryUserStatus();
 
-    try {
-        const formData = new FormData();
-        formData.append('file', file); 
-
-        const UPLOAD_URL = '/api/upload'; 
-
-        const response = await fetch(UPLOAD_URL, { 
-            method: 'POST',
-            body: formData,
-        });
-
-        if (!response.ok) {
-            const errorResult = await response.json().catch(() => ({ error: 'Unknown JSON error' }));
-            throw new Error(errorResult.details || errorResult.error || `Server failed: ${response.statusText} (${response.status})`);
-        }
-
-        const result = await response.json();
-        const { ipfsUri, cid } = result;
-
-        currentUploadedIPFS_URI = ipfsUri;
-        console.log("Upload via Vercel backend successful. CID:", cid);
-
-        uriInput.value = currentUploadedIPFS_URI;
-
-        uploadStatusEl.innerHTML = `
-            <i class="fa-solid fa-check-circle text-5xl text-green-400 mb-3"></i>
-            <p class="text-sm font-bold text-green-400">Upload Successful!</p>
-            <p class="text-xs text-zinc-500">${file.name}</p>
-            <p class="text-xs text-zinc-400 mt-1">URI: ${currentUploadedIPFS_URI.substring(0, 15)}...</p>
-        `;
-        showToast("File uploaded to IPFS successfully!", "success");
-
-    } catch (error) {
-        console.error("IPFS Upload Error (via Vercel backend):", error);
-        showToast(`Upload failed: ${error.message}`, "error");
-        
-        if (errorEl) {
-            const errorMessage = error.message.includes('Vercel Internal Server Error') 
-                               ? 'Vercel processing error. Check API logs.' 
-                               : error.message;
-            errorEl.innerText = errorMessage;
-            errorEl.classList.remove('hidden');
-        }
-
-        uploadPromptEl.classList.remove('hidden');
-        uploadStatusEl.classList.add('hidden');
-        currentFileToUpload = null;
-    }
-
+    notaryButtonState = 'file_ready';
+    updateNotaryButtonUI();
     updateNotaryUserStatus();
 }
 
@@ -522,6 +518,7 @@ async function handleFileUpload(file) {
  * (Sem alterações)
  */
 async function handleAddNFTToWallet(e) {
+    // ... (código original sem alterações) ...
     const btn = e.target.closest('.add-to-wallet-btn');
     if (!btn) return; 
 
@@ -573,11 +570,12 @@ function initNotaryListeners() {
     const submitBtn = document.getElementById('notarize-submit-btn');
     const errorEl = document.getElementById('notary-lib-error');
 
-    // --- NOVO: Listener do contador de caracteres ---
+    // --- Listener do contador de caracteres (Sem alterações) ---
     const descriptionInput = document.getElementById('notary-user-description');
     const descriptionCounter = document.getElementById('notary-description-counter');
     
     if (descriptionInput && descriptionCounter) {
+        // ... (código original sem alterações) ...
         descriptionInput.addEventListener('input', () => {
             const length = descriptionInput.value.length;
             descriptionCounter.innerText = `${length} / 256`;
@@ -590,48 +588,13 @@ function initNotaryListeners() {
             }
         });
     }
+    
+    // --- REMOVIDO: O listener da 'notary-main-box' (agora é tratado por <label>) ---
 
     if (fileInput) {
-        // Verifica o saldo no 'click' ANTES de abrir o seletor de arquivos
-        fileInput.addEventListener('click', (e) => {
-            if (errorEl) errorEl.classList.add('hidden'); 
-
-            if (!State.isConnected) {
-                showToast("Please connect your wallet first.", "error");
-                if (errorEl) { errorEl.innerText = "Please connect your wallet first."; errorEl.classList.remove('hidden'); }
-                e.preventDefault(); 
-                return;
-            }
-
-            const baseFee = State.notaryFee || 0n;
-            const boosterBips = State.userBoosterBips || 0n;
-            let finalFee = baseFee;
-            if (boosterBips > 0n && baseFee > 0n) {
-                finalFee = baseFee - ((baseFee * boosterBips) / 10000n);
-            }
-            const userBalance = State.currentUserBalance || 0n;
-            
-            if (finalFee > 0n && userBalance < finalFee) {
-                const swapLink = addresses.swapLink || '#';
-                const msg = `Insufficient $BKC balance. You need ${formatBigNumber(finalFee)} $BKC.`;
-                showToast(msg, "error");
-                
-                if (errorEl) {
-                    errorEl.innerHTML = `
-                        ${msg} 
-                        <a href="${swapLink}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline ml-1">
-                            Buy $BKC Here <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
-                        </a>
-                    `;
-                    errorEl.classList.remove('hidden');
-                }
-                e.preventDefault(); 
-                return;
-            }
-        });
-
-        // O 'change' só será disparado se o 'click' for bem-sucedido
+        // O 'change' agora apenas chama o novo handleFileUpload
         fileInput.addEventListener('change', (e) => {
+            // ... (código original sem alterações) ...
             if (!e.target.files || e.target.files.length === 0) {
                 return; 
             }
@@ -645,6 +608,8 @@ function initNotaryListeners() {
                  if(statusEl) { statusEl.classList.add('hidden'); statusEl.innerHTML = ''; }
                  currentFileToUpload = null; currentUploadedIPFS_URI = null;
                  if(errorEl) { errorEl.innerText = error.message; errorEl.classList.remove('hidden'); }
+                 notaryButtonState = 'initial';
+                 updateNotaryButtonUI();
                  updateNotaryUserStatus();
             }
         });
@@ -652,7 +617,10 @@ function initNotaryListeners() {
     
     // Listener do botão de Delegar
     document.addEventListener('click', (e) => {
-        const delegateBtn = e.target.closest('#delegate-now-btn');
+        // ... (código original sem alterações) ...
+        const delegateBtn = e.target.closest('#delegate-now-btn') || 
+                            (e.target.closest('#notarize-submit-btn') && e.target.closest('#notarize-submit-btn').dataset.delegate === 'true');
+        
         if (delegateBtn) {
             e.preventDefault();
             document.querySelector('.sidebar-link[data-target="earn"]')?.click();
@@ -660,70 +628,139 @@ function initNotaryListeners() {
         }
     });
 
-    // Listener do botão de Notarizar (agora um <a>)
+    // --- Listener do Botão Principal (ALTERADO) ---
     if (submitBtn) {
         submitBtn.addEventListener('click', async (e) => {
-            if (submitBtn.classList.contains('btn-disabled')) {
-                e.preventDefault();
-                return;
-            }
-            if (submitBtn.href !== '#' && submitBtn.target === '_blank') {
-                return; // Deixa o link funcionar
-            }
-
             e.preventDefault();
-
-            if (!currentUploadedIPFS_URI) return showToast("Please upload a file first.", "error");
             
-            // --- NOVO: Lê a descrição e valida ---
-            const description = descriptionInput.value;
-            if (description.length > 256) {
-                showToast("Error: Description exceeds 256 characters.", "error");
-                descriptionInput.focus();
-                return;
+            if (submitBtn.classList.contains('btn-disabled')) return;
+            if (submitBtn.href !== '#' && submitBtn.target === '_blank') return;
+            if (submitBtn.dataset.delegate === 'true') return;
+
+            if (!State.isConnected || !State.provider) {
+                return showToast("Please connect your wallet first.", "error");
             }
-            // --- FIM DA VALIDAÇÃO ---
+            
+            const signer = await State.provider.getSigner();
+            const userAddress = State.userAddress;
 
-            const boosterId = State.userBoosterId || 0n; 
-
-            // --- NOVO: Passa a 'description' como segundo argumento ---
-            const success = await executeNotarizeDocument(
-                currentUploadedIPFS_URI,
-                description, // <-- NOVO
-                boosterId, 
-                submitBtn
-            );
-
-            if (success) {
-                // Limpa a UI imediatamente
-                currentFileToUpload = null;
-                currentUploadedIPFS_URI = null;
-                document.getElementById('notary-document-uri').value = '';
-                if(fileInput) fileInput.value = '';
+            // --- ESTADO 1: Ficheiro pronto, precisa de Assinatura ---
+            if (notaryButtonState === 'file_ready') {
                 
-                // --- NOVO: Limpa o campo de descrição ---
-                if(descriptionInput) descriptionInput.value = '';
-                if(descriptionCounter) {
-                    descriptionCounter.innerText = '0 / 256';
-                    descriptionCounter.classList.remove('text-red-400');
-                    descriptionCounter.classList.add('text-zinc-500');
+                const baseFee = State.notaryFee || 0n;
+                const boosterBips = State.userBoosterBips || 0n;
+                let finalFee = baseFee;
+                if (boosterBips > 0n && baseFee > 0n) {
+                    finalFee = baseFee - ((baseFee * boosterBips) / 10000n);
+                }
+                const userBalance = State.currentUserBalance || 0n;
+                if (finalFee > 0n && userBalance < finalFee) {
+                     return showToast(`Insufficient $BKC balance. You need ${formatBigNumber(finalFee)} $BKC.`, "error");
                 }
 
-                document.getElementById('notary-upload-prompt').classList.remove('hidden');
-                const statusEl = document.getElementById('notary-upload-status');
-                statusEl.classList.add('hidden');
-                statusEl.innerHTML = '';
+                // --- ALTERAÇÃO: Mensagem de Assinatura (Copy) ---
+                const message = "I am signing to authenticate my file for notarization on Backchain.";
+                
+                try {
+                    notaryButtonState = 'signing';
+                    updateNotaryButtonUI();
 
-                showToast("Transaction Confirmed! Refreshing list...", "info");
+                    const signature = await signer.signMessage(message);
 
-                setTimeout(async () => {
-                    console.log("Re-fetching notarized documents after 3s delay...");
-                    
-                    await renderMyNotarizedDocuments();
+                    // --- ESTADO 2: Assinado, precisa de Upload ---
+                    notaryButtonState = 'uploading';
+                    updateNotaryButtonUI();
+
+                    const formData = new FormData();
+                    formData.append('file', currentFileToUpload);
+                    formData.append('signature', signature); 
+                    formData.append('address', userAddress); 
+
+                    const response = await fetch('/api/upload', { 
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        const errorResult = await response.json().catch(() => ({ error: 'Unknown server error' }));
+                        throw new Error(errorResult.details || errorResult.error || `Server failed: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    currentUploadedIPFS_URI = result.ipfsUri; 
+                    document.getElementById('notary-document-uri').value = currentUploadedIPFS_URI;
+
+                    // --- ESTADO 3: Upload feito, pronto para Notarizar ---
+                    notaryButtonState = 'upload_ready';
+                    updateNotaryButtonUI();
                     updateNotaryUserStatus();
+                    showToast("Upload Successful! Ready to Notarize.", "success");
+
+                } catch (error) {
+                    console.error("Sign or Upload Error:", error);
+                    showToast(`Error: ${error.message}`, "error");
+                    notaryButtonState = 'file_ready'; 
+                    updateNotaryButtonUI();
+                }
+                return; 
+            }
+
+            // --- ESTADO 4: Pronto para Notarizar ---
+            if (notaryButtonState === 'upload_ready') {
+                // ... (código original sem alterações) ...
+                if (!currentUploadedIPFS_URI) return showToast("Error: File URI is missing.", "error");
+
+                const description = descriptionInput.value;
+                if (description.length > 256) {
+                    showToast("Error: Description exceeds 256 characters.", "error");
+                    descriptionInput.focus();
+                    return;
+                }
+
+                notaryButtonState = 'notarizing';
+                updateNotaryButtonUI();
+
+                const boosterId = State.userBoosterId || 0n; 
+                
+                const success = await executeNotarizeDocument(
+                    currentUploadedIPFS_URI,
+                    description,
+                    boosterId, 
+                    submitBtn 
+                );
+
+                if (success) {
+                    currentFileToUpload = null;
+                    currentUploadedIPFS_URI = null;
+                    notaryButtonState = 'initial';
+                    document.getElementById('notary-document-uri').value = '';
+                    if(fileInput) fileInput.value = '';
+                    if(descriptionInput) descriptionInput.value = '';
+                    if(descriptionCounter) {
+                        descriptionCounter.innerText = '0 / 256';
+                        descriptionCounter.classList.remove('text-red-400');
+                        descriptionCounter.classList.add('text-zinc-500');
+                    }
+
+                    document.getElementById('notary-upload-prompt').classList.remove('hidden');
+                    const statusEl = document.getElementById('notary-upload-status');
+                    statusEl.classList.add('hidden');
+                    statusEl.innerHTML = '';
                     
-                    showToast("Document list refreshed!", "success");
-                }, 3000); // 3 segundos de atraso
+                    updateNotaryButtonUI(); 
+
+                    showToast("Transaction Confirmed! Refreshing list...", "info");
+
+                    setTimeout(async () => {
+                        await renderMyNotarizedDocuments();
+                        updateNotaryUserStatus();
+                        showToast("Document list refreshed!", "success");
+                    }, 3000);
+                } else {
+                    notaryButtonState = 'upload_ready';
+                    updateNotaryButtonUI();
+                }
+                return;
             }
         });
     }
@@ -739,6 +776,7 @@ function initNotaryListeners() {
 // --- Objeto da Página ---
 export const NotaryPage = {
     async render() {
+        // ... (código original sem alterações) ...
         renderNotaryPageLayout();
 
         const libErrorEl = document.getElementById('notary-lib-error');
@@ -768,6 +806,7 @@ export const NotaryPage = {
     },
 
     async update(isConnected) {
+        // ... (código original sem alterações) ...
         console.log("Updating Notary Page, isConnected:", isConnected);
 
         const loadedPublicData = await loadNotaryPublicData();
@@ -783,18 +822,18 @@ export const NotaryPage = {
              const userStatusEl = document.getElementById('notary-user-status');
              const docsEl = document.getElementById('my-notarized-documents');
              
-             if(userStatusEl) renderNoData(userStatusEl, "Connect your wallet to see your status.");
+             if(userStatusEl) userStatusEl.innerHTML = `<div class="text-center p-4 text-zinc-500 italic">Please connect your wallet to see your status.</div>`;
              if(docsEl) renderNoData(docsEl, "Connect your wallet to view your documents.");
 
+             notaryButtonState = 'initial';
              updateNotaryUserStatus(); 
 
              currentFileToUpload = null; currentUploadedIPFS_URI = null;
               const uploadPromptEl = document.getElementById('notary-upload-prompt');
               const uploadStatusEl = document.getElementById('notary-upload-status');
               if(uploadPromptEl) uploadPromptEl.classList.remove('hidden');
-              if(uploadStatusEl) { uploadStatusEl.classList.add('hidden'); statusEl.innerHTML = ''; }
+              if(uploadStatusEl) { uploadStatusEl.classList.add('hidden'); uploadStatusEl.innerHTML = ''; }
               
-              // --- NOVO: Limpa a descrição ao desconectar ---
               const descriptionInput = document.getElementById('notary-user-description');
               const descriptionCounter = document.getElementById('notary-description-counter');
               if(descriptionInput) descriptionInput.value = '';

@@ -51,7 +51,7 @@ export const FAUCET_AMOUNT_WEI = 100n * 10n**18n;
 export const sepoliaRpcUrl = "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz";
 // =================================================================
 
-export const ipfsGateway = "https://ipfs.io/ipfs/";
+export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/";
 export const sepoliaChainId = 11155111n;
 
 export const boosterTiers = [

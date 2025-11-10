@@ -7,7 +7,7 @@ import { DOMElements } from '../dom-elements.js';
 import { loadUserData, loadMyBoostersFromAPI, safeContractCall } from '../modules/data.js';
 import { executeBuyBooster, executeSellBooster } from '../modules/transactions.js';
 import { formatBigNumber, renderLoading, renderError } from '../utils.js';
-import { boosterTiers } from '../config.js'; // This config file is crucial
+import { boosterTiers, addresses } from '../config.js'; // [MODIFICADO] Importa 'addresses'
 
 // --- Page State (Refactored for Swap Box Layout) ---
 const TradeState = {
@@ -20,6 +20,10 @@ const TradeState = {
     netSellPrice: 0n, // Sell price after tax
     userBalanceOfSelectedNFT: 0,
     firstAvailableTokenId: null, // The first tokenId user owns of this type
+    
+    // [MODIFICADO] Adicionado para rastrear o melhor booster
+    bestBoosterTokenId: 0n, // O ID do melhor booster do usuário
+    bestBoosterBips: 0n, // O valor (BIPS) desse booster
     
     isDataLoading: false,
     isModalOpen: false, // For pool selection
@@ -116,13 +120,23 @@ async function renderSwapPanels() {
             isSelector: true
         });
 
+        // [MODIFICADO] O 'details' agora mostra o preço bruto vs. o desconto do booster
+        let sellDetails = null;
+        if (TradeState.sellPrice > 0n) {
+            const gross = formatBigNumber(TradeState.sellPrice).toFixed(2);
+            if (TradeState.bestBoosterBips > 0n) {
+                sellDetails = `(Gross: ${gross} - ${TradeState.bestBoosterBips / 100}% Booster Discount)`;
+            } else {
+                sellDetails = `(Gross: ${gross} - 10% Base Tax)`;
+            }
+        }
+
         toPanelHtml = renderPanel({
             label: "You Receive (Net)",
             tokenSymbol: "BKC",
             tokenImg: bkcLogoPath, // <-- Caminho ajustado
             amount: TradeState.isDataLoading ? "..." : (TradeState.netSellPrice > 0n ? formatBigNumber(TradeState.netSellPrice).toFixed(2) : "0.00"),
-            // Show gross vs net details
-            details: TradeState.sellPrice > 0n ? `(Gross: ${formatBigNumber(TradeState.sellPrice).toFixed(2)})` : null
+            details: sellDetails // Mostra o novo 'details'
         });
     }
 
@@ -226,15 +240,24 @@ async function loadDataForSelectedPool() {
     try {
         const boostBips = TradeState.selectedPoolBoostBips;
 
-        // 1. Load user's boosters (needed for sell-side)
+        // 1. Load user's boosters (needed for sell-side AND discount)
         await loadMyBoostersFromAPI();
 
-        // 2. Filter for the selected tier
+        // 2. Filter for the selected tier (NFTs to SELL)
         const myTierBoosters = State.myBoosters.filter(b => b.boostBips === boostBips);
         TradeState.userBalanceOfSelectedNFT = myTierBoosters.length;
         TradeState.firstAvailableTokenId = myTierBoosters.length > 0 ? myTierBoosters[0].tokenId : null;
 
-        // 3. Get prices from the contract
+        // 3. [MODIFICADO] Encontra o MELHOR booster do usuário para o DESCONTO
+        const bestBooster = State.myBoosters.reduce((best, current) => {
+            return current.boostBips > best.boostBips ? current : best;
+        }, { boostBips: 0n, tokenId: 0n }); // Default se não tiver boosters
+        
+        TradeState.bestBoosterTokenId = bestBooster.tokenId;
+        TradeState.bestBoosterBips = bestBooster.boostBips;
+
+
+        // 4. Get prices from the contract
         const [buyPrice, sellPrice] = await Promise.all([
             safeContractCall(State.nftBondingCurveContract, 'getBuyPrice', [boostBips], ethers.MaxUint256),
             safeContractCall(State.nftBondingCurveContract, 'getSellPrice', [boostBips], 0n)
@@ -243,10 +266,25 @@ async function loadDataForSelectedPool() {
         TradeState.buyPrice = (buyPrice === ethers.MaxUint256) ? 0n : buyPrice;
         TradeState.sellPrice = sellPrice;
 
-        // 4. Calculate Net Sell Price (assuming 10% tax for UI)
-        const TAX_BIPS = 1000n; // 10%
-        const taxAmount = (sellPrice * TAX_BIPS) / 10000n;
+        // 5. [MODIFICADO] Calcula o Net Sell Price LENDO as taxas e descontos do CONTRATO
+        // Chaves do '7_configure_fees.ts'
+        const TAX_BIPS_KEY = "NFT_POOL_TAX_BIPS";
+        
+        // Pega a taxa base (1000) e o desconto do hub
+        const [baseTaxBips, discountBips] = await Promise.all([
+            safeContractCall(State.ecosystemManagerContract, 'getFee', [TAX_BIPS_KEY], 1000n),
+            safeContractCall(State.ecosystemManagerContract, 'getBoosterDiscount', [TradeState.bestBoosterBips], 0n)
+        ]);
+        
+        // Calcula a taxa final (Taxa Base - Desconto)
+        const finalTaxBips = (baseTaxBips > discountBips) ? (baseTaxBips - discountBips) : 0n;
+        const taxAmount = (sellPrice * finalTaxBips) / 10000n;
         TradeState.netSellPrice = sellPrice - taxAmount;
+        
+        // [ANTES] Estava hardcodado assim:
+        // const TAX_BIPS = 1000n; // 10%
+        // const taxAmount = (sellPrice * TAX_BIPS) / 10000n;
+        // TradeState.netSellPrice = sellPrice - taxAmount;
 
     } catch (err) {
         console.error("Error loading pool data:", err);
@@ -321,18 +359,21 @@ function setupStorePageListeners() {
             e.preventDefault();
             
             if (TradeState.tradeDirection === 'buy') {
+                // [MODIFICADO] Passa o ID do booster para a compra (para o pStake check)
                 const success = await executeBuyBooster(
                     TradeState.selectedPoolBoostBips, 
-                    TradeState.buyPrice, 
+                    TradeState.buyPrice,
+                    TradeState.bestBoosterTokenId, // Passa o booster para o pStake
                     executeBtn
                 );
                 if (success) {
                     await loadDataForSelectedPool(); // Reload data
                 }
             } else {
-                // Selling
+                // [MODIFICADO] Passa o ID do booster para o DESCONTO
                 const success = await executeSellBooster(
-                    TradeState.firstAvailableTokenId, 
+                    TradeState.firstAvailableTokenId, // O NFT que você está vendendo
+                    TradeState.bestBoosterTokenId,  // O NFT que você está usando para o desconto
                     executeBtn
                 );
                 if (success) {
@@ -353,6 +394,13 @@ if (!DOMElements.store._listenersInitialized) {
 // Export the main render function
 export const StorePage = {
     async render(isUpdate = false) {
+        // [MODIFICADO] Precisamos garantir que o hub (EcosystemManager) esteja carregado
+        // para ler as taxas.
+        if (!State.ecosystemManagerContract) {
+             const { initEcosystemManager } = await import('../modules/contracts.js');
+             await initEcosystemManager(State.provider);
+        }
+        
         await renderSwapBoxInterface();
         
         // Load data for the default or previously selected pool

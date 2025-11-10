@@ -4,7 +4,8 @@ const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { showToast, closeModal } from '../ui-feedback.js';
-import { addresses, FAUCET_AMOUNT_WEI } from '../config.js';
+// [CORRIGIDO] Importa 'addresses' do config.js (que deve carregar o deployment-addresses.json)
+import { addresses, FAUCET_AMOUNT_WEI } from '../config.js'; 
 import { formatBigNumber } from '../utils.js';
 import { loadUserData, getHighestBoosterBoostFromAPI, safeContractCall } from './data.js';
 
@@ -64,6 +65,11 @@ async function executeTransaction(txPromise, successMessage, failMessage, btnEle
         if (reason.includes("Notary: Insufficient pStake")) {
              reason = "You don't meet the minimum pStake requirement.";
         }
+        // [MODIFICADO] Adiciona tratamento de erro para o pStake do NFT Pool e outros
+        if (reason.includes("Ecosystem: Insufficient pStake")) {
+             reason = "Insufficient pStake for this service. Delegate more BKC.";
+        }
+
 
         showToast(`${failMessage}: ${reason}`, "error");
         return false;
@@ -90,6 +96,12 @@ async function executeTransaction(txPromise, successMessage, failMessage, btnEle
  */
 async function ensureApproval(spenderAddress, requiredAmount, btnElement, purpose) {
     if (!State.signer) return false;
+    
+    // [CORRIGIDO] Validação do spenderAddress
+    if (!spenderAddress || spenderAddress === '0x...[POR FAVOR, ATUALIZE ESTE ENDEREÇO APÓS CRIAR O POOL NA DEX]...') {
+        showToast(`Error: Invalid contract address for ${purpose}.`, "error");
+        return false;
+    }
 
     // Calculate amount with tolerance to avoid failures from small price fluctuations
     const toleratedAmount = (requiredAmount * BigInt(BIPS_DENOMINATOR + APPROVAL_TOLERANCE_BIPS)) / BigInt(BIPS_DENOMINATOR);
@@ -134,10 +146,15 @@ async function ensureApproval(spenderAddress, requiredAmount, btnElement, purpos
 export async function executeDelegation(validatorAddr, totalAmount, durationSeconds, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     
+    // [MODIFICADO] Pega o melhor booster para o claim automático
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
+    const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
+    
     const approved = await ensureApproval(addresses.delegationManager, totalAmount, btnElement, "Delegation");
     if (!approved) return false;
     
-    const delegateTxPromise = State.delegationManagerContract.delegate(validatorAddr, totalAmount, BigInt(durationSeconds));
+    // [MODIFICADO] Passa o boosterIdToSend
+    const delegateTxPromise = State.delegationManagerContract.delegate(validatorAddr, totalAmount, BigInt(durationSeconds), boosterIdToSend);
     const success = await executeTransaction(delegateTxPromise, 'Delegation successful!', 'Error delegating tokens', btnElement);
     
     if (success) closeModal();
@@ -146,9 +163,14 @@ export async function executeDelegation(validatorAddr, totalAmount, durationSeco
 
 export async function executeUnstake(index) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
+
+    // [MODIFICADO] Pega o melhor booster para o claim automático
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
+    const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
     
     const btnElement = document.querySelector(`.unstake-btn[data-index='${index}']`)
-    const unstakeTxPromise = State.delegationManagerContract.unstake(index);
+    // [MODIFICADO] Passa o boosterIdToSend
+    const unstakeTxPromise = State.delegationManagerContract.unstake(index, boosterIdToSend);
     
     return await executeTransaction(
         unstakeTxPromise,
@@ -261,9 +283,15 @@ export async function executeUniversalClaim(stakingRewards, minerRewards, btnEle
     
     try {
         let txHashes = [];
+
+        // [MODIFICADO] Pega o booster ANTES de fazer o claim
+        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
+        const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
+
         if (stakingRewards > 0n) {
             showToast("Claiming staking rewards...", "info");
-            const tx = await State.delegationManagerContract.claimDelegatorReward();
+            // [MODIFICADO] Passa o boosterIdToSend para a função de claim
+            const tx = await State.delegationManagerContract.claimDelegatorReward(boosterIdToSend);
             const receipt = await tx.wait();
             txHashes.push(receipt.hash);
         }
@@ -295,9 +323,15 @@ export async function executeUniversalClaim(stakingRewards, minerRewards, btnEle
 }
 
 
-// --- BOOSTER STORE ---
+// ####################################################################
+// ###               INÍCIO DAS MODIFICAÇÕES - BOOSTER STORE           ###
+// ####################################################################
 
-export async function executeBuyBooster(boostBips, price, btnElement) {
+/**
+ * [MODIFICADO] Executa a COMPRA de um Booster NFT (BKC -> NFT)
+ * Agora aceita um 'boosterTokenId' para a verificação de pStake
+ */
+export async function executeBuyBooster(boostBips, price, boosterTokenId, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     
     const originalText = btnElement ? btnElement.innerHTML : 'Buy';
@@ -309,28 +343,28 @@ export async function executeBuyBooster(boostBips, price, btnElement) {
     try {
         const priceWei = BigInt(price);
         
-        // Ensure approval for the purchase amount
-        const approved = await ensureApproval(addresses.nftBondingCurve, priceWei, btnElement, "NFT Purchase");
-        if (!approved) return false;
+        // [CORRIGIDO] Usa a chave correta: nftLiquidityPool
+        const approved = await ensureApproval(addresses.nftLiquidityPool, priceWei, btnElement, "NFT Purchase");
+        if (!approved) {
+             // ensureApproval já mostra o toast de erro, apenas resetamos o botão
+             if(btnElement) btnElement.innerHTML = originalText;
+             return false;
+        }
 
         if (btnElement) btnElement.innerHTML = '<div class="loader inline-block"></div> Buying...';
 
-        // Get booster ID for pStake check (if any)
-        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
+        // O boosterTokenId já foi buscado pelo StorePage.js, apenas garantimos que seja um BigInt
         const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
 
         showToast("Submitting buy transaction...", "info");
 
-        // =================================================================
-        // --- CORRECTED FUNCTION CALL ---
-        // Call the new `buyNextAvailableNFT` function which takes 2 arguments:
+        // [MODIFICADO] Chama buyNextAvailableNFT com os 2 argumentos corretos:
         // 1. boostBips
-        // 2. boosterTokenId (for pStake check)
+        // 2. boosterIdToSend (para verificação de pStake)
         const buyTxPromise = State.nftBondingCurveContract.buyNextAvailableNFT(
             boostBips,
             boosterIdToSend 
         );
-        // =================================================================
 
         const success = await executeTransaction(buyTxPromise, 'Purchase successful!', 'Error during purchase', btnElement);
 
@@ -354,16 +388,25 @@ export async function executeBuyBooster(boostBips, price, btnElement) {
     }
 }
 
-export async function executeSellBooster(tokenId, btnElement) {
+/**
+ * [MODIFICADO] Executa a VENDA de um Booster NFT (NFT -> BKC)
+ * Agora aceita um 'boosterTokenId' para o DESCONTO NA TAXA
+ */
+export async function executeSellBooster(tokenIdToSell, boosterTokenIdForDiscount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     
     const originalText = btnElement ? btnElement.innerHTML : 'Sell NFT';
     let tokenIdBigInt;
     
     try {
-        tokenIdBigInt = BigInt(tokenId);
+        tokenIdBigInt = BigInt(tokenIdToSell);
     } catch {
         showToast("Invalid Token ID provided.", "error");
+        return false;
+    }
+
+    if (!tokenIdBigInt || tokenIdBigInt <= 0n) {
+        showToast("No NFT of this type found in your wallet to sell.", "error");
         return false;
     }
 
@@ -373,21 +416,33 @@ export async function executeSellBooster(tokenId, btnElement) {
     }
 
     try {
-        // 1. Approve the Pool contract to take the NFT
-        showToast(`Approving transfer of NFT #${tokenId}...`, "info");
-        const approveTx = await State.rewardBoosterContract.approve(addresses.nftBondingCurve, tokenIdBigInt);
+        // 1. Aprova o Pool para pegar o NFT que queremos vender
+        showToast(`Approving transfer of NFT #${tokenIdToSell}...`, "info");
+        
+        // [MODIFICADO] Usa safeContractCall para melhor tratamento de erro
+        // [CORRIGIDO] Usa a chave correta: nftLiquidityPool
+        const approveTx = await safeContractCall(
+            State.rewardBoosterContract,
+            'approve',
+            [addresses.nftLiquidityPool, tokenIdBigInt],
+            null
+        );
+        if (!approveTx) throw new Error("Approval transaction failed to send.");
         await approveTx.wait();
+        
         showToast("NFT approved successfully!", "success");
 
         if (btnElement) btnElement.innerHTML = '<div class="loader inline-block"></div> Selling...';
         showToast("Submitting sell transaction...", "info");
 
-        // 2. Get booster ID for pStake check and potential tax discount
-        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
-        const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
+        // 2. Garante que o ID do booster para desconto seja um BigInt
+        const boosterIdToSend = boosterTokenIdForDiscount ? BigInt(boosterTokenIdForDiscount) : 0n;
 
-        // 3. Call sellNFT, passing both the token to sell and the booster to use for discounts
-        const sellTxPromise = State.nftBondingCurveContract.sellNFT(tokenIdBigInt, boosterIdToSend);
+        // 3. Chama sellNFT, passando ambos os argumentos
+        const sellTxPromise = State.nftBondingCurveContract.sellNFT(
+            tokenIdBigInt, // O NFT que estamos vendendo
+            boosterIdToSend  // O NFT que estamos usando para o desconto
+        );
 
         const success = await executeTransaction(sellTxPromise, 'Sale successful!', 'Error during sale', btnElement);
         return success;
@@ -407,6 +462,10 @@ export async function executeSellBooster(tokenId, btnElement) {
         }
     }
 }
+
+// ####################################################################
+// ###               FIM DAS MODIFICAÇÕES - BOOSTER STORE            ###
+// ####################################################################
 
 
 // --- FAUCET CLAIM ---

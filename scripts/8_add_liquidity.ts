@@ -1,19 +1,19 @@
 // scripts/8_add_liquidity.ts
-// IMPORTANTE: Este script deve ser executado *APÓS* o término da pré-venda.
+// IMPORTANT: This script must be run *AFTER* the presale has ended.
 //
-// LÓGICA: Cunha NFTs "não vendidos" (95% - Vendidos) e adiciona-os ao AMM de NFT.
+// LOGIC: Mints "unsold" NFTs (95% - Sold) and adds them to the NFT AMM.
 
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { LogDescription, ContractTransactionReceipt, ethers, Log } from "ethers";
 import fs from "fs";
 import path from "path";
 
-// --- REMOVIDA A CORREÇÃO ESM (fileURLToPath) ---
+// --- ESM FIX REMOVED ---
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Transaction wrapper with retries (função completa)
+// Transaction wrapper with retries (full function)
 async function sendTransactionWithRetries(
   txFunction: () => Promise<any>,
   retries = 3
@@ -21,10 +21,10 @@ async function sendTransactionWithRetries(
   for (let i = 0; i < retries; i++) {
     try {
       const tx = await txFunction();
-      console.log(`   -> Transação enviada... aguardando confirmação...`);
+      console.log(`   -> Transaction sent... awaiting confirmation...`);
       const receipt = await tx.wait();
       if (!receipt) {
-        throw new Error("Transação enviada, mas um recibo nulo foi retornado.");
+        throw new Error("Transaction sent but a null receipt was returned.");
       }
       await sleep(1500);
       return receipt;
@@ -37,7 +37,7 @@ async function sendTransactionWithRetries(
       ) {
         const delay = (i + 1) * 5000;
         console.warn(
-          `   ⚠️ Problema de Nonce detectado. Tentando novamente em ${delay / 1000} segundos...`
+          `   ⚠️ Nonce issue detected. Retrying in ${delay / 1000} seconds...`
         );
         await sleep(delay);
       } else {
@@ -45,17 +45,17 @@ async function sendTransactionWithRetries(
       }
     }
   }
-  throw new Error("Transação falhou após múltiplas tentativas.");
+  throw new Error("Transaction failed after multiple retries.");
 }
 
 // ######################################################################
-// ###               CONFIGURE MANUALMENTE AQUI (PÓS-VENDA)              ###
+// ###               CONFIGURE MANUALLY HERE (POST-SALE)              ###
 // ######################################################################
 
-// Sua nova regra: 2 Milhões de BKC por piscina AMM
+// Your new rule: 2 Million BKC per AMM pool
 const LIQUIDITY_BKC_AMOUNT_PER_POOL = ethers.parseEther("2000000"); // 2,000,000 BKC
 
-// Definição dos 7 Tiers (deve corresponder ao 6_setup_sale.ts)
+// Definition of the 7 Tiers (must match 6_setup_sale.ts)
 const ALL_TIERS = [
   { tierId: 0, name: "Diamond", boostBips: 5000, metadata: "diamond_booster.json" },
   { tierId: 1, name: "Platinum", boostBips: 4000, metadata: "platinum_booster.json" },
@@ -66,30 +66,30 @@ const ALL_TIERS = [
   { tierId: 6, name: "Crystal", boostBips: 100, metadata: "crystal_booster.json" },
 ];
 
-// Max NFTs para processar por transação
+// Max NFTs to process per transaction
 const CHUNK_SIZE = 150;
 const CHUNK_SIZE_BIGINT = BigInt(CHUNK_SIZE);
 
 // ######################################################################
-// ###               NÃO EDITE ABAIXO DESTA LINHA                     ###
+// ###               DO NOT EDIT BELOW THIS LINE                     ###
 // ######################################################################
 
-// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
+// THE MAIN FUNCTION IS NOW EXPORTED
 export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
 
-  // --- Carregar Endereços ---
-  // __dirname agora funciona nativamente (CommonJS)
+  // --- Load Addresses ---
+  // __dirname now works natively (CommonJS)
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   if (!fs.existsSync(addressesFilePath)) {
-    console.error("❌ Erro: 'deployment-addresses.json' não encontrado. O deploy master (passos 1-7) foi executado?");
+    console.error("❌ Error: 'deployment-addresses.json' not found. Has the master deploy (steps 1-7) been run?");
     throw new Error("Missing deployment-addresses.json");
   }
   const addresses: { [key: string]: string } = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
 
 
-  // --- Carregar Contratos ---
+  // --- Load Contracts ---
   const hub = await ethers.getContractAt(
     "EcosystemManager",
     addresses.ecosystemManager,
@@ -97,12 +97,12 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   );
   const treasuryWallet = await hub.getTreasuryAddress();
 
-  console.log("🚀 (Passo 8/8) Iniciando processo PÓS-VENDA de liquidez...");
-  console.log(`Usando a conta: ${deployer.address}`);
-  console.log(`Carteira da Tesouraria (do Hub): ${treasuryWallet}`);
+  console.log("🚀 (Step 8/8) Starting POST-SALE liquidity process...");
+  console.log(`Using account: ${deployer.address}`);
+  console.log(`Treasury Wallet (from Hub): ${treasuryWallet}`);
   console.log("----------------------------------------------------");
 
-  // --- Obter Instâncias dos Contratos ---
+  // --- Get Contract Instances ---
   const rewardBoosterNFT = await ethers.getContractAt(
     "RewardBoosterNFT",
     addresses.rewardBoosterNFT,
@@ -120,86 +120,93 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     deployer
   );
 
-  console.log("\n--- Passo 1: Adicionando Liquidez Inicial às Piscinas AMM (usando não vendidos) ---");
+  console.log("\n--- Step 1: Adding Initial Liquidity to AMM Pools (using unsold) ---");
 
-  // Aprovar $BKC uma vez para todas as piscinas
+  // Approve $BKC once for all pools
   const bkcPoolCount = ALL_TIERS.length;
   const totalBkcApproval = LIQUIDITY_BKC_AMOUNT_PER_POOL * BigInt(bkcPoolCount);
 
   console.log(
-    `\n1. Aprovando NFTLiquidityPool para gastar ${ethers.formatEther(totalBkcApproval)} $BKC...`
+    `\n1. Approving NFTLiquidityPool to spend ${ethers.formatEther(totalBkcApproval)} $BKC...`
   );
   await sendTransactionWithRetries(() =>
     bkcToken.approve(addresses.nftLiquidityPool, totalBkcApproval)
   );
-  console.log("✅ Aprovação do BKC bem-sucedida.");
+  console.log("✅ BKC approval successful.");
 
-  // Aprovar todos os NFTs para o Pool
+  // Approve all NFTs for the Pool
   await sendTransactionWithRetries(() =>
     rewardBoosterNFT.setApprovalForAll(addresses.nftLiquidityPool, true)
   );
-  console.log("✅ Aprovação de NFT para o Pool bem-sucedida.");
+  console.log("✅ NFT approval for Pool successful.");
 
 
-  // --- A LÓGICA INTELIGENTE COMEÇA AQUI ---
+  // --- THE SMART LOGIC STARTS HERE ---
   for (const tier of ALL_TIERS) {
-    console.log(`\n--- Processando liquidez da piscina para: ${tier.name} ---`);
+    console.log(`\n--- Processing pool liquidity for: ${tier.name} ---`);
 
-    // 2a. Contabilização: Ler o contrato PublicSale
+    // 2a. Accounting: Read the PublicSale contract
     const tierInfo = await publicSale.tiers(tier.tierId);
-    const maxSupply = tierInfo.maxSupply; // Suprimento Total (100%)
-    const mintedCount = tierInfo.mintedCount; // Quantos foram VENDIDOS (pelo público)
+    const maxSupply = tierInfo.maxSupply; // Total Supply (100%)
+    const mintedCount = tierInfo.mintedCount; // How many were SOLD (by public)
     
-    // 2b. Calcular corretamente os não vendidos (95% - Vendidos)
-    const saleAllocation = (maxSupply * 95n) / 100n; // Os 95% que estavam à venda
+    // 2b. Correctly calculate unsold (95% - Sold)
+    const saleAllocation = (maxSupply * 95n) / 100n; // The 95% that were for sale
     let unsoldAmount = 0n;
 
     if (mintedCount >= saleAllocation) {
         unsoldAmount = 0n;
     } else {
-        unsoldAmount = saleAllocation - mintedCount; // O que sobrou dos 95%
+        unsoldAmount = saleAllocation - mintedCount; // What's left from the 95%
     }
     
-    console.log(`   Estatísticas: Suprimento Máx.=${maxSupply}, Alocação Venda (95%)=${saleAllocation}`);
-    console.log(`   Vendido (público)=${mintedCount}, Não Vendido (para liquidez)=${unsoldAmount}`);
+    console.log(`   Stats: Max Supply=${maxSupply}, Sale Allocation (95%)=${saleAllocation}`);
+    console.log(`   Sold (public)=${mintedCount}, Unsold (for liquidity)=${unsoldAmount}`);
 
-    // 2c. Verificar o estado da piscina de liquidez
-    const poolInfo = await nftLiquidityPool.pools(tier.boostBips);
+    // 2c. Check the liquidity pool state
+    // =================================================================
+    // ### FIX ###
+    // We must call the new `getPoolInfo` function
+    // instead of the old public getter `pools`.
+    const poolInfo = await nftLiquidityPool.getPoolInfo(tier.boostBips);
+    // poolInfo is an object with named properties: [tokenBalance, nftCount, k, isInitialized]
+
     if (poolInfo.isInitialized && poolInfo.nftCount > 0) {
-      console.log(`   ⚠️ AVISO: Piscina para ${tier.name} já tem liquidez. Pulando.`);
+    // =================================================================
+      console.log(`   ⚠️ WARNING: Pool for ${tier.name} already has liquidity. Skipping.`);
       continue;
     }
     if (!poolInfo.isInitialized) {
-      console.error(`   ❌ ERRO: Piscina para ${tier.name} (boostBips: ${tier.boostBips}) não foi criada. Execute '5_create_pools.ts' primeiro.`);
+      console.error(`   ❌ ERROR: Pool for ${tier.name} (boostBips: ${tier.boostBips}) was not created. Run '5_create_pools.ts' first.`);
       continue;
     }
 
-    // 2d. Verificar se há NFTs "não vendidos" para adicionar
+    // 2d. Check if there are "unsold" NFTs to add
     if (unsoldAmount <= 0n) {
-      console.log(`   ⚠️ AVISO: Tier ${tier.name} ESGOTADO. Nenhum NFT não vendido para criar piscina de liquidez.`);
-      console.log(`   (O NFTLiquidityPool requer pelo menos 1 NFT para inicializar uma piscina)`);
+      console.log(`   ⚠️ WARNING: Tier ${tier.name} SOLD OUT. No unsold NFTs to create liquidity pool.`);
+      console.log(`   (NFTLiquidityPool requires at least 1 NFT to initialize a pool)`);
       continue;
     }
 
-    // 2e. Cunhar os NFTs "não vendidos" (unsoldAmount)
-    console.log(` -> Cunhando ${unsoldAmount} NFTs "não vendidos" (${tier.name}) para a piscina de liquidez...`);
+    // 2e. Mint the "unsold" NFTs (unsoldAmount)
+    console.log(` -> Minting ${unsoldAmount} "unsold" NFTs (${tier.name}) for the liquidity pool...`);
     const allPoolTokenIds: string[] = [];
 
-    // Este loop usa 'bigint'
+    // This loop uses 'bigint'
     for (let i = 0n; i < unsoldAmount; i += CHUNK_SIZE_BIGINT) {
       const remainingInLiquidityLoop = unsoldAmount - i;
       const amountToMint_Liquidity = remainingInLiquidityLoop < CHUNK_SIZE_BIGINT ? remainingInLiquidityLoop : CHUNK_SIZE_BIGINT;
 
       const receipt = await sendTransactionWithRetries(() =>
         rewardBoosterNFT.ownerMintBatch(
-          deployer.address, // Cunha para si mesmo (deployer) primeiro
-          Number(amountToMint_Liquidity), // Converte bigint para number
+          deployer.address, // Mint to self (deployer) first
+          Number(amountToMint_Liquidity), // Convert bigint to number
           tier.boostBips,
           tier.metadata
         )
       );
 
-      // Analisa os logs para obter os token IDs
+      // Parse logs to get token IDs
       const tokenIdsInChunk = receipt.logs
         .map((log: Log) => {
           try { return rewardBoosterNFT.interface.parseLog(log); } catch { return null; }
@@ -209,17 +216,17 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
           
       allPoolTokenIds.push(...tokenIdsInChunk);
     }
-    console.log(`   ✅ Todos os ${allPoolTokenIds.length} NFTs não vendidos para a piscina foram cunhados.`);
+    console.log(`   ✅ All ${allPoolTokenIds.length} unsold NFTs for the pool have been minted.`);
 
-    // 2f. Adicionar Liquidez (NFTs "não vendidos" + 2 Milhões BKC)
+    // 2f. Add Liquidity (Unsold NFTs + 2 Million BKC)
     console.log(
-      ` -> Adicionando liquidez com ${allPoolTokenIds.length} NFTs não vendidos e ${ethers.formatEther(LIQUIDITY_BKC_AMOUNT_PER_POOL)} $BKC...`
+      ` -> Adding liquidity with ${allPoolTokenIds.length} unsold NFTs and ${ethers.formatEther(LIQUIDITY_BKC_AMOUNT_PER_POOL)} $BKC...`
     );
     let isFirstChunk = true;
     for (let i = 0; i < allPoolTokenIds.length; i += CHUNK_SIZE) {
       const chunk = allPoolTokenIds.slice(i, i + CHUNK_SIZE);
       if (isFirstChunk) {
-        // A primeira transação adiciona NFTs E os 2M $BKC
+        // The first transaction adds NFTs AND the 2M $BKC
         await sendTransactionWithRetries(() =>
           nftLiquidityPool.addInitialLiquidity(
             tier.boostBips,
@@ -229,50 +236,49 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         );
         isFirstChunk = false;
       } else {
-        // Transações subsequentes adicionam apenas mais NFTs
+        // Subsequent transactions only add more NFTs
         await sendTransactionWithRetries(() =>
           nftLiquidityPool.addMoreNFTsToPool(tier.boostBips, chunk)
         );
       }
     }
-    console.log(`   ✅ Liquidez para ${tier.name} adicionada com sucesso.`);
+    console.log(`   ✅ Liquidity for ${tier.name} added successfully.`);
   }
 
-  // Revoga a aprovação de NFT para o contrato do pool
+  // Revoke NFT approval for the pool contract
   await sendTransactionWithRetries(() =>
     rewardBoosterNFT.setApprovalForAll(addresses.nftLiquidityPool, false)
   );
-  console.log("✅ Aprovação de NFT para o Pool revogada.");
+  console.log("✅ NFT approval for Pool revoked.");
   console.log("----------------------------------------------------");
 
-  // --- Passo Final: Renunciar à Posse ---
+  // --- Final Step: Renounce Ownership ---
   console.log(
-    "\n🔒 Passo Final: Renunciando à posse do RewardBoosterNFT..."
+    "\n🔒 Final Step: Renouncing ownership of RewardBoosterNFT..."
   );
-  // Apenas renuncia se o deployer ainda for o dono
+  // Only renounce if deployer is still owner
   const currentOwner = await rewardBoosterNFT.owner();
   if (currentOwner.toLowerCase() === deployer.address.toLowerCase()) {
       await sendTransactionWithRetries(() =>
         rewardBoosterNFT.renounceOwnership()
       );
-      console.log("✅ Posse renunciada. O suprimento de NFT agora é FINAL e IMUTÁVEL.");
+      console.log("✅ Ownership renounced. NFT supply is now FINAL and IMMUTABLE.");
   } else {
-      console.log(`⚠️  Posse já transferida ou renunciada. Dono atual: ${currentOwner}`);
+      console.log(`⚠️  Ownership already transferred or renounced. Current owner: ${currentOwner}`);
   }
   console.log("----------------------------------------------------");
 
   console.log(
-    "\n🎉🎉🎉 CUNHAGEM PÓS-VENDA E INICIALIZAÇÃO DA LIQUIDEZ CONCLUÍDAS! 🎉🎉🎉"
+    "\n🎉🎉🎉 POST-SALE MINTING AND LIQUIDITY INIT COMPLETE! 🎉🎉🎉"
   );
-  console.log("\n✅ O ecossistema está totalmente configurado e o mercado secundário de NFT está ATIVO.");
+  console.log("\n✅ The ecosystem is fully configured and the NFT secondary market is ACTIVE.");
 }
 
 // ====================================================================
-// Ponto de entrada para execução standalone (se necessário)
+// Standalone execution entry point
 // ====================================================================
-// Bloco 'if (require.main === module)' mantido para execução individual
 if (require.main === module) {
-  console.log("Executando 8_add_liquidity.ts como script standalone...");
+  console.log("Running 8_add_liquidity.ts as a standalone script...");
   import("hardhat").then(hre => {
     runScript(hre) 
       .then(() => process.exit(0))

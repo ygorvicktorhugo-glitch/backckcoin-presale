@@ -3,66 +3,66 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
 
-// --- REMOVIDA A CORREÇÃO ESM (fileURLToPath) ---
+// --- ESM FIX REMOVED ---
 
 // Helper function for delays between deployments
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEPLOY_DELAY_MS = 2000; // 2-second delay
 
-// A FUNÇÃO PRINCIPAL É AGORA EXPORTADA
+// THE MAIN FUNCTION IS NOW EXPORTED
 export async function runScript(hre: HardhatRuntimeEnvironment) {
   const { ethers } = hre;
   const [deployer] = await ethers.getSigners();
   const networkName = hre.network.name;
 
-  console.log(`🚀 (Passo 1/8) Implantando Contratos Principais na rede: ${networkName}`);
-  console.log(`Usando a conta: ${deployer.address}`);
+  console.log(`🚀 (Step 1/8) Deploying Core Contracts on network: ${networkName}`);
+  console.log(`Using account: ${deployer.address}`);
   console.log("----------------------------------------------------");
 
   const addresses: { [key: string]: string } = {};
 
-  // Garante que o arquivo de endereços esteja limpo ou exista
-  // __dirname agora funciona nativamente (CommonJS)
+  // Ensure the addresses file is clean or exists
+  // __dirname now works natively (CommonJS)
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
   fs.writeFileSync(addressesFilePath, JSON.stringify({}, null, 2));
 
 
   try {
     // --- 1. Deploy EcosystemManager (The Hub) ---
-    console.log("1. Implantando EcosystemManager (Hub)...");
+    console.log("1. Deploying EcosystemManager (Hub)...");
     const ecosystemManager = await ethers.deployContract("EcosystemManager", [
       deployer.address,
     ]);
     await ecosystemManager.waitForDeployment();
     addresses.ecosystemManager = ecosystemManager.target as string;
-    console.log(`✅ EcosystemManager implantado em: ${addresses.ecosystemManager}`);
+    console.log(`✅ EcosystemManager deployed to: ${addresses.ecosystemManager}`);
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 2. Deploy BKCToken ---
-    console.log("2. Implantando BKCToken...");
+    console.log("2. Deploying BKCToken...");
     const bkcToken = await ethers.deployContract("BKCToken", [
       deployer.address,
     ]);
     await bkcToken.waitForDeployment();
     addresses.bkcToken = bkcToken.target as string;
-    console.log(`✅ BKCToken implantado em: ${addresses.bkcToken}`);
+    console.log(`✅ BKCToken deployed to: ${addresses.bkcToken}`);
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 3. Deploy RewardBoosterNFT ---
-    console.log("3. Implantando RewardBoosterNFT...");
+    console.log("3. Deploying RewardBoosterNFT...");
     const rewardBoosterNFT = await ethers.deployContract("RewardBoosterNFT", [
       deployer.address,
     ]);
     await rewardBoosterNFT.waitForDeployment();
     addresses.rewardBoosterNFT = rewardBoosterNFT.target as string;
-    console.log(`✅ RewardBoosterNFT implantado em: ${addresses.rewardBoosterNFT}`);
+    console.log(`✅ RewardBoosterNFT deployed to: ${addresses.rewardBoosterNFT}`);
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 4. Deploy DelegationManager ---
-    console.log("4. Implantando DelegationManager...");
+    console.log("4. Deploying DelegationManager...");
     const delegationManager = await ethers.deployContract("DelegationManager", [
       addresses.bkcToken,
       addresses.ecosystemManager,
@@ -71,13 +71,13 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     await delegationManager.waitForDeployment();
     addresses.delegationManager = delegationManager.target as string;
     console.log(
-      `✅ DelegationManager implantado em: ${addresses.delegationManager}`
+      `✅ DelegationManager deployed to: ${addresses.delegationManager}`
     );
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 5. Deploy RewardManager ---
-    console.log("5. Implantando RewardManager...");
+    console.log("5. Deploying RewardManager...");
     const rewardManager = await ethers.deployContract("RewardManager", [
       addresses.bkcToken,
       deployer.address, // _treasuryWallet
@@ -86,12 +86,12 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     ]);
     await rewardManager.waitForDeployment();
     addresses.rewardManager = rewardManager.target as string;
-    console.log(`✅ RewardManager implantado em: ${addresses.rewardManager}`);
+    console.log(`✅ RewardManager deployed to: ${addresses.rewardManager}`);
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 6. Deploy DecentralizedNotary ---
-    console.log("6. Implantando DecentralizedNotary...");
+    console.log("6. Deploying DecentralizedNotary...");
     const decentralizedNotary = await ethers.deployContract(
       "DecentralizedNotary",
       [addresses.bkcToken, addresses.ecosystemManager, deployer.address]
@@ -99,13 +99,13 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     await decentralizedNotary.waitForDeployment();
     addresses.decentralizedNotary = decentralizedNotary.target as string;
     console.log(
-      `✅ DecentralizedNotary implantado em: ${addresses.decentralizedNotary}`
+      `✅ DecentralizedNotary deployed to: ${addresses.decentralizedNotary}`
     );
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
     // --- 7. Deploy PublicSale ---
-    console.log("7. Implantando PublicSale...");
+    console.log("7. Deploying PublicSale...");
     const publicSale = await ethers.deployContract("PublicSale", [
       addresses.rewardBoosterNFT,
       addresses.ecosystemManager,
@@ -113,33 +113,42 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     ]);
     await publicSale.waitForDeployment();
     addresses.publicSale = publicSale.target as string;
-    console.log(`✅ PublicSale implantado em: ${addresses.publicSale}`);
+    console.log(`✅ PublicSale deployed to: ${addresses.publicSale}`);
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
     
-    // --- 8. Deploy SimpleBKCFaucet (Sempre reimplantado) ---
-    console.log("8. Implantando SimpleBKCFaucet...");
+    // --- 8. Deploy SimpleBKCFaucet (Always redeployed) ---
+    console.log("8. Deploying SimpleBKCFaucet...");
     const simpleBKCFaucet = await ethers.deployContract("SimpleBKCFaucet", [
-        addresses.bkcToken, // <-- Passa o NOVO bkcToken (do Passo 2)
+        addresses.bkcToken, // <-- Passes the NEW bkcToken (from Step 2)
     ]);
     await simpleBKCFaucet.waitForDeployment();
     addresses.faucet = simpleBKCFaucet.target as string;
-    console.log(`✅ SimpleBKCFaucet implantado em: ${addresses.faucet}`);
+    console.log(`✅ SimpleBKCFaucet deployed to: ${addresses.faucet}`);
     console.log("----------------------------------------------------");
     await sleep(DEPLOY_DELAY_MS);
 
 
   } catch (error: any) {
-    console.error("❌ Falha na implantação (Passo 1):", error.message);
+    console.error("❌ Deployment Failed (Step 1):", error.message);
     throw error;
   }
 
-  // --- Salva os endereços no arquivo ---
+  // =================================================================
+  // ### NOVO BLOCO ADICIONADO ###
+  // Adiciona o placeholder para o pool da DEX (BKC/ETH, etc.)
+  console.log("Adding placeholder for external DEX pool (BKC/ETH)...");
+  addresses.bkcDexPoolAddress = "0x...[POR FAVOR, ATUALIZE ESTE ENDEREÇO APÓS CRIAR O POOL NA DEX]...";
+  console.log("✅ Placeholder 'bkcDexPoolAddress' added.");
+  console.log("----------------------------------------------------");
+  // =================================================================
+
+  // --- Saves addresses to file ---
   fs.writeFileSync(
     addressesFilePath,
     JSON.stringify(addresses, null, 2)
   );
 
-  console.log("\n🎉🎉🎉 CONTRATOS PRINCIPAIS IMPLANTADOS COM SUCESSO! 🎉🎉🎉");
-  console.log("\nPróximo passo: Execute '0_faucet_test_supply.ts'");
+  console.log("\n🎉🎉🎉 CORE CONTRACTS DEPLOYED SUCCESSFULLY! 🎉🎉🎉");
+  console.log("\nNext step: Run '0_faucet_test_supply.ts'");
 }

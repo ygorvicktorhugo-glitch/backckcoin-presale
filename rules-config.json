@@ -1,0 +1,47 @@
+{
+  "serviceFees": {
+    "COMMENT": "Taxas de Serviço: O custo em $BKC para USAR um serviço. O valor é em 'ether' (ex: '100' = 100 $BKC). O script converte para Wei.",
+    "NOTARY_SERVICE": "100",
+    "FORTUNE_POOL_SERVICE": "1",
+    "NFT_POOL_ACCESS": "0"
+  },
+  "pStakeMinimums": {
+    "COMMENT": "pStake Mínimo: A quantidade de 'pStake' que um usuário deve ter para ter PERMISSÃO de usar um serviço. Valor numérico simples (ex: '10000').",
+    "NOTARY_SERVICE": "10000",
+    "FORTUNE_POOL_SERVICE": "10000",
+    "NFT_POOL_ACCESS": "10000"
+  },
+  "stakingFees": {
+    "COMMENT": "Taxas de Staking (em BIPS): 1 BIPS = 0.01%. (ex: '100' BIPS = 1%).",
+    "UNSTAKE_FEE_BIPS": "1000",
+    "FORCE_UNSTAKE_PENALTY_BIPS": "5000",
+    "CLAIM_REWARD_FEE_BIPS": "1000"
+  },
+  "ammTaxFees": {
+    "COMMENT": "Impostos do AMM (em BIPS): Taxas cobradas quando um usuário VENDE um NFT para o pool.",
+    "NFT_POOL_TAX_BIPS": "1000",
+    "NFT_POOL_TAX_TREASURY_SHARE_BIPS": "4000",
+    "NFT_POOL_TAX_DELEGATOR_SHARE_BIPS": "4000"
+  },
+  "boosterDiscounts": {
+    "COMMENT": "Descontos de Booster (em BIPS): Define o desconto que cada tier de NFT concede. 'Chave' = Poder do NFT, 'Valor' = Desconto. (ex: '5000' BIPS (50%) dá '5000' BIPS (50%) de desconto).",
+    "5000": "5000",
+    "4000": "4000",
+    "3000": "3000",
+    "2000": "2000",
+    "1000": "1000",
+    "500": "500",
+    "100": "100"
+  },
+  "miningDistribution": {
+    "COMMENT": "Distribuição de Mineração (em BIPS): Como 100% dos tokens recém-criados (pelo PoP Mining) são divididos. A SOMA dos 3 valores DEVE ser 10000.",
+    "TREASURY": "1500",
+    "VALIDATOR_POOL": "1500",
+    "DELEGATOR_POOL": "7000"
+  },
+  "miningBonuses": {
+    "COMMENT": "Bônus de Mineração (em BIPS): O 'cashback' em $BKC que um usuário recebe de volta ao gastar em um serviço (ex: criar um Vesting).",
+    "VESTING_SERVICE": "500",
+    "FORTUNE_POOL_SERVICE": "0"
+  }
+}

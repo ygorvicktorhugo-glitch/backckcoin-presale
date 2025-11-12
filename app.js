@@ -1,26 +1,23 @@
-// app.js (AJUSTADO: Removendo o LED e simplificando o updateUIState)
+// app.js
+// FIXED: Active polling for wallet initialization, cleanup on navigation
 
-// --- INÍCIO DA CORREÇÃO: VERCEL ANALYTICS ---
 import { inject } from 'https://esm.sh/@vercel/analytics';
 
-// Só injeta o Vercel Analytics se NÃO estivermos em localhost
+// Only inject Vercel Analytics if NOT on localhost
 if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-  inject();
+    inject();
 }
-// --- FIM DA CORREÇÃO ---
 
 const ethers = window.ethers;
 
 import { DOMElements } from './dom-elements.js';
 import { State } from './state.js';
-// --- CORREÇÃO 1: 'initializeWalletState' alterado para 'subscribeToWalletChanges' ---
 import { initPublicProvider, subscribeToWalletChanges, disconnectWallet, openConnectModal } from './modules/wallet.js';
 import { showToast, showShareModal, showWelcomeModal } from './ui-feedback.js';
-// Importa o formatBigNumber original (de Wei para número)
 import { formatBigNumber } from './utils.js'; 
 import { loadAddresses } from './config.js'; 
 
-// Importações das Páginas
+// Page imports
 import { DashboardPage } from './pages/DashboardPage.js';
 import { EarnPage } from './pages/EarnPage.js';
 import { StorePage } from './pages/StorePage.js';
@@ -35,55 +32,46 @@ import { FaucetPage } from './pages/FaucetPage.js';
 import { TokenomicsPage } from './pages/TokenomicsPage.js';
 import { NotaryPage } from './pages/NotaryPage.js';
 
-
-// ==================================================================
-// --- FUNÇÕES DE FORMATAÇÃO (Mantidas) ---
-// ==================================================================
+// ============================================================================
+// FORMATTING FUNCTIONS
+// ============================================================================
 
 /**
- * Formata o endereço da carteira para 0x + 2 chars... + 3 chars
- * (Ex: 0x03...562a)
+ * Format wallet address to 0x + 2 chars... + 3 chars
  */
 function formatAddress(addr) {
     if (!addr || addr.length < 42) return '...';
-    // --- CORREÇÃO: "dois primeiros" (0x) + "3 ultimos" (62a) ---
-    // slice(0, 2) = "0x"
-    // slice(-3) = "62a"
     return `${addr.slice(0, 2)}...${addr.slice(-3)}`; 
 }
 
 /**
- * Formata o saldo (já convertido de Wei) para M (Milhões) ou B (Bilhões)
- * @param {bigint} bigNum - O valor em Wei (ex: 30000000000000000000000000n)
- * @returns {string} - O valor formatado (ex: "30.00M")
+ * Format balance (in Wei) to M (Millions) or B (Billions)
  */
 function formatLargeBalance(bigNum) {
-    // 1. Usa a função importada para converter de Wei para número
-    const num = formatBigNumber(bigNum); // Ex: 30000000.00
+    const num = formatBigNumber(bigNum);
     
     if (num >= 1_000_000_000) {
-        return (num / 1_000_000_000).toFixed(2) + 'B'; // Bilhões
+        return (num / 1_000_000_000).toFixed(2) + 'B';
     }
     if (num >= 1_000_000) {
-        return (num / 1_000_000).toFixed(2) + 'M'; // Milhões
+        return (num / 1_000_000).toFixed(2) + 'M';
     }
     if (num >= 10_000) {
-        // Acima de 10k, mostrar número inteiro (sem centavos)
         return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     }
-    // Menor que 10k, mostrar com 2 casas decimais
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-// ==================================================================
 
+// ============================================================================
+// ROUTE CONFIGURATION
+// ============================================================================
 
-// Mapeamento de rotas
 const routes = {
     'dashboard': DashboardPage,
     'earn': EarnPage,
     'store': StorePage,
     'rewards': RewardsPage,
-    'actions': TigerGamePage, // Mapeia 'actions' (ID do HTML) para o componente TigerGamePage
+    'actions': TigerGamePage,
     'notary': NotaryPage,
     'airdrop': AirdropPage,
     'dao': DaoPage,
@@ -97,8 +85,12 @@ const routes = {
 let activePageId = 'dashboard';
 const ADMIN_WALLET = '0x03aC69873293cD6ddef7625AfC91E3Bd5434562a';
 
+// FIXED: Track active page cleanup function
+let currentPageCleanup = null;
 
-// --- FUNÇÕES DE NAVEGAÇÃO E ESTADO DA UI ---
+// ============================================================================
+// WALLET STATE CHANGE HANDLER
+// ============================================================================
 
 function onWalletStateChange(changes) {
     const { isConnected, address, isNewConnection, wasConnected } = changes;
@@ -107,15 +99,19 @@ function onWalletStateChange(changes) {
     updateUIState();
     
     if (isConnected && isNewConnection) {
-        // Usa a nova função de formatação no Toast
         showToast(`Connected: ${formatAddress(address)}`, "success");
     } else if (!isConnected && wasConnected) {
         showToast("Wallet disconnected.", "info");
     }
 }
 
+// ============================================================================
+// NAVIGATION
+// ============================================================================
+
 /**
- * Altera a página ativa da aplicação.
+ * Navigate to a specific page
+ * FIXED: Added cleanup for previous page
  */
 function navigateTo(pageId) {
     const pageContainer = document.querySelector('main > div.container');
@@ -126,7 +122,14 @@ function navigateTo(pageId) {
         return;
     }
 
-    // 1. Esconde todas as páginas
+    // FIXED: Call cleanup function for previous page
+    if (currentPageCleanup && typeof currentPageCleanup === 'function') {
+        console.log(`Cleaning up previous page: ${activePageId}`);
+        currentPageCleanup();
+        currentPageCleanup = null;
+    }
+
+    // Hide all pages
     Array.from(pageContainer.children).forEach(child => {
         if (child.tagName === 'SECTION') {
             child.classList.add('hidden');
@@ -134,123 +137,127 @@ function navigateTo(pageId) {
         }
     });
 
-    // 2. Remove o estado ativo de todos os itens da navegação
+    // Remove active state from nav items
     navItems.forEach(item => {
         item.classList.remove('active');
         item.classList.add('text-zinc-400', 'hover:text-white', 'hover:bg-zinc-700');
     });
 
-    // 3. Exibe a página alvo
+    // Show target page
     const targetPage = document.getElementById(pageId);
     if (targetPage && routes[pageId]) {
         targetPage.classList.remove('hidden');
         targetPage.classList.add('active');
         activePageId = pageId;
 
-        // 4. Marca o item de navegação como ativo
+        // Mark nav item as active
         const activeNavItem = document.querySelector(`.sidebar-link[data-target="${pageId}"]`);
         if (activeNavItem) {
             activeNavItem.classList.add('active');
         }
 
-        // 5. Renderiza/Atualiza o conteúdo da página
+        // Render page and get cleanup function if available
         if (routes[pageId]) {
-             if (typeof routes[pageId].render === 'function') {
+            if (typeof routes[pageId].render === 'function') {
                 routes[pageId].render(true);
+            }
+            
+            // FIXED: Store cleanup function if page provides one
+            if (typeof routes[pageId].cleanup === 'function') {
+                currentPageCleanup = routes[pageId].cleanup;
             }
         }
         
     } else {
-        // Se a rota não for encontrada, tentamos navegar para o Dashboard
         console.error(`Page ID '${pageId}' not found or route not defined.`);
         navigateTo('dashboard');
     }
 }
 window.navigateTo = navigateTo;
 
+// ============================================================================
+// UI STATE UPDATE
+// ============================================================================
 
 /**
- * Atualiza todos os elementos da UI com base no State global (conectado/desconectado, saldos, etc.).
+ * Update all UI elements based on global State
  */
 function updateUIState() {
     const adminLinkContainer = document.getElementById('admin-link-container');
-    const statUserBalanceEl = document.getElementById('statUserBalance'); // No Dashboard
+    const statUserBalanceEl = document.getElementById('statUserBalance');
 
-    // --- INÍCIO DA CORREÇÃO ---
-    // Elementos do Cabeçalho (index.html)
+    // Header elements
     const connectButtonDesktop = document.getElementById('connectButtonDesktop');
     const connectButtonMobile = document.getElementById('connectButtonMobile');
-    
-    // LEDs de Status (REMOVIDOS DE FATO)
-    const mobileAppDisplay = document.getElementById('mobileAppDisplay'); // O texto "Backchain"
-    // --- FIM DA CORREÇÃO ---
+    const mobileAppDisplay = document.getElementById('mobileAppDisplay');
 
-    // Abas
+    // Tabs
     const popMiningTab = document.getElementById('pop-mining-tab');
     const validatorSectionTab = document.getElementById('validator-section-tab');
 
-    // Helper para evitar erros
-    const checkElement = (el, name) => { if (!el) console.warn(`Element ${name} not found in DOM during UI update.`); return el; };
-
+    // Helper to check elements
+    const checkElement = (el, name) => { 
+        if (!el) console.warn(`Element ${name} not found in DOM during UI update.`); 
+        return el; 
+    };
 
     if (State.isConnected && State.userAddress) {
-        // --- ESTADO CONECTADO ---
-        
-        // --- INÍCIO DAS CORREÇÕES (V5: Apenas Saldo, sem LED) ---
+        // Connected state
         const balanceString = formatLargeBalance(State.currentUserBalance);
 
-        // Atualiza os botões para mostrar APENAS O SALDO
+        // Update connect buttons to show balance
         checkElement(connectButtonDesktop, 'connectButtonDesktop').textContent = `${balanceString} $BKC`;
         checkElement(connectButtonMobile, 'connectButtonMobile').textContent = `${balanceString} $BKC`;
 
-        // Restaura o título mobile para "Backchain"
+        // Restore mobile title
         const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
         if (mobileDisplayEl) { 
             mobileDisplayEl.textContent = 'Backcoin.org'; 
             mobileDisplayEl.classList.add('text-amber-400'); 
             mobileDisplayEl.classList.remove('text-white'); 
         }
-        // --- FIM DAS CORREÇÕES (V5) ---
 
-        // Elementos de contexto (Lógica mantida)
+        // Update context elements
         const fullBalanceNum = formatBigNumber(State.currentUserBalance);
-        if (statUserBalanceEl) statUserBalanceEl.textContent = fullBalanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (statUserBalanceEl) {
+            statUserBalanceEl.textContent = fullBalanceNum.toLocaleString('en-US', { 
+                minimumFractionDigits: 2, 
+                maximumFractionDigits: 2 
+            });
+        }
         
         if (popMiningTab) popMiningTab.style.display = 'block';
         if (validatorSectionTab) validatorSectionTab.style.display = 'block';
-        if (adminLinkContainer) { adminLinkContainer.style.display = (State.userAddress.toLowerCase() === ADMIN_WALLET.toLowerCase()) ? 'block' : 'none'; }
+        
+        if (adminLinkContainer) { 
+            adminLinkContainer.style.display = (State.userAddress.toLowerCase() === ADMIN_WALLET.toLowerCase()) ? 'block' : 'none'; 
+        }
         
     } else {
-        // --- ESTADO DESCONECTADO ---
-        
-        // --- INÍCIO DAS CORREÇÕES (V5: Apenas Connect, sem LED) ---
-        // Atualiza os botões para mostrar "Connect"
+        // Disconnected state
         checkElement(connectButtonDesktop, 'connectButtonDesktop').textContent = "Connect";
         checkElement(connectButtonMobile, 'connectButtonMobile').textContent = "Connect";
         
-        // Restaura o título mobile para "Backchain"
         const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
         if (mobileDisplayEl) { 
             mobileDisplayEl.textContent = 'Backcoin.org'; 
             mobileDisplayEl.classList.add('text-amber-400'); 
             mobileDisplayEl.classList.remove('text-white'); 
         }
-        // --- FIM DAS CORREÇÕES (V5) ---
 
-        // Elementos de contexto (Lógica mantida)
         if (popMiningTab) popMiningTab.style.display = 'none';
         if (validatorSectionTab) validatorSectionTab.style.display = 'none';
         if (adminLinkContainer) adminLinkContainer.style.display = 'none';
         if (statUserBalanceEl) statUserBalanceEl.textContent = '--';
     }
 
-    // A atualização da página ativa deve ser feita após a atualização do estado da conexão.
-    // Navega para a página ativa para acionar o re-render
+    // Trigger re-render of active page
     navigateTo(activePageId); 
 }
 
-
-// --- LISTENERS E INICIALIZAÇÃO GLOBAL ---
+// ============================================================================
+// GLOBAL EVENT LISTENERS
+// ============================================================================
 
 function setupGlobalListeners() {
     const navItems = document.querySelectorAll('.sidebar-link');
@@ -261,14 +268,14 @@ function setupGlobalListeners() {
     const connectButtonMobile = document.getElementById('connectButtonMobile');
     const shareButton = document.getElementById('shareProjectBtn');
 
-    // 1. Navegação Lateral (Sidebar)
+    // 1. Sidebar navigation
     if (navItems.length > 0) {
         navItems.forEach(item => {
             item.addEventListener('click', () => {
                 const pageId = item.dataset.target;
                 if (pageId) {
                     navigateTo(pageId);
-                    // Fechar o sidebar mobile após a navegação
+                    // Close mobile sidebar
                     if (sidebar.classList.contains('translate-x-0')) {
                         sidebar.classList.remove('translate-x-0');
                         sidebar.classList.add('-translate-x-full');
@@ -281,7 +288,7 @@ function setupGlobalListeners() {
         console.warn("No sidebar navigation items found.");
     }
     
-    // 2. Botões de Conexão (Desktop e Mobile)
+    // 2. Connect buttons
     if (connectButton) {
         connectButton.addEventListener('click', openConnectModal);
     }
@@ -289,29 +296,28 @@ function setupGlobalListeners() {
         connectButtonMobile.addEventListener('click', openConnectModal);
     }
     
-    // 3. Botão de Compartilhar
+    // 3. Share button
     if (shareButton) {
         shareButton.addEventListener('click', () => {
             showShareModal(State.userAddress);
         });
     }
 
-
-    // 4. Botão de menu mobile
+    // 4. Mobile menu button
     if (menuButton && sidebar && sidebarBackdrop) {
         menuButton.addEventListener('click', () => {
             sidebar.classList.toggle('-translate-x-full');
             sidebar.classList.toggle('translate-x-0');
             sidebarBackdrop.classList.toggle('hidden');
         });
-         sidebarBackdrop.addEventListener('click', () => {
+        sidebarBackdrop.addEventListener('click', () => {
             sidebar.classList.add('-translate-x-full');
             sidebar.classList.remove('translate-x-0');
             sidebarBackdrop.classList.add('hidden');
         });
     }
 
-    // 5. Lógica de Troca de Abas (Global)
+    // 5. Global tab switching logic
     document.body.addEventListener('click', (e) => {
         const tabButton = e.target.closest('.tab-btn');
         
@@ -324,7 +330,7 @@ function setupGlobalListeners() {
         const targetContent = document.getElementById(targetId);
         
         if (!targetContent) {
-            console.warn(`Conteúdo da aba (targetId: '${targetId}') não encontrado.`);
+            console.warn(`Tab content (targetId: '${targetId}') not found.`);
             return;
         }
 
@@ -352,60 +358,111 @@ function setupGlobalListeners() {
     console.log("Global listeners attached.");
 }
 
+// ============================================================================
+// APPLICATION INITIALIZATION
+// ============================================================================
+
 /**
- * Ponto de entrada principal da aplicação.
+ * FIXED: Active polling instead of fixed timeout
  */
-// ==================================================================
-// --- INÍCIO DA CORREÇÃO ---
-// Trocado 'DOMContentLoaded' por 'load'.
-// 'load' espera que TODOS os recursos (incluindo scripts com defer)
-// sejam carregados antes de executar o app.
-// ==================================================================
 window.addEventListener('load', async () => {
     console.log("Window 'load' event fired. Starting initialization...");
 
     try {
-         // Carregar endereços e ABIs
+        // Load contract addresses
         const addressesLoaded = await loadAddresses(); 
         
         if (!addressesLoaded) {
-            console.error("Falha ao carregar endereços. A aplicação não pode continuar.");
+            console.error("Failed to load addresses. Application cannot continue.");
             return; 
         }
-        console.log("Endereços carregados com sucesso.");
+        console.log("Addresses loaded successfully.");
     
     } catch (error) {
-        console.error("Falha crítica ao carregar endereços:", error);
+        console.error("Critical failure loading addresses:", error);
         document.body.innerHTML = `<div style="color: red; padding: 20px; font-family: sans-serif; font-size: 1.2rem; background: #222; border: 1px solid red; margin: 20px;">
-            <b>Erro:</b> Não foi possível carregar <code>deployment-addresses.json</code>.
-            <br><br><b>Solução:</b> Verifique se o arquivo está na raiz do projeto e atualize a página.
+            <b>Error:</b> Could not load <code>deployment-addresses.json</code>.
+            <br><br><b>Solution:</b> Verify the file exists in project root and refresh the page.
             <br><br><small>${error.message}</small></div>`;
         return;
     }
     
     setupGlobalListeners();
 
-    // 1. Inicializa o Provedor Público
+    // 1. Initialize public provider
     await initPublicProvider(); 
 
-    // 2. Tenta a RECONEXÃO AUTOMÁTICA
-    // --- CORREÇÃO 2: 'await initializeWalletState' alterado para 'subscribeToWalletChanges' (e removido o 'await') ---
+    // 2. Subscribe to wallet changes (includes auto-reconnect logic)
     subscribeToWalletChanges(onWalletStateChange);
 
-    // 3. Mostra o modal de boas-vindas. 
+    // FIXED: Active polling for wallet initialization
+    console.log("Waiting for wallet initialization (max 5s)...");
+    const maxWaitTime = 5000;
+    const startTime = Date.now();
+    let lastCheck = Date.now();
+    
+    while (!window.walletInitialized && (Date.now() - startTime < maxWaitTime)) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Log progress every 1s
+        if (Date.now() - lastCheck > 1000) {
+            console.log(`⏳ Still waiting... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+            lastCheck = Date.now();
+        }
+    }
+    
+    if (window.walletInitialized) {
+        console.log("✅ Wallet initialized successfully!");
+        console.log("🔍 DEBUG - State after init:", {
+            isConnected: State.isConnected,
+            address: State.userAddress,
+            balance: State.currentUserBalance?.toString()
+        });
+        
+        // CRITICAL FIX: Force UI update after initialization
+        updateUIState();
+        
+        // EXTRA FIX: Force re-render of dashboard after 500ms to ensure UI catches up
+        setTimeout(() => {
+            console.log("🔄 Final UI sync...");
+            updateUIState();
+            navigateTo(activePageId);
+        }, 500);
+    } else {
+        console.log("⏱️ Wallet initialization timeout.");
+        
+        // FALLBACK: Check if we have a saved session but failed to reconnect
+        const hasLocalStorage = Object.keys(localStorage).some(key => 
+            key.includes('wc@2') || key.includes('W3M') || key.includes('WALLETCONNECT')
+        );
+        
+        if (hasLocalStorage) {
+            console.log("⚠️ Found saved session but auto-reconnect failed!");
+            
+            // Show manual reconnect toast
+            showToast("Reconnection failed. Click 'Connect' to restore session.", "warning");
+            
+            // Auto-open modal after 2s
+            setTimeout(() => {
+                console.log("🔄 Auto-opening connect modal...");
+                openConnectModal();
+            }, 2000);
+        }
+    }
+    
+    // 3. Show welcome modal
     showWelcomeModal();
 
-    // 4. Navega para a página padrão.
+    // 4. Navigate to default page
     navigateTo(activePageId); 
 
     console.log("Application initialized.");
 });
-// ==================================================================
-// --- FIM DA CORREÇÃO ---
-// ==================================================================
 
+// ============================================================================
+// GLOBAL EXPORTS
+// ============================================================================
 
-// Expor funções necessárias para o escopo global (para uso em HTML, se necessário)
 window.openConnectModal = openConnectModal;
 window.disconnectWallet = disconnectWallet;
 window.updateUIState = updateUIState;

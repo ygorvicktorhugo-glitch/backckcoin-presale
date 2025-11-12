@@ -1,248 +1,502 @@
 // pages/StorePage.js
+// Gerencia a página "NFT Trading Pool" (Store), permitindo aos usuários
+// comprar e vender Booster NFTs usando um AMM.
 
+// --- IMPORTAÇÕES E CONFIGURAÇÕES ---
 const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { DOMElements } from '../dom-elements.js';
-// =================================================================
-// ### CORREÇÃO DE IMPORTAÇÃO (Linha 8) ###
-// 'loadMyBoosters' foi renomeado para 'loadMyBoostersFromAPI'
 import { loadUserData, loadMyBoostersFromAPI, safeContractCall } from '../modules/data.js';
-// =================================================================
 import { executeBuyBooster, executeSellBooster } from '../modules/transactions.js';
 import { formatBigNumber, renderLoading, renderError } from '../utils.js';
-import { boosterTiers } from '../config.js';
+import { boosterTiers, addresses } from '../config.js';
 
-// --- Estado da página de Trade (CORRIGIDO) ---
+// --- ESTADO LOCAL DA PÁGINA (TradeState) ---
+// Objeto que rastreia o estado da UI de negociação
 const TradeState = {
-    activeTab: 'buy', // 'buy' ou 'sell'
+    tradeDirection: 'buy', // 'buy' (BKC -> NFT) ou 'sell' (NFT -> BKC)
+    selectedPoolBoostBips: null, // O 'ativo' selecionado (ex: 5000 para Diamond)
+    
+    // Dados para o pool selecionado
+    buyPrice: 0n,
+    sellPrice: 0n,
+    netSellPrice: 0n, // Preço de venda líquido (após taxas/descontos)
+    userBalanceOfSelectedNFT: 0,
+    firstAvailableTokenId: null, // O primeiro tokenId que o usuário POSSUI para VENDER
+    firstAvailableTokenIdForBuy: null, // O primeiro tokenId que o POOL POSSUI para COMPRA
+    
+    // Rastreia o melhor booster do usuário para descontos
+    bestBoosterTokenId: 0n, 
+    bestBoosterBips: 0n, 
+    
+    isDataLoading: false,
+    isModalOpen: false, // Para o modal de seleção de pool
 };
 
-// Chave do serviço vinda do contrato NFTLiquidityPool.sol
-// const PSTAKE_SERVICE_KEY = "NFT_POOL_ACCESS"; // <-- NÃO É MAIS USADO
+// --- INDEXADOR LEVE (CLIENT-SIDE) ---
+/**
+ * Encontra o primeiro _tokenId disponível que o contrato AMM (Pool) possui 
+ * para um determinado tier (_boostBips).
+ * @param {bigint} boostBips - O tier de boost a ser procurado (ex: 5000n)
+ * @returns {bigint | null} O primeiro _tokenId encontrado ou null
+ */
+async function _fetchFirstAvailableTokenIdForBuy(boostBips) {
+    if (!State.rewardBoosterContract || !addresses.nftLiquidityPool) return null;
+
+    const poolAddress = addresses.nftLiquidityPool;
+    const nftContract = State.rewardBoosterContract;
+
+    try {
+        console.log(`[Indexer] Procurando estoque para ${boostBips} bips...`);
+        
+        // 1. Encontra todos os NFTs transferidos PARA o pool
+        const transferInFilter = nftContract.filters.Transfer(null, poolAddress);
+        const fromBlock = Math.max(0, (await State.provider.getBlockNumber()) - 100000); 
+        const inEvents = await nftContract.queryFilter(transferInFilter, fromBlock, 'latest');
+        
+        // 2. Encontra todos os NFTs transferidos PARA FORA do pool
+        const transferOutFilter = nftContract.filters.Transfer(poolAddress, null);
+        const outEvents = await nftContract.queryFilter(transferOutFilter, fromBlock, 'latest');
+
+        // 3. Processa os eventos para saber o "estoque"
+        const ownedTokenIds = new Set();
+        for (const event of inEvents) {
+            ownedTokenIds.add(event.args.tokenId.toString());
+        }
+        for (const event of outEvents) {
+            ownedTokenIds.delete(event.args.tokenId.toString());
+        }
+
+        const availableTokenIds = Array.from(ownedTokenIds);
+        console.log(`[Indexer] Pool possui ${availableTokenIds.length} NFTs no total.`);
+
+        // 4. Verifica o tier de cada NFT em estoque
+        for (const tokenId of availableTokenIds) {
+            try {
+                const tokenBips = await safeContractCall(nftContract, 'boostBips', [BigInt(tokenId)], 0n);
+                if (tokenBips === boostBips) {
+                    console.log(`[Indexer] Encontrado: ${tokenId} para ${boostBips} bips.`);
+                    return BigInt(tokenId); // Encontramos um!
+                }
+            } catch (e) {
+                // Ignore.
+            }
+        }
+        
+        console.log(`[Indexer] Nenhum token de ${boostBips} bips encontrado em estoque.`);
+        return null; // Nenhum encontrado
+
+    } catch (err) {
+        console.error("Falha no indexador leve:", err);
+        return null;
+    }
+}
+
+
+// --- RENDERIZAÇÃO DA UI (SWAP BOX) ---
+// Funções que constroem o HTML da caixa de negociação.
 
 /**
- * Renderiza a interface de trade principal (Abas e Lista de Ativos)
+ * Renderiza a estrutura principal (shell) da Swap Box e do Modal.
  */
-async function renderTradeInterface() {
+async function renderSwapBoxInterface() {
     const el = document.getElementById('store-items-grid');
     if (!el) return;
 
-    // 1. Renderiza o "Shell" da UI (Abas + Container)
+    // 1. Renderiza a estrutura principal
     el.innerHTML = `
-        <div class="trade-container">
-            <div class="trade-tabs">
-                <button class="trade-tab ${TradeState.activeTab === 'buy' ? 'active' : ''}" data-tab="buy">
-                    Buy
-                </button>
-                <button class="trade-tab ${TradeState.activeTab === 'sell' ? 'active' : ''}" data-tab="sell">
-                    Sell
-                </button>
+        <div class="swap-box-container">
+            <div class="swap-box-header">
+                <h3>Trade Boosters</h3>
+                <p>Swap BKC for NFT Boosters, or vice-versa.</p>
             </div>
-            <div id="trade-content-area" class="trade-content">
+            
+            <div id="swap-box-content">
                 </div>
+
+            <div id="swap-box-button-container">
+                </div>
+        </div>
+
+        <div id="pool-select-modal" class="pool-modal ${TradeState.isModalOpen ? 'open' : ''}">
+            <div class="pool-modal-content">
+                <div class="pool-modal-header">
+                    <h4>Select an Asset</h4>
+                    <button class="pool-modal-close">&times;</button>
+                </div>
+                <div id="pool-modal-list">
+                    </div>
+            </div>
         </div>
     `;
 
-    // 2. Renderiza o conteúdo da aba ativa
-    await renderActiveTabContent();
+    // 2. Renderiza o conteúdo interno da swap box
+    await renderSwapPanels();
+    renderExecuteButton();
+
+    // 3. Renderiza o conteúdo do modal (oculto)
+    renderPoolSelectorModal();
 }
 
 /**
- * Renderiza o conteúdo da aba selecionada (Buy ou Sell)
+ * Renderiza os painéis "From" e "To" com base na direção da troca.
  */
-async function renderActiveTabContent() {
-    const el = document.getElementById('trade-content-area');
-    if (!el) return;
+async function renderSwapPanels() {
+    const contentEl = document.getElementById('swap-box-content');
+    if (!contentEl) return;
 
-    // Adicionada verificação do ecosystemManagerContract
-    // *** CORREÇÃO: Removida a verificação do ecosystemManagerContract, pois não precisamos mais dele para pStake ***
-    if (!State.isConnected || !State.nftBondingCurveContract || !State.rewardBoosterContract) {
-        const message = !State.isConnected ? 'Connect wallet to trade.' : 'Store config incomplete.';
-        el.innerHTML = `<p class="${!State.isConnected ? 'error-message' : 'loading-message'}">${message}</p>`;
-        return;
-    }
+    const selectedTier = boosterTiers.find(t => t.boostBips === TradeState.selectedPoolBoostBips);
+    let fromPanelHtml, toPanelHtml;
+    const bkcLogoPath = "assets/bkc_logo_3d.png"; 
 
-    // --- LÓGICA DE VERIFICAÇÃO DE PSTAKE (REMOVIDA) ---
-    // O bloco de código que verificava 'PSTAKE_SERVICE_KEY'
-    // e comparava 'userPStake < MIN_PSTAKE_REQ' foi totalmente removido.
-    // --- FIM DA REMOÇÃO ---
+    if (TradeState.tradeDirection === 'buy') {
+        // ========== COMPRA (BKC -> NFT) ==========
+        fromPanelHtml = renderPanel({
+            label: "You Pay",
+            tokenSymbol: "BKC",
+            tokenImg: bkcLogoPath,
+            amount: TradeState.isDataLoading ? "..." : (TradeState.buyPrice > 0n ? formatBigNumber(TradeState.buyPrice).toFixed(2) : "0.00"),
+            balance: `Balance: ${formatBigNumber(State.currentUserBalance).toFixed(2)}`
+        });
+        
+        toPanelHtml = renderPanel({
+            label: "You Receive",
+            tokenSymbol: selectedTier ? selectedTier.name : "Select Booster",
+            tokenImg: selectedTier ? selectedTier.img : null,
+            amount: selectedTier ? "1" : "0",
+            balance: (selectedTier && TradeState.firstAvailableTokenIdForBuy === null && !TradeState.isDataLoading) ? 'Sold Out' : '',
+            isSelector: true
+        });
 
-    el.innerHTML = `<p class="loading-message">Loading booster data...</p>`;
-    
-    try {
-        // =================================================================
-        // ### CORREÇÃO DE CHAMADA (Linha 82) ###
-        await loadMyBoostersFromAPI(); // Carrega os boosters do usuário (da API)
-        // =================================================================
+    } else {
+        // ========== VENDA (NFT -> BKC) ==========
+        fromPanelHtml = renderPanel({
+            label: "You Sell",
+            tokenSymbol: selectedTier ? selectedTier.name : "Select Booster",
+            tokenImg: selectedTier ? selectedTier.img : null,
+            amount: selectedTier ? "1" : "0",
+            balance: `You have: ${TradeState.userBalanceOfSelectedNFT}`,
+            isSelector: true
+        });
 
-        let contentPromises;
-
-        if (TradeState.activeTab === 'buy') {
-            // --- MODO COMPRA ---
-            contentPromises = boosterTiers.map(async (tier) => {
-                try {
-                    const poolInfo = await safeContractCall(State.nftBondingCurveContract, 'pools', [tier.boostBips], { nftCount: 0n });
-                    const buyPrice = await safeContractCall(State.nftBondingCurveContract, 'getBuyPrice', [tier.boostBips], ethers.MaxUint256);
-
-                    const availableInPool = Number(poolInfo.nftCount);
-                    const isBuyDisabled = availableInPool === 0 || buyPrice === ethers.MaxUint256;
-                    const priceFormatted = isBuyDisabled ? '--' : formatBigNumber(buyPrice).toFixed(2);
-
-                    return `
-                        <div class="trade-row">
-                            <div class="trade-row-icon">
-                                <img src="${tier.img}" alt="${tier.name}"/>
-                            </div>
-                            <div class="trade-row-info">
-                                <h4>${tier.name}</h4>
-                                <p class="${tier.color}">+${tier.boostBips / 100}% Efficiency</p>
-                            </div>
-                            <div class="trade-row-stats">
-                                <div class="stat-label">Price</div>
-                                <div class="stat-value">${priceFormatted} BKC</div>
-                                <div class="stat-label" style="margin-top: 4px;">Available: ${availableInPool}</div>
-                            </div>
-                            <div class="trade-row-action">
-                                <button class="trade-action-btn buy buy-booster-btn" 
-                                        data-boostbips="${tier.boostBips}" 
-                                        data-price="${buyPrice.toString()}" 
-                                        ${isBuyDisabled ? 'disabled' : ''}>
-                                    Buy
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                } catch (error) {
-                    console.error(`Error loading buy data for tier ${tier.name}:`, error);
-                    return `
-                        <div class="trade-row">
-                            <div class="trade-row-icon"><img src="${tier.img}" alt="${tier.name}"/></div>
-                            <div class="trade-row-info">
-                                <h4>${tier.name}</h4>
-                                <p class="${tier.color}">+${tier.boostBips / 100}% Efficiency</p>
-                            </div>
-                            <div class="trade-row-stats text-red-400">
-                                <div class="stat-label">Error</div>
-                                <div class="stat-value">Failed to load</div>
-                            </div>
-                            <div class="trade-row-action">
-                                <button class="trade-action-btn buy" disabled>Buy</button>
-                            </div>
-                        </div>
-                    `;
-                }
-            });
-        } else {
-            // --- MODO VENDA ---
-            const userBoosters = State.myBoosters;
-
-            if (userBoosters.length === 0) {
-                el.innerHTML = `<p class="text-center text-zinc-400 p-4">You do not own any Booster NFTs to sell.</p>`;
-                return;
+        // Detalhes do preço de venda (Taxas e Descontos)
+        let sellDetails = null;
+        if (TradeState.sellPrice > 0n) {
+            const gross = formatBigNumber(TradeState.sellPrice).toFixed(2);
+            if (TradeState.bestBoosterBips > 0n) {
+                sellDetails = `(Gross: ${gross} - ${TradeState.bestBoosterBips / 100}% Booster Discount)`;
+            } else {
+                const baseTaxBips = State.ecosystemManagerContract ? await safeContractCall(State.ecosystemManagerContract, 'getFee', ["NFT_POOL_TAX_BIPS"], 1000n) : 1000n;
+                sellDetails = `(Gross: ${gross} - ${Number(baseTaxBips) / 100}% Base Tax)`;
             }
-
-            contentPromises = userBoosters.map(async (booster) => {
-                try {
-                    const tier = boosterTiers.find(t => t.boostBips === booster.boostBips) || { name: 'Unknown', color: 'text-zinc-400', img: '' };
-                    const sellPrice = await safeContractCall(State.nftBondingCurveContract, 'getSellPrice', [booster.boostBips], 0n);
-                    const isSellDisabled = sellPrice === 0n;
-                    const priceFormatted = isSellDisabled ? '--' : formatBigNumber(sellPrice).toFixed(2);
-
-                    return `
-                        <div class="trade-row">
-                            <div class="trade-row-icon">
-                                <img src="${tier.img}" alt="${tier.name}"/>
-                            </div>
-                            <div class="trade-row-info">
-                                H4>${tier.name}</h4>
-                                <p class="text-zinc-400" style="font-size: 0.8rem;">Token ID #${booster.tokenId}</p>
-                            </div>
-                            <div class="trade-row-stats">
-                                <div class="stat-label">Sell Value</div>
-                                <div class="stat-value">${priceFormatted} BKC</div>
-                            </div>
-                            <div class="trade-row-action">
-                                <button class="trade-action-btn sell sell-booster-btn" 
-                                        data-tokenid="${booster.tokenId}" 
-                                        ${isSellDisabled ? 'disabled' : ''}>
-                                    Sell
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                } catch (error) {
-                    console.error(`Error loading sell data for booster ID ${booster.tokenId}:`, error);
-                    const tier = boosterTiers.find(t => t.boostBips === booster.boostBips) || { name: 'Unknown', color: 'text-zinc-400', img: '' };
-                    return `
-                        <div class="trade-row">
-                            <div class="trade-row-icon"><img src="${tier.img}" alt="${tier.name}"/></div>
-                            <div class="trade-row-info">
-                                <h4>${tier.name}</h4>
-                                <p class="text-zinc-400" style="font-size: 0.8rem;">Token ID #${booster.tokenId}</p>
-                            </div>
-                            <div class="trade-row-stats text-red-400">
-                                <div class="stat-label">Error</div>
-                                <div class="stat-value">Failed to load</div>
-                            </div>
-                            <div class="trade-row-action">
-                                <button classA="trade-action-btn sell" disabled>Sell</button>
-                            </div>
-                        </div>
-                    `;
-                }
-            });
         }
 
-        el.innerHTML = (await Promise.all(contentPromises)).join('');
+        toPanelHtml = renderPanel({
+            label: "You Receive (Net)",
+            tokenSymbol: "BKC",
+            tokenImg: bkcLogoPath, 
+            amount: TradeState.isDataLoading ? "..." : (TradeState.netSellPrice > 0n ? formatBigNumber(TradeState.netSellPrice).toFixed(2) : "0.00"),
+            details: sellDetails
+        });
+    }
 
-    } catch (err) {
-        console.error("Error in renderActiveTabContent:", err);
-        renderError(el, "Failed to load store data. Please refresh.");
+    // Renderiza o HTML final da caixa
+    contentEl.innerHTML = `
+        ${fromPanelHtml}
+        <div class="swap-arrow-button-wrapper">
+            <button class="swap-arrow-btn">
+                <i class="fa-solid fa-arrow-down"></i>
+            </button>
+        </div>
+        ${toPanelHtml}
+    `;
+}
+
+/**
+ * Renderiza o botão principal de execução (Comprar, Vender, Saldo Insuficiente, etc.)
+ */
+function renderExecuteButton() {
+    const buttonEl = document.getElementById('swap-box-button-container');
+    if (!buttonEl) return;
+
+    let btnText = "Select a Booster";
+    let isDisabled = true;
+    let isInsufficientBalance = false; // Flag para saldo insuficiente
+
+    if (TradeState.selectedPoolBoostBips !== null) {
+        if (TradeState.tradeDirection === 'buy') {
+            
+            // **********************************************
+            // ### INVERSÃO DE PRIORIDADE DE VERIFICAÇÃO ###
+            // Priorizamos o Saldo Insuficiente sobre o Sold Out para mostrar o CTA.
+            // **********************************************
+            
+            if (TradeState.buyPrice === 0n) {
+                btnText = "Buy Booster";
+                isDisabled = true;
+            } 
+            // 1. Checa Saldo Insuficiente (Prioridade Máxima)
+            else if (TradeState.buyPrice > State.currentUserBalance) {
+                btnText = "Insufficient BKC Balance";
+                isDisabled = true;
+                isInsufficientBalance = true; 
+            } 
+            // 2. Checa Estoque (Só executa se o saldo for suficiente ou se o cheque acima foi ignorado)
+            else if (TradeState.firstAvailableTokenIdForBuy === null) {
+                btnText = "Sold Out";
+                isDisabled = true;
+                isInsufficientBalance = false; // Garante que a flag seja desativada se Sold Out
+            }
+            // 3. Pronto para Comprar
+            else {
+                btnText = "Buy Booster";
+                isDisabled = false;
+            }
+        } else {
+            // Lógica de Venda
+            if (TradeState.userBalanceOfSelectedNFT === 0) {
+                btnText = "You have no such Booster";
+                isDisabled = true;
+            } else if (TradeState.netSellPrice === 0n) {
+                btnText = "Sell Booster";
+                isDisabled = true;
+            } else {
+                btnText = "Sell Booster";
+                isDisabled = false;
+            }
+        }
+    }
+
+    // --- LÓGICA DE RENDERIZAÇÃO DO BOTÃO ---
+    // Se a flag 'isInsufficientBalance' estiver ativa, mostra o link "Buy $BKC"
+    if (isInsufficientBalance) {
+        const buyBkcLink = addresses.mainLPPairAddress || '#';
+        // Ajustamos os estilos inline para garantir a cor e a visibilidade do padrão âmbar
+        buttonEl.innerHTML = `
+            <a href="${buyBkcLink}" rel="noopener noreferrer" 
+               class="execute-trade-btn" 
+               style="background: #f59e0b; color: #18181b; text-decoration: none; display: flex; align-items: center; justify-content: center; font-weight: 700; text-shadow: none;">
+                <i class="fa-solid fa-shopping-cart mr-2"></i>
+                Buy $BKC
+            </a>
+        `;
+    } else {
+        // Caso contrário, mostra o botão padrão (habilitado ou desabilitado)
+        buttonEl.innerHTML = `
+            <button id="execute-trade-btn" class="execute-trade-btn" ${isDisabled ? 'disabled' : ''}>
+                ${btnText}
+            </button>
+        `;
     }
 }
 
+/**
+ * Função helper para renderizar um painel (From ou To).
+ */
+function renderPanel({ label, tokenSymbol, tokenImg, amount, balance, details, isSelector = false }) {
+    const tokenDisplay = tokenImg 
+        ? `<img src="${tokenImg}" alt="${tokenSymbol}" /> ${tokenSymbol}`
+        : tokenSymbol;
 
-// --- LISTENERS ---
+    const selectorClass = isSelector ? 'is-selector' : '';
+    const selectorArrow = isSelector ? '<i class="fa-solid fa-chevron-down"></i>' : '';
+    const balanceClass = (balance === 'Sold Out') ? 'swap-balance sold-out' : 'swap-balance';
+
+    return `
+        <div class="swap-panel">
+            <div class="swap-panel-header">
+                <span class="swap-label">${label}</span>
+                <span class="${balanceClass}">${balance || ''}</span>
+            </div>
+            <div class="swap-panel-main">
+                <div class="swap-amount">${amount}</div>
+                <button class="token-selector-btn ${selectorClass}" ${!isSelector ? 'disabled' : ''}>
+                    ${tokenDisplay}
+                    ${selectorArrow}
+                </button>
+            </div>
+            ${details ? `<div class="swap-panel-details">${details}</div>` : ''}
+        </div>
+    `;
+}
+
+/**
+ * Renderiza a lista de boosters dentro do modal de seleção.
+ */
+function renderPoolSelectorModal() {
+    const modalListEl = document.getElementById('pool-modal-list');
+    if (!modalListEl) return;
+
+    modalListEl.innerHTML = boosterTiers.map(tier => `
+        <button class="pool-modal-item" data-boostbips="${tier.boostBips}">
+            <img src="${tier.img}" alt="${tier.name}" />
+            <div class="pool-modal-info">
+                <h4>${tier.name}</h4>
+                <span>+${tier.boostBips / 100}% Efficiency</span>
+            </div>
+        </button>
+    `).join('');
+}
+
+// --- CARREGAMENTO DE DADOS (DATA FETCHING) ---
+
+/**
+ * Busca todos os dados necessários para o pool selecionado e atualiza o estado.
+ */
+async function loadDataForSelectedPool() {
+    if (TradeState.selectedPoolBoostBips === null) {
+        return; // Não faz nada se nenhum pool estiver selecionado
+    }
+    
+    TradeState.isDataLoading = true;
+    TradeState.firstAvailableTokenIdForBuy = null; 
+    await renderSwapPanels(); 
+    renderExecuteButton(); 
+
+    try {
+        const boostBips = TradeState.selectedPoolBoostBips;
+
+        // 1. Carrega os boosters do usuário (necessário para Venda e Desconto)
+        await loadMyBoostersFromAPI();
+
+        // 2. Filtra os boosters do usuário para o tier selecionado (para Vender)
+        const myTierBoosters = State.myBoosters.filter(b => b.boostBips === boostBips);
+        TradeState.userBalanceOfSelectedNFT = myTierBoosters.length;
+        TradeState.firstAvailableTokenId = myTierBoosters.length > 0 ? myTierBoosters[0].tokenId : null;
+
+        // 3. Encontra o MELHOR booster do usuário (para Desconto)
+        const bestBooster = State.myBoosters.reduce((best, current) => {
+            return current.boostBips > best.boostBips ? current : best;
+        }, { boostBips: 0n, tokenId: 0n }); 
+        
+        TradeState.bestBoosterTokenId = bestBooster.tokenId;
+        TradeState.bestBoosterBips = bestBooster.boostBips;
+
+        // 4. (INDEXADOR) Encontra um NFT no estoque do pool (para Comprar)
+        const tokenIdForBuy = await _fetchFirstAvailableTokenIdForBuy(boostBips);
+        TradeState.firstAvailableTokenIdForBuy = tokenIdForBuy;
+
+        // 5. Busca os preços de compra e venda do contrato
+        const [buyPrice, sellPrice] = await Promise.all([
+            safeContractCall(State.nftBondingCurveContract, 'getBuyPrice', [boostBips], ethers.MaxUint256),
+            safeContractCall(State.nftBondingCurveContract, 'getSellPrice', [boostBips], 0n)
+        ]);
+
+        TradeState.buyPrice = (buyPrice === ethers.MaxUint256) ? 0n : buyPrice; 
+        TradeState.sellPrice = sellPrice;
+
+        // 6. Calcula o preço líquido de venda (com taxas e descontos)
+        const TAX_BIPS_KEY = "NFT_POOL_TAX_BIPS";
+        const [baseTaxBips, discountBips] = await Promise.all([
+            safeContractCall(State.ecosystemManagerContract, 'getFee', [TAX_BIPS_KEY], 1000n),
+            safeContractCall(State.ecosystemManagerContract, 'getBoosterDiscount', [TradeState.bestBoosterBips], 0n)
+        ]);
+        
+        const finalTaxBips = (baseTaxBips > discountBips) ? (baseTaxBips - discountBips) : 0n;
+        const taxAmount = (sellPrice * finalTaxBips) / 10000n;
+        TradeState.netSellPrice = sellPrice - taxAmount;
+
+    } catch (err) {
+        console.error("Error loading pool data:", err);
+        TradeState.buyPrice = 0n;
+        TradeState.sellPrice = 0n;
+        TradeState.netSellPrice = 0n;
+        TradeState.firstAvailableTokenIdForBuy = null; // Garante que não pode comprar
+    } finally {
+        TradeState.isDataLoading = false;
+        // Re-renderiza tudo com os novos dados
+        await renderSwapPanels();
+        renderExecuteButton();
+    }
+}
+
+/**
+ * Alterna a visibilidade do modal de seleção.
+ */
+function toggleModal(isOpen) {
+    TradeState.isModalOpen = isOpen;
+    const modalEl = document.getElementById('pool-select-modal');
+    if (modalEl) {
+        modalEl.classList.toggle('open', isOpen);
+    }
+}
+
+// --- SETUP DE LISTENERS ---
+// Configura os listeners de evento para a página.
 
 function setupStorePageListeners() {
+    // Usa um listener persistente no elemento principal (delegação de eventos)
     DOMElements.store.addEventListener('click', async (e) => {
-        const button = e.target.closest('button');
-        if (!button) return;
-
-        // 1. Listener para as ABAS
-        if (button.classList.contains('trade-tab')) {
+        
+        // --- Botão de Inverter Direção (Swap) ---
+        const swapBtn = e.target.closest('.swap-arrow-btn');
+        if (swapBtn) {
             e.preventDefault();
-            const newTab = button.dataset.tab;
-            if (newTab !== TradeState.activeTab) {
-                TradeState.activeTab = newTab;
-                await renderTradeInterface();
-            }
+            TradeState.tradeDirection = (TradeState.tradeDirection === 'buy') ? 'sell' : 'buy';
+            await renderSwapPanels();
+            renderExecuteButton();
             return;
         }
 
-        // 2. Listener para o botão de COMPRA
-        if (button.classList.contains('buy-booster-btn')) {
+        // --- Abrir Modal de Seleção de Pool ---
+        const selectorBtn = e.target.closest('.token-selector-btn.is-selector');
+        if (selectorBtn) {
             e.preventDefault();
-            const { boostbips, price } = button.dataset;
-            const success = await executeBuyBooster(boostbips, price, button);
-            if (success) {
-                State.myBoosters = [];
-                await loadUserData(); // Recarrega os dados do usuário *depois* da compra
-                await renderActiveTabContent();
-            }
+            toggleModal(true);
             return;
         }
 
-        // 3. Listener para o botão de VENDA
-        if (button.classList.contains('sell-booster-btn')) {
+        // --- Fechar Modal de Seleção ---
+        const closeBtn = e.target.closest('.pool-modal-close');
+        if (closeBtn) {
             e.preventDefault();
-            const { tokenid } = button.dataset;
-            const success = await executeSellBooster(tokenid, button);
-            if (success) {
-                State.myBoosters = [];
-                await loadUserData(); // Recarrega os dados do usuário *depois* da venda
-                await renderActiveTabContent();
+            toggleModal(false);
+            return;
+        }
+
+        // --- Selecionar um Pool do Modal ---
+        const poolItemBtn = e.target.closest('.pool-modal-item');
+        if (poolItemBtn) {
+            e.preventDefault();
+            TradeState.selectedPoolBoostBips = BigInt(poolItemBtn.dataset.boostbips);
+            toggleModal(false); // Fecha o modal
+            await loadDataForSelectedPool(); // Carrega os dados do pool
+            return;
+        }
+
+        // --- Botão de Executar Negociação ---
+        const executeBtn = e.target.closest('#execute-trade-btn');
+        if (executeBtn) {
+            e.preventDefault();
+            
+            if (TradeState.tradeDirection === 'buy') {
+                // Lógica de Compra
+                if (TradeState.firstAvailableTokenIdForBuy === null) {
+                    console.error("Tentativa de compra, mas nenhum Token ID está disponível.");
+                    return;
+                }
+                
+                const success = await executeBuyBooster(
+                    TradeState.selectedPoolBoostBips, 
+                    TradeState.buyPrice,
+                    TradeState.bestBoosterTokenId,
+                    TradeState.firstAvailableTokenIdForBuy, 
+                    executeBtn
+                );
+                if (success) {
+                    await loadDataForSelectedPool(); // Recarrega os dados
+                }
+            } else {
+                // Lógica de Venda
+                const success = await executeSellBooster(
+                    TradeState.firstAvailableTokenId, // O NFT que você está vendendo
+                    TradeState.bestBoosterTokenId,  // O NFT que você está usando para o desconto
+                    executeBtn
+                );
+                if (success) {
+                    await loadDataForSelectedPool(); // Recarrega os dados
+                }
             }
             return;
         }
@@ -255,11 +509,24 @@ if (!DOMElements.store._listenersInitialized) {
     DOMElements.store._listenersInitialized = true;
 }
 
-// Exporta a função render principal
+// --- OBJETO PRINCIPAL DA PÁGINA (StorePage) ---
+// Exporta a função 'render' principal que é chamada pelo app.js
+
 export const StorePage = {
     async render(isUpdate = false) {
-        // A lógica de carregamento de dados foi movida para 'renderActiveTabContent'
-        // para garantir que os dados estejam prontos antes de renderizar.
-        await renderTradeInterface();
+        // Garante que os contratos necessários estão carregados
+        if (!State.ecosystemManagerContract || !State.rewardBoosterContract) {
+             const { initEcosystemManager, initRewardBoosterContract } = await import('../modules/contracts.js');
+             await initEcosystemManager(State.provider);
+             await initRewardBoosterContract(State.provider); 
+        }
+        
+        await renderSwapBoxInterface();
+        
+        // Carrega dados para o pool padrão ou o último selecionado
+        if (TradeState.selectedPoolBoostBips === null && boosterTiers.length > 0) {
+            TradeState.selectedPoolBoostBips = boosterTiers[0].boostBips; // Padrão
+        }
+        await loadDataForSelectedPool();
     }
 }

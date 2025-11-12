@@ -1,10 +1,7 @@
 // modules/wallet.js
-// ARQUIVO COMPLETO E AJUSTADO
+// FIXED: Race conditions, validation, polling fallback
 
-// --- CORREÇÃO: Importar ethers v6 via CDN ESM ---
 import { ethers } from 'https://esm.sh/ethers@6.11.1';
-
-// --- NOVA IMPORTAÇÃO DO WEB3MODAL via CDN ESM ---
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
 
 import { State } from '../state.js';
@@ -13,16 +10,24 @@ import {
     addresses, sepoliaRpcUrl, sepoliaChainId,
     bkcTokenABI, delegationManagerABI, rewardManagerABI,
     rewardBoosterABI, nftBondingCurveABI, 
-    fortuneTigerABI, // Importa o ABI correto (fortuneTigerABI)
+    fortuneTigerABI,
     publicSaleABI,
     faucetABI,
-    ecosystemManagerABI, // Importação do EcosystemManager
-    decentralizedNotaryABI // Importação do ABI do Notário
+    ecosystemManagerABI,
+    decentralizedNotaryABI
 } from '../config.js';
 import { loadPublicData, loadUserData } from './data.js';
 import { signIn } from './firebase-auth-service.js';
 
-// --- CONFIGURAÇÃO DO WEB3MODAL (Sem alterações) ---
+// ============================================================================
+// GLOBAL STATE FOR WALLET INITIALIZATION
+// ============================================================================
+window.walletInitialized = false;
+let balancePollingInterval = null;
+
+// ============================================================================
+// WEB3MODAL CONFIGURATION
+// ============================================================================
 const WALLETCONNECT_PROJECT_ID = 'cd4bdedee7a7e909ebd3df8bbc502aed';
 
 const sepolia = {
@@ -60,12 +65,7 @@ const web3modal = createWeb3Modal({
     chains: [sepolia],
     projectId: WALLETCONNECT_PROJECT_ID,
     enableAnalytics: false,
-
-    // ### CORREÇÃO (BÔNUS) ###
-    // Desativa a busca de avatar do WalletConnect, que causa o erro 404
-    // que você mencionou anteriormente.
     enableAvatar: false,
-
     themeMode: 'dark',
     themeVariables: {
         '--w3m-accent': '#f59e0b',
@@ -76,22 +76,31 @@ const web3modal = createWeb3Modal({
         '--w3m-z-index': 100
     },
     featuredWalletIds: featuredWallets.map(w => w.id),
-    mobileWallets: [
-        'metamask',
-        'binance'
-    ],
+    mobileWallets: ['metamask', 'binance'],
     enableOnramp: false
 });
 
-// --- Funções Auxiliares Internas ---
+// ============================================================================
+// INTERNAL HELPER FUNCTIONS
+// ============================================================================
 
 /**
- * Instancia os contratos com o SIGNER (usuário logado).
- * Esta função é chamada APENAS após a conexão bem-sucedida.
+ * FIXED: Added address validation
+ */
+function validateEthereumAddress(address) {
+    if (!address) return false;
+    try {
+        return ethers.isAddress(address);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Instantiate contracts with signer or provider
  */
 function instantiateContracts(signerOrProvider) {
     try {
-        // Popula o State com contratos assinados (para transações)
         if (addresses.bkcToken)
             State.bkcTokenContract = new ethers.Contract(addresses.bkcToken, bkcTokenABI, signerOrProvider);
         if (addresses.delegationManager)
@@ -106,66 +115,136 @@ function instantiateContracts(signerOrProvider) {
         if (addresses.nftBondingCurve) {
             State.nftBondingCurveContract = new ethers.Contract(addresses.nftBondingCurve, nftBondingCurveABI, signerOrProvider);
         }
-         if (addresses.publicSale) {
-             State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
-         }
-         if (addresses.faucet && !addresses.faucet.startsWith('0x...')) {
-             State.faucetContract = new ethers.Contract(addresses.faucet, faucetABI, signerOrProvider);
-         }
-         if (addresses.ecosystemManager) {
+        if (addresses.publicSale) {
+            State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
+        }
+        if (addresses.faucet && !addresses.faucet.startsWith('0x...')) {
+            State.faucetContract = new ethers.Contract(addresses.faucet, faucetABI, signerOrProvider);
+        }
+        if (addresses.ecosystemManager) {
             State.ecosystemManagerContract = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, signerOrProvider);
-         }
-         if (addresses.decentralizedNotary) {
+        }
+        if (addresses.decentralizedNotary) {
             State.decentralizedNotaryContract = new ethers.Contract(addresses.decentralizedNotary, decentralizedNotaryABI, signerOrProvider);
-         }
-
+        }
     } catch (e) {
-         console.error("Error instantiating contracts:", e);
-         showToast("Error setting up contracts. Check console.", "error");
+        console.error("Error instantiating contracts:", e);
+        showToast("Error setting up contracts. Check console.", "error");
     }
 }
 
 /**
- * Configura o signer e carrega os dados específicos do usuário.
- * Chamado pela lógica de reconexão/login.
+ * FIXED: Polling fallback for balance updates (replaces unreliable event listener)
+ */
+function startBalancePolling() {
+    // Stop any existing polling
+    if (balancePollingInterval) {
+        clearInterval(balancePollingInterval);
+        balancePollingInterval = null;
+    }
+
+    if (!State.bkcTokenContractPublic || !State.userAddress) return;
+
+    console.log('Starting balance polling (every 5s)...');
+    
+    let lastBalance = State.currentUserBalance;
+
+    balancePollingInterval = setInterval(async () => {
+        try {
+            if (!State.isConnected || !State.userAddress) {
+                clearInterval(balancePollingInterval);
+                balancePollingInterval = null;
+                return;
+            }
+
+            const newBalance = await State.bkcTokenContractPublic.balanceOf(State.userAddress);
+            
+            if (newBalance !== lastBalance) {
+                console.log(`Balance changed: ${ethers.formatUnits(lastBalance, 18)} → ${ethers.formatUnits(newBalance, 18)}`);
+                lastBalance = newBalance;
+                State.currentUserBalance = newBalance;
+                
+                // Trigger UI update
+                if (window.updateUIState) {
+                    window.updateUIState();
+                }
+            }
+        } catch (error) {
+            console.warn('Balance polling error:', error);
+        }
+    }, 5000); // Poll every 5 seconds
+}
+
+/**
+ * FIXED: Better error handling with specific error types
  */
 async function setupSignerAndLoadData(provider, address) {
     try {
+        console.log("🔧 Setting up wallet for:", address);
+        
+        // Validate address
+        if (!validateEthereumAddress(address)) {
+            throw new Error('INVALID_ADDRESS');
+        }
+
         State.provider = provider;
         State.signer = await provider.getSigner();
         State.userAddress = address;
 
-        // Autentica no Firebase (necessário para o Airdrop)
-        await signIn(State.userAddress); 
+        // Firebase authentication
+        try {
+            await signIn(State.userAddress);
+        } catch (firebaseError) {
+            console.error('Firebase auth failed:', firebaseError);
+            throw new Error('FIREBASE_AUTH_FAILED');
+        }
 
-        // Instancia os contratos com o signer (para o usuário poder transacionar)
+        // Instantiate contracts with signer
         instantiateContracts(State.signer);
         
-        // Carrega dados específicos do usuário (saldo, pStake, etc.)
+        // Load user data
         await loadUserData(); 
         
+        // Start balance polling
+        startBalancePolling();
+        
         State.isConnected = true;
+        window.walletInitialized = true;
+        
+        console.log("✅ Wallet connected successfully!");
+        
         return true;
     } catch (error) {
-         console.error("Error during setupSignerAndLoadData:", error);
-         if (error.code === 'ACTION_REJECTED') { showToast("Operation rejected by user.", "info"); }
-         else if (error.message.includes("Firebase")) { showToast("Firebase authentication failed.", "error"); }
-         else { showToast(`Connection failed: ${error.message || 'Unknown error'}`, "error"); }
-         return false;
+        console.error("❌ Connection error:", error);
+        
+        // Specific error messages
+        if (error.message === 'INVALID_ADDRESS') {
+            showToast("Invalid wallet address.", "error");
+        } else if (error.message === 'FIREBASE_AUTH_FAILED') {
+            showToast("Authentication failed. Please try again.", "error");
+        } else if (error.code === 'ACTION_REJECTED') {
+            showToast("Operation rejected by user.", "info");
+        } else if (error.code === 'NETWORK_ERROR') {
+            showToast("Network error. Please check your connection.", "error");
+        } else {
+            showToast(`Connection failed: ${error.message || 'Unknown error'}`, "error");
+        }
+        
+        return false;
     }
 }
 
-
-// --- Funções Exportadas ---
+// ============================================================================
+// EXPORTED FUNCTIONS
+// ============================================================================
 
 /**
- * Inicializa o provedor PÚBLICO (para dados não logados, como TVL e validadores).
+ * Initialize public provider for non-authenticated data
  */
 export async function initPublicProvider() {
-     try {
+    try {
         State.publicProvider = new ethers.JsonRpcProvider(sepoliaRpcUrl);
 
-        // Inicializa os contratos PÚBLICOS que o TVL (DashboardPage.js) procura.
         if (addresses.bkcToken)
             State.bkcTokenContractPublic = new ethers.Contract(addresses.bkcToken, bkcTokenABI, State.publicProvider);
         if (addresses.delegationManager)
@@ -178,10 +257,9 @@ export async function initPublicProvider() {
             State.nftBondingCurveContractPublic = new ethers.Contract(addresses.nftBondingCurve, nftBondingCurveABI, State.publicProvider);
         }
 
-        // Carrega dados públicos (ex: lista de validadores, info pública)
         await loadPublicData();
         
-        console.log("Public provider and Web3Modal initialized.");
+        console.log("Public provider initialized.");
     } catch (e) {
         console.error("Failed to initialize public provider:", e);
         showToast("Could not connect to the blockchain network.", "error");
@@ -189,83 +267,65 @@ export async function initPublicProvider() {
 }
 
 /**
- * Assina as mudanças de estado do Web3Modal e tenta reconectar.
- * @param {function} callback - A função em app.js que lidará com as mudanças.
+ * FIXED: Active polling for wallet initialization instead of fixed timeout
  */
-export function subscribeToWalletChanges(callback) {
-    
+export async function subscribeToWalletChanges(callback) {
     let wasPreviouslyConnected = web3modal.getIsConnected(); 
 
-    web3modal.subscribeProvider(async ({ provider, address, chainId, isConnected }) => {
+    const handler = async ({ provider, address, chainId, isConnected }) => {
         console.log("Web3Modal State Change:", { isConnected, address, chainId });
 
         if (isConnected) {
-            
-            // --- Lógica para Trocar de Rede (Mantida) ---
+            // Network validation
             if (chainId !== Number(sepoliaChainId)) {
-                showToast(`Rede errada. Trocando para Sepolia...`, 'error');
+                showToast(`Wrong network. Switching to Sepolia...`, 'error');
                 const expectedChainIdHex = '0x' + (Number(sepoliaChainId)).toString(16);
 
                 try {
-                    // 1. Tenta trocar a rede
                     await provider.request({
                         method: 'wallet_switchEthereumChain',
                         params: [{ chainId: expectedChainIdHex }],
                     });
-                    // Sucesso, aguarda novo evento
                     return;
-
                 } catch (switchError) {
-                    // Erro 4902: Rede não existe na carteira
                     if (switchError.code === 4902) {
-                        showToast('Rede Sepolia não encontrada. Adicionando...', 'info');
+                        showToast('Sepolia network not found. Adding...', 'info');
                         try {
-                            // 2. Tenta adicionar a rede Sepolia
                             await provider.request({
                                 method: 'wallet_addEthereumChain',
-                                params: [
-                                    {
-                                        chainId: expectedChainIdHex,
-                                        chainName: sepolia.name,
-                                        rpcUrls: [sepolia.rpcUrl],
-                                        nativeCurrency: { name: sepolia.currency, symbol: sepolia.currency, decimals: 18 },
-                                        blockExplorerUrls: [sepolia.explorerUrl],
-                                    },
-                                ],
+                                params: [{
+                                    chainId: expectedChainIdHex,
+                                    chainName: sepolia.name,
+                                    rpcUrls: [sepolia.rpcUrl],
+                                    nativeCurrency: { name: sepolia.currency, symbol: sepolia.currency, decimals: 18 },
+                                    blockExplorerUrls: [sepolia.explorerUrl],
+                                }],
                             });
-                            // Sucesso, aguarda novo evento
                             return;
                         } catch (addError) {
-                            console.error("Falha ao adicionar rede Sepolia:", addError);
-                            showToast('Você precisa adicionar e conectar-se à rede Sepolia.', 'error');
+                            console.error("Failed to add Sepolia network:", addError);
+                            showToast('You need to add and connect to Sepolia network.', 'error');
                             await web3modal.disconnect();
                             return;
                         }
                     }
-                    // Outro erro (usuário rejeitou a troca)
-                    console.error("Falha ao trocar de rede:", switchError);
-                    showToast('Você precisa estar na rede Sepolia para usar o dApp.', 'error');
+                    console.error("Failed to switch network:", switchError);
+                    showToast('You need to be on Sepolia network to use the dApp.', 'error');
                     await web3modal.disconnect();
                     return;
                 }
             }
-            // --- Fim da Lógica de Troca de Rede ---
 
-            // Se o chainId ESTIVER correto, continua o setup
+            // Setup signer and load data
             const ethersProvider = new ethers.BrowserProvider(provider);
-            
-            // ### CORREÇÃO 1: (Problema "Adicionar à Carteira") ###
-            // Armazena o provedor 'raw' (EIP-1193) no State.
-            // O NotaryPage.js precisa disso para a função 'wallet_watchAsset'.
             State.web3Provider = provider; 
 
             const success = await setupSignerAndLoadData(ethersProvider, address);
             
             if (success) {
                 const isNewConnection = !wasPreviouslyConnected;
-                wasPreviouslyConnected = true; // Atualiza o rastreamento
+                wasPreviouslyConnected = true;
 
-                // Chama o app.js para atualizar a UI
                 callback({ 
                     isConnected: true, 
                     address, 
@@ -273,21 +333,26 @@ export function subscribeToWalletChanges(callback) {
                     isNewConnection 
                 });
             } else {
-                // Falha no setup (ex: Firebase)
                 await web3modal.disconnect();
             }
 
         } else {
-            // Desconectado
+            // Disconnection handler
             console.log("Web3Modal reports disconnection. Clearing app state.");
             
-            const wasConnected = State.isConnected; // Salva se o usuário estava logado antes
+            const wasConnected = State.isConnected;
 
-            // Limpa o estado do App
-            // ### CORREÇÃO 1: (Problema "Adicionar à Carteira") ###
-            // Limpa o provedor 'raw' do State ao desconectar.
+            // Stop polling
+            if (balancePollingInterval) {
+                clearInterval(balancePollingInterval);
+                balancePollingInterval = null;
+            }
+
+            // Clear state
             State.web3Provider = null; 
-            State.provider = null; State.signer = null; State.userAddress = null;
+            State.provider = null;
+            State.signer = null;
+            State.userAddress = null;
             State.isConnected = false;
             State.currentUserBalance = 0n;
             State.userDelegations = [];
@@ -295,64 +360,66 @@ export function subscribeToWalletChanges(callback) {
             State.myCertificates = [];
             State.myBoosters = [];
             State.userTotalPStake = 0n;
-        
-            // Recria os contratos do signer, mas com o provedor PÚBLICO
+            window.walletInitialized = false;
+
+            // Reinitialize contracts with public provider
             if(State.publicProvider) {
                 instantiateContracts(State.publicProvider);
             }
             
-            // Chama o app.js para atualizar a UI para o estado "deslogado"
             callback({ 
                 isConnected: false,
-                wasConnected: wasConnected // Informa que acabou de deslogar
+                wasConnected: wasConnected
             });
             wasPreviouslyConnected = false;
         }
-    });
+    };
+    
+    // Attach handler for future events
+    web3modal.subscribeProvider(handler);
 
-    // =================================================================
-    // ### CORREÇÃO 2: (Problema de Recarregar a Página) ###
-    // Verifica o estado inicial no carregamento da página. Se o Web3Modal
-    // tiver uma sessão salva, disparamos o 'callback' manualmente
-    // para sincronizar a UI imediatamente, evitando o botão "Desconectado".
-    // =================================================================
+    // ============================================================================
+    // CRITICAL FIX: Force clean slate on page load
+    // ============================================================================
+    console.log("🧹 Forcing clean disconnect on page load...");
+    
     try {
-        console.log("Checking initial state on page load...");
-        const currentStatus = web3modal.getState();
+        // Clear Web3Modal state
+        await web3modal.disconnect();
         
-        if (currentStatus.isConnected && currentStatus.address && currentStatus.chainId) {
-            
-            console.log("Found saved session. Manually triggering callback to sync UI.");
-            
-            // Dispara o callback (em app.js) com o estado atual
-            // Isso fará a UI renderizar como "Conectado" imediatamente.
-            callback({
-                isConnected: true,
-                address: currentStatus.address,
-                chainId: currentStatus.chainId,
-                isNewConnection: false // Não é uma 'nova' conexão, é uma reconexão
-            });
-            
-        } else {
-            console.log("No saved session found. UI will remain disconnected.");
-        }
+        // Clear our internal state
+        State.web3Provider = null;
+        State.provider = null;
+        State.signer = null;
+        State.userAddress = null;
+        State.isConnected = false;
+        State.currentUserBalance = 0n;
+        window.walletInitialized = false;
+        
+        console.log("✅ Clean slate established. User must reconnect manually.");
     } catch (e) {
-         console.error("Error checking initial Web3Modal state:", e);
+        console.log("ℹ️ No existing connection to clear:", e.message);
     }
 }
 
-
 /**
- * Abre o modal de conexão.
+ * Open connection modal
  */
 export function openConnectModal() {
     web3modal.open();
 }
 
 /**
- * Pede ao Web3Modal para desconectar.
+ * Disconnect wallet
  */
 export async function disconnectWallet() {
-    console.log("Telling Web3Modal to disconnect...");
+    console.log("Disconnecting wallet...");
+    
+    // Stop polling
+    if (balancePollingInterval) {
+        clearInterval(balancePollingInterval);
+        balancePollingInterval = null;
+    }
+    
     await web3modal.disconnect();
 }

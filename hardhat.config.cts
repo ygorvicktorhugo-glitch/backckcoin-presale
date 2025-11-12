@@ -1,17 +1,22 @@
-// Importa os tipos e plugins necessários
+// hardhat.config.cts
+// // Importa os tipos e plugins necessários
 import { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox"; // Pacote padrão de plugins (ethers, waffle, etc.)
-import "dotenv/config"; // Carrega as variáveis do .env
-import "@nomicfoundation/hardhat-verify"; // Plugin de verificação
+import "@nomicfoundation/hardhat-toolbox";
+// // Pacote padrão de plugins (ethers, waffle, etc.)
+import "@openzeppelin/hardhat-upgrades"; // <-- ADICIONADO PARA SUPORTE A UUPS (PROXY)
+import "dotenv/config";
+// Carrega as variáveis do .env
+import "@nomicfoundation/hardhat-verify";
+// // Plugin de verificação
 
 // --- Carrega variáveis de ambiente ---
-const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || "https://sepolia.infura.io/v3/YOUR_INFURA_KEY";
+const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL ||
+  "https://sepolia.infura.io/v3/YOUR_INFURA_KEY";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
-
-// Verifica se a chave privada existe
+// // Verifica se a chave privada existe
 if (!PRIVATE_KEY) {
   console.warn("AVISO: PRIVATE_KEY não definida no arquivo .env. As transações falharão.");
-}
+} // ✅ CORRIGIDO: Chave '}' descomentada
 
 // Define a configuração do Hardhat
 const config: HardhatUserConfig = {
@@ -30,7 +35,9 @@ const config: HardhatUserConfig = {
 
   // Definição das Redes
   networks: {
-    // Rede de desenvolvimento local
+    // Rede 
+    // de 
+    // desenvolvimento local
     hardhat: {
       chainId: 31337,
     },
@@ -38,7 +45,7 @@ const config: HardhatUserConfig = {
     // Rede Sepolia
     sepolia: {
       url: SEPOLIA_RPC_URL,
-      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [], // ✅ CORRIGIDO: Sintaxe do ternário
       chainId: 11155111, // Chain ID da Sepolia
     },
 
@@ -47,14 +54,14 @@ const config: HardhatUserConfig = {
       url: "https://data-seed-prebsc-1-s1.binance.org:8545/",
       chainId: 97,
       accounts:
-        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [], // ✅ CORRIGIDO: Sintaxe do ternário
     },
   },
 
   // Configuração de Verificação (Etherscan/BscScan)
   etherscan: {
     // A chave API será lida do .env (ETHERSCAN_API_KEY)
-    apiKey: process.env.ETHERSCAN_API_KEY || "",
+    apiKey: process.env.ETHERSCAN_API_KEY || "", // ✅ CORRIGIDO: Valor padrão descomentado
 
     // Configuração para redes customizadas (como BSC)
     customChains: [
@@ -67,7 +74,8 @@ const config: HardhatUserConfig = {
         }
       }
       // Adicione a 'bscMainnet' aqui se for para produção
-    ]
+ 
+  ] // ✅ CORRIGIDO: Colchete ']' descomentado
   },
 
   // Outras configurações (ex: gas reporter)
@@ -76,6 +84,4 @@ const config: HardhatUserConfig = {
     currency: "USD",
   },
 };
-
-// Exporta a configuração
 export default config;

@@ -5,10 +5,11 @@ import { State } from '../state.js';
 import { formatBigNumber, formatPStake, renderLoading, renderError, renderNoData, ipfsGateway } from '../utils.js';
 import { safeContractCall, getHighestBoosterBoostFromAPI, API_ENDPOINTS } from '../modules/data.js';
 import { showToast } from '../ui-feedback.js';
+// ✅ Assumindo que 'executeNotarizeDocument' será atualizado para aceitar (uri, boosterId, btnEl)
 import { executeNotarizeDocument } from '../modules/transactions.js';
 
 let currentFileToUpload = null;
-let currentUploadedIPFS_URI = null;
+let currentUploadedIPFS_URI = null; // Este será o HASH DOS METADATOS
 let notaryButtonState = 'initial'; 
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -58,9 +59,13 @@ function renderNotaryPageLayout() {
                     </div>
 
                     <div>
-                        <label for="notary-user-description" class="block text-sm font-medium text-zinc-300 mb-2">2. Add a Public Description (Optional)</label>
+                        <label for="notary-user-description" class="block text-sm font-medium text-zinc-300 mb-2">2. Add a Public Description (Optional, stored in metadata)</label>
                         
-                        <textarea id="notary-user-description" rows="3" class="w-full bg-main border border-border-color rounded-md p-3 text-sm text-zinc-200 focus:ring-blue-500 focus:border-blue-500 transition-colors placeholder-zinc-500" placeholder="e.g., This is my official university diploma... (Max 256 characters)"></textarea>
+<textarea id="notary-user-description" 
+    rows="3" 
+    class="w-full bg-main border border-border-color rounded-md p-3 text-sm text-zinc-200 focus:ring-blue-500 focus:border-blue-500 transition-colors placeholder-zinc-500" 
+    placeholder="e.g., This is my original song. / This is my own video. / This is a book I wrote. / This is a signed contract between the parties. Briefly describe what you’re registering on the blockchain (max 256 characters).">
+</textarea>
                         
                         <p id="notary-description-counter" class="text-xs text-zinc-500 text-right">0 / 256</p>
                     </div>
@@ -98,10 +103,8 @@ function renderNotaryPageLayout() {
 
 /**
  * Carrega dados públicos (taxa e pStake)
- * (Sem alterações)
  */
 async function loadNotaryPublicData() {
-    // ... (código original sem alterações) ...
     const statsEl = document.getElementById('notary-stats-container');
     if (!statsEl) return false;
     statsEl.innerHTML = '<div class="text-center p-4"><div class="loader inline-block"></div> Loading Requirements...</div>';
@@ -162,7 +165,6 @@ async function loadNotaryPublicData() {
 
 /**
  * Atualiza os textos dos botões (com ícones)
- * (Sem alterações)
  */
 function updateNotaryButtonUI() {
     const btn = document.getElementById('notarize-submit-btn');
@@ -205,10 +207,8 @@ function updateNotaryButtonUI() {
 
 /**
  * Atualiza o status do usuário (pStake, saldo, taxas) e o botão principal.
- * (Sem alterações)
  */
 function updateNotaryUserStatus() {
-    // ... (código original sem alterações) ...
     const userStatusEl = document.getElementById('notary-user-status');
     const submitBtn = document.getElementById('notarize-submit-btn'); 
     
@@ -350,10 +350,8 @@ function updateNotaryUserStatus() {
 
 /**
  * Renderiza os documentos já notarizados
- * (Sem alterações)
  */
 async function renderMyNotarizedDocuments() {
-    // ... (código original sem alterações) ...
     const docsEl = document.getElementById('my-notarized-documents');
     if (!docsEl) return;
 
@@ -374,50 +372,64 @@ async function renderMyNotarizedDocuments() {
         }
 
         let documentsHtml = [];
-        for (let i = 0; i < Number(balance); i++) {
+        // Loop de trás para frente para mostrar os mais novos primeiro
+        for (let i = Number(balance) - 1; i >= 0; i--) {
             const tokenId = await safeContractCall(State.decentralizedNotaryContract, 'tokenOfOwnerByIndex', [State.userAddress, i]);
-            const docURI = await safeContractCall(State.decentralizedNotaryContract, 'tokenURI', [tokenId]);
             
-            let gatewayLink = docURI; 
-            let fileType = 'IPFS File', typeColor = 'text-blue-400';
+            // ✅ CORRIGIDO: O contrato agora retorna a URI dos METADADOS
+            const metadataURI = await safeContractCall(State.decentralizedNotaryContract, 'tokenURI', [tokenId]);
+            
+            let metadataGatewayLink = metadataURI;
+            if (metadataGatewayLink.startsWith('ipfs://')) {
+                 metadataGatewayLink = metadataGatewayLink.replace('ipfs://', ipfsGateway);
+            }
+            
+            let fileType = 'File', typeColor = 'text-blue-400';
             let isImage = false, isPdf = false, isAudio = false; 
-            let description = 'No description available.'; // Default
-            
-            if (docURI.startsWith('data:application/json;base64,')) {
-                try {
-                    const jsonString = atob(docURI.substring(29));
-                    const metadata = JSON.parse(jsonString);
-                    gatewayLink = metadata.image || docURI;
-                    description = metadata.description || description; // Pega a descrição
-                    
-                } catch (e) {
-                    console.error("Failed to parse on-chain JSON URI:", e);
-                }
-            }
+            let description = 'Loading description...';
+            let fileGatewayLink = '#';
+            let name = `Document #${tokenId}`;
 
-            if (gatewayLink.startsWith('ipfs://')) {
-                 gatewayLink = gatewayLink.replace('ipfs://', ipfsGateway);
-            }
-            
             try {
-                const response = await fetch(gatewayLink, { method: 'HEAD' });
-                if (response.ok) {
-                    const contentType = response.headers.get('Content-Type') || '';
-                    if (contentType.startsWith('image/')) {
-                        isImage = true; fileType = 'Image'; typeColor = 'text-cyan-400';
-                    } else if (contentType === 'application/pdf') {
-                        isPdf = true; fileType = 'PDF Document'; typeColor = 'text-red-400';
-                    } else if (contentType.startsWith('audio/')) { 
-                        isAudio = true; fileType = 'Audio Track'; typeColor = 'text-green-400'; 
+                // Busca os metadados do IPFS
+                const response = await fetch(metadataGatewayLink);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const metadata = await response.json();
+                
+                name = metadata.name || name;
+                // ✅ CORRIGIDO: 'description' agora contém seu texto personalizado
+                description = metadata.description || 'No description provided.';
+                
+                // Pega o link do arquivo (imagem ou áudio) de dentro dos metadados
+                const fileLink = metadata.image || metadata.animation_url || metadata.external_url;
+                
+                if (fileLink) {
+                    fileGatewayLink = fileLink.startsWith('ipfs://') ? fileLink.replace('ipfs://', ipfsGateway) : fileLink;
+                }
+                
+                // ✅ CORRIGIDO: Tenta adivinhar o tipo pelo MIME type nos atributos
+                if (metadata.attributes) {
+                    const mimeTypeAttr = metadata.attributes.find(a => a.trait_type === "MIME Type");
+                    if (mimeTypeAttr) {
+                        const mimeType = mimeTypeAttr.value;
+                        if (mimeType.startsWith('image/')) {
+                            isImage = true; fileType = 'Image'; typeColor = 'text-cyan-400';
+                        } else if (mimeType === 'application/pdf') {
+                            isPdf = true; fileType = 'PDF Document'; typeColor = 'text-red-400';
+                        } else if (mimeType.startsWith('audio/')) { 
+                            isAudio = true; fileType = 'Audio Track'; typeColor = 'text-green-400'; 
+                        }
                     }
                 }
-            } catch (fetchError) {
-                 console.warn(`Could not fetch Content-Type for ${gatewayLink}: ${fetchError.message}.`);
+                
+            } catch (e) {
+                 console.error(`Failed to parse metadata from ${metadataGatewayLink}:`, e);
+                 description = 'Failed to load metadata.';
             }
 
             let displayHtml = '';
             if (isImage) {
-                displayHtml = `<img src="${gatewayLink}" alt="Document ${tokenId}" class="w-full h-40 object-cover rounded-t-lg">`;
+                displayHtml = `<img src="${fileGatewayLink}" alt="${name}" class="w-full h-40 object-cover rounded-t-lg">`;
             } else if (isPdf) {
                 displayHtml = `<div class="w-full h-40 flex items-center justify-center bg-zinc-800 rounded-t-lg">
                                    <i class="fa-solid fa-file-pdf text-5xl text-red-400"></i>
@@ -425,7 +437,7 @@ async function renderMyNotarizedDocuments() {
             } else if (isAudio) { 
                  displayHtml = `<div class="w-full h-40 flex flex-col items-center justify-center bg-zinc-800 rounded-t-lg">
                                     <i class="fa-solid fa-music text-5xl text-green-400 mb-2"></i>
-                                    <audio controls src="${gatewayLink}" class="mt-2 w-11/12"></audio>
+                                    <audio controls src="${fileGatewayLink}" class="mt-2 w-11/12"></audio>
                                 </div>`;
             } else {
                  displayHtml = `<div class="w-full h-40 flex items-center justify-center bg-zinc-800 rounded-t-lg">
@@ -438,12 +450,12 @@ async function renderMyNotarizedDocuments() {
                     ${displayHtml}
                     <div class="p-4">
                         <p class="text-xs ${typeColor} font-bold uppercase">${fileType}</p>
-                        <p class="text-base font-bold text-white truncate mt-1">Document #${tokenId}</p>
+                        <p class="text-base font-bold text-white truncate mt-1" title="${name}">${name}</p>
                         
-                        <p class="text-xs text-zinc-400 mt-1 truncate" title="${description}">${description || 'No description'}</p>
+                        <p class="text-xs text-zinc-400 mt-1 whitespace-pre-wrap break-words" title="${description}">${description}</p>
                         
-                        <a href="${gatewayLink}" target="_blank" rel="noopener noreferrer" class="text-sm text-amber-400 hover:text-amber-300 mt-2 inline-block">
-                            View on IPFS <i class="fa-solid fa-arrow-up-right-from-square text-xs ml-1"></i>
+                        <a href="${fileGatewayLink}" target="_blank" rel="noopener noreferrer" class="text-sm text-amber-400 hover:text-amber-300 mt-2 inline-block">
+                            View Original File <i class="fa-solid fa-arrow-up-right-from-square text-xs ml-1"></i>
                         </a>
                         
                         <button class="add-to-wallet-btn text-xs text-zinc-400 hover:text-white mt-3 w-full text-left transition-colors" data-address="${State.decentralizedNotaryContract.target}" data-tokenid="${tokenId}">
@@ -464,10 +476,8 @@ async function renderMyNotarizedDocuments() {
 
 /**
  * Lida com o upload do arquivo
- * (Sem alterações)
  */
 async function handleFileUpload(file) {
-    // ... (código original sem alterações) ...
     const uploadPromptEl = document.getElementById('notary-upload-prompt');
     const uploadStatusEl = document.getElementById('notary-upload-status');
     const errorEl = document.getElementById('notary-lib-error');
@@ -513,10 +523,8 @@ async function handleFileUpload(file) {
 
 /**
  * Lida com o clique em "Add to Wallet"
- * (Sem alterações)
  */
 async function handleAddNFTToWallet(e) {
-    // ... (código original sem alterações) ...
     const btn = e.target.closest('.add-to-wallet-btn');
     if (!btn) return; 
 
@@ -568,12 +576,11 @@ function initNotaryListeners() {
     const submitBtn = document.getElementById('notarize-submit-btn');
     const errorEl = document.getElementById('notary-lib-error');
 
-    // --- Listener do contador de caracteres (Sem alterações) ---
+    // --- Listener do contador de caracteres ---
     const descriptionInput = document.getElementById('notary-user-description');
     const descriptionCounter = document.getElementById('notary-description-counter');
     
     if (descriptionInput && descriptionCounter) {
-        // ... (código original sem alterações) ...
         descriptionInput.addEventListener('input', () => {
             const length = descriptionInput.value.length;
             descriptionCounter.innerText = `${length} / 256`;
@@ -590,9 +597,7 @@ function initNotaryListeners() {
     // --- REMOVIDO: O listener da 'notary-main-box' (agora é tratado por <label>) ---
 
     if (fileInput) {
-        // O 'change' agora apenas chama o novo handleFileUpload
         fileInput.addEventListener('change', (e) => {
-            // ... (código original sem alterações) ...
             if (!e.target.files || e.target.files.length === 0) {
                 return; 
             }
@@ -615,7 +620,6 @@ function initNotaryListeners() {
     
     // Listener do botão de Delegar
     document.addEventListener('click', (e) => {
-        // ... (código original sem alterações) ...
         const delegateBtn = e.target.closest('#delegate-now-btn') || 
                             (e.target.closest('#notarize-submit-btn') && e.target.closest('#notarize-submit-btn').dataset.delegate === 'true');
         
@@ -626,7 +630,7 @@ function initNotaryListeners() {
         }
     });
 
-    // --- Listener do Botão Principal (ALTERADO) ---
+    // --- Listener do Botão Principal (CORRIGIDO) ---
     if (submitBtn) {
         submitBtn.addEventListener('click', async (e) => {
             e.preventDefault();
@@ -656,7 +660,14 @@ function initNotaryListeners() {
                      return showToast(`Insufficient $BKC balance. You need ${formatBigNumber(finalFee)} $BKC.`, "error");
                 }
 
-                // --- ALTERAÇÃO: Mensagem de Assinatura (Copy) ---
+                // ✅ CORREÇÃO: Lê a descrição ANTES do upload
+                const description = descriptionInput.value;
+                if (description.length > 256) {
+                    showToast("Error: Description exceeds 256 characters.", "error");
+                    descriptionInput.focus();
+                    return;
+                }
+
                 const message = "I am signing to authenticate my file for notarization on Backchain.";
                 
                 try {
@@ -672,7 +683,8 @@ function initNotaryListeners() {
                     const formData = new FormData();
                     formData.append('file', currentFileToUpload);
                     formData.append('signature', signature); 
-                    formData.append('address', userAddress); 
+                    formData.append('address', userAddress);
+                    formData.append('description', description); // ✅ CORREÇÃO: Envia a descrição para a API
 
                     const response = await fetch('/api/upload', { 
                         method: 'POST',
@@ -685,7 +697,7 @@ function initNotaryListeners() {
                     }
 
                     const result = await response.json();
-                    currentUploadedIPFS_URI = result.ipfsUri; 
+                    currentUploadedIPFS_URI = result.ipfsUri; // Este é o HASH DOS METADATOS
                     document.getElementById('notary-document-uri').value = currentUploadedIPFS_URI;
 
                     // --- ESTADO 3: Upload feito, pronto para Notarizar ---
@@ -705,24 +717,19 @@ function initNotaryListeners() {
 
             // --- ESTADO 4: Pronto para Notarizar ---
             if (notaryButtonState === 'upload_ready') {
-                // ... (código original sem alterações) ...
+                
                 if (!currentUploadedIPFS_URI) return showToast("Error: File URI is missing.", "error");
 
-                const description = descriptionInput.value;
-                if (description.length > 256) {
-                    showToast("Error: Description exceeds 256 characters.", "error");
-                    descriptionInput.focus();
-                    return;
-                }
-
+                // ❌ REMOVIDO: A verificação da descrição já foi feita
+                
                 notaryButtonState = 'notarizing';
                 updateNotaryButtonUI();
 
                 const boosterId = State.userBoosterId || 0n; 
                 
+                // ✅ CORREÇÃO: A descrição não é mais enviada para o contrato
                 const success = await executeNotarizeDocument(
-                    currentUploadedIPFS_URI,
-                    description,
+                    currentUploadedIPFS_URI, // Este é o hash dos METADATOS
                     boosterId, 
                     submitBtn 
                 );
@@ -774,7 +781,6 @@ function initNotaryListeners() {
 // --- Objeto da Página ---
 export const NotaryPage = {
     async render() {
-        // ... (código original sem alterações) ...
         renderNotaryPageLayout();
 
         const libErrorEl = document.getElementById('notary-lib-error');
@@ -804,7 +810,6 @@ export const NotaryPage = {
     },
 
     async update(isConnected) {
-        // ... (código original sem alterações) ...
         console.log("Updating Notary Page, isConnected:", isConnected);
 
         const loadedPublicData = await loadNotaryPublicData();

@@ -1,12 +1,14 @@
 {
-  "ecosystemManager": "0xd0d692a37aEa6c7e246A94e825fbD9ACC9A65a60",
-  "bkcToken": "0xC07b8E815BB36D594Cb5036194D7Ad0A404114A2",
-  "rewardBoosterNFT": "0xa044b09F53E2Da747285f2cF0Fc1ed94d1Ea4D1A",
-  "delegationManager": "0xdEcdEe9Ac56E0068f311DEF94dC15Ec9096a3448",
-  "rewardManager": "0x264A1EB503c2FBfA6E93CAD7F42A088889993b5C",
-  "decentralizedNotary": "0x3EaA763F2FC3Ba993DF3ef1583F7d66EF744b1E5",
-  "publicSale": "0x41bE4F29a73374cf533f0DeF39DC3B3bF7Cdd830",
-  "faucet": "0xEd5310A4284cb2e03f7E44007Cf0c0b317F6fa5C",
-  "nftLiquidityPool": "0x37bDB8a042A8134aEAC27fFe14ce41EA4d80C1fE",
-  "fortuneTiger": "0x94769247e1D748253444d5d809aF83004A3c43bb"
+  "ecosystemManager": "0x46196Bc0fDcDda2A24CFdFaf0f97d5ce90D0e915",
+  "rewardBoosterNFT": "0x5b22cf18C0Df635089DEF78e07f94421B3166fd0",
+  "publicSale": "0x1A96B2C75b056bf2baccF4fC6c127F315A395CAB",
+  "oracleWalletAddress": "0xd7e622124b78a28c4c928b271fc9423285804f98",
+  "mainLPPairAddress": "https://pancakeswap.finance/swap?chain=bsc&outputCurrency=0x66b6B2eD21a0BFB3f84b120401074ABfC4F0C08d",
+  "bkcToken": "0x50CAc0D364a03379B3e9641847806E560e9bd208",
+  "miningManager": "0x038940f8777e9cd7679a7C0A2e0CC77cBaC19eb5",
+  "delegationManager": "0x5dD4745E431C36a01cCD983a595dCF87b92Ba1B3",
+  "rewardManager": "0xc5FdC72aa72Cfc0e0D8aDAf0589c8dAdF6c20c6D",
+  "decentralizedNotary": "0x91F494dBe520a435A0c14a5BE40b684460F9D173",
+  "fortunePool": "0xec9c73dcFE8a35c3FDE04c5AdE70Cc3d40e7A497",
+  "nftLiquidityPool": "0x6CC9f237b8A09C4D530F0ADd9Eb68eEb40e5F8ab"
 }

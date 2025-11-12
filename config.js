@@ -1,59 +1,106 @@
 // config.js
+// FIXED: Environment-based configuration, better error handling
 
-// --- (CORRIGIDO!) IMPORTAÇÃO DE ENDEREÇOS ---
+// ============================================================================
+// ENVIRONMENT DETECTION
+// ============================================================================
+const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const isProduction = !isDevelopment;
+
+console.log(`Environment: ${isDevelopment ? 'DEVELOPMENT' : 'PRODUCTION'}`);
+
+// ============================================================================
+// CONTRACT ADDRESSES (Loaded dynamically)
+// ============================================================================
 export const addresses = {};
 
+/**
+ * FIXED: Better error handling and validation
+ */
 export async function loadAddresses() {
     try {
         const response = await fetch('./deployment-addresses.json');
+        
         if (!response.ok) {
-            throw new Error(`Falha ao buscar deployment-addresses.json: ${response.statusText}`);
+            throw new Error(`Failed to fetch deployment-addresses.json: ${response.status} ${response.statusText}`);
         }
+        
         const jsonAddresses = await response.json();
 
+        // Validate required addresses
+        const requiredAddresses = ['bkcToken', 'delegationManager', 'rewardManager'];
+        const missingAddresses = requiredAddresses.filter(key => !jsonAddresses[key]);
+        
+        if (missingAddresses.length > 0) {
+            throw new Error(`Missing required addresses: ${missingAddresses.join(', ')}`);
+        }
+
+        // Map addresses from JSON
         addresses.bkcToken = jsonAddresses.bkcToken;
         addresses.delegationManager = jsonAddresses.delegationManager;
         addresses.rewardManager = jsonAddresses.rewardManager;
         addresses.rewardBoosterNFT = jsonAddresses.rewardBoosterNFT;
         addresses.publicSale = jsonAddresses.publicSale;
-        addresses.faucet = jsonAddresses.faucet;
         addresses.decentralizedNotary = jsonAddresses.decentralizedNotary;
-        addresses.nftBondingCurve = jsonAddresses.nftLiquidityPool;
-        addresses.actionsManager = jsonAddresses.fortuneTiger; // ActionsManager agora aponta para FortuneTiger
         addresses.ecosystemManager = jsonAddresses.ecosystemManager; 
-        
-        // --- ATUALIZAÇÃO AQUI ---
-        // Carrega o link de swap. Se não existir no JSON, usa '#' como fallback.
-        addresses.swapLink = jsonAddresses.swapLink || "#"; 
+        addresses.nftBondingCurve = jsonAddresses.nftLiquidityPool; 
+        addresses.actionsManager = jsonAddresses.fortunePool;
+        addresses.mainLPPairAddress = jsonAddresses.mainLPPairAddress || "#"; 
+        addresses.miningManager = jsonAddresses.miningManager;
+        addresses.oracleWalletAddress = jsonAddresses.oracleWalletAddress;
 
+        console.log("✅ Contract addresses loaded:", addresses);
         return true;
 
     } catch (error) {
-        console.error("ERRO CRÍTICO: Não foi possível carregar os endereços dos contratos.", error);
-        document.body.innerHTML = `<div style="color: red; padding: 20px; font-family: sans-serif; font-size: 1.2rem; background: #222; border: 1px solid red; margin: 20px;">
-            <b>Erro:</b> Não foi possível carregar <code>deployment-addresses.json</code>.
-            <br><br><b>Solução:</b> Verifique se o arquivo está na raiz do projeto e atualize a página.
-            <br><br><small>${error.message}</small></div>`;
+        console.error("❌ CRITICAL ERROR: Failed to load contract addresses.", error);
+        
+        // Show user-friendly error
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); color: white; display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;';
+        errorDiv.innerHTML = `
+            <div style="max-width: 600px; background: #1e1e1e; border: 2px solid #ef4444; border-radius: 8px; padding: 30px;">
+                <h2 style="color: #ef4444; margin-bottom: 15px; font-size: 24px;">⚠️ Configuration Error</h2>
+                <p style="margin-bottom: 10px;">Could not load <code style="background: #333; padding: 2px 6px; border-radius: 3px;">deployment-addresses.json</code></p>
+                <p style="margin-bottom: 20px; color: #aaa; font-size: 14px;">The dApp requires contract addresses to function.</p>
+                <details style="margin-bottom: 20px; background: #2a2a2a; padding: 10px; border-radius: 4px;">
+                    <summary style="cursor: pointer; font-weight: bold; color: #fbbf24;">Technical Details</summary>
+                    <pre style="margin-top: 10px; color: #ef4444; font-size: 12px; overflow-x: auto;">${error.message}</pre>
+                </details>
+                <button onclick="location.reload()" style="background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
+                    🔄 Retry
+                </button>
+            </div>
+        `;
+        document.body.innerHTML = '';
+        document.body.appendChild(errorDiv);
+        
         return false;
     }
 }
 
+// ============================================================================
+// NETWORK CONFIGURATION
+// ============================================================================
 
-// --- Constante do Faucet ---
-// AJUSTADA para 100 BKC (100 * 10^18)
-export const FAUCET_AMOUNT_WEI = 100n * 10n**18n; 
+// FIXED: Environment-based RPC configuration
+export const sepoliaRpcUrl = isDevelopment 
+    ? "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz" // Development (your Alchemy key)
+    : "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz"; // Production (replace with prod key)
 
-// =================================================================
-// ### CORREÇÃO (CORS) ###
-// Revertido para o seu URL original da Alchemy, que permite
-// solicitações de 'localhost'.
-// =================================================================
-export const sepoliaRpcUrl = "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz";
-// =================================================================
-
-export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/";
 export const sepoliaChainId = 11155111n;
 
+// IPFS Gateway
+export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/";
+
+// ============================================================================
+// APPLICATION CONSTANTS
+// ============================================================================
+
+// Faucet amount (100 BKC)
+export const FAUCET_AMOUNT_WEI = 100n * 10n**18n; 
+
+// Booster tiers configuration
 export const boosterTiers = [
     { name: "Diamond", boostBips: 5000, color: "text-cyan-400", img: "https://ipfs.io/ipfs/bafybeign2k73pq5pdicg2v2jdgumavw6kjmc4nremdenzvq27ngtcusv5i", borderColor: "border-cyan-400/50", glowColor: "bg-cyan-500/10" },
     { name: "Platinum", boostBips: 4000, color: "text-gray-300", img: "https://ipfs.io/ipfs/bafybeiag32gp4wssbjbpxjwxewer64fecrtjryhmnhhevgec74p4ltzrau", borderColor: "border-gray-300/50", glowColor: "bg-gray-400/10" },
@@ -64,9 +111,9 @@ export const boosterTiers = [
     { name: "Crystal", boostBips: 100, color: "text-indigo-300", img: "https://ipfs.io/ipfs/bafybeiela7zrsnyva47pymhmnr6dj2aurrkwxhpwo7eaasx3t24y6n3aay", borderColor: "border-indigo-300/50", glowColor: "bg-indigo-300/10" }
 ];
 
-
-// --- ABIs CORRIGIDAS --- 
-// (Mantidos como estavam)
+// ============================================================================
+// CONTRACT ABIs
+// ============================================================================
 
 export const bkcTokenABI = [
     "function totalSupply() view returns (uint256)",
@@ -158,7 +205,6 @@ export const actionsManagerABI = [
     "function finalizeAction(uint256 _actionId)",
 ];
 
-
 export const publicSaleABI = [
     "function tiers(uint256) view returns (uint256 priceInWei, uint256 maxSupply, uint256 mintedCount, uint256 boostBips, string metadataFile, bool isConfigured)",
     "function rewardBoosterNFT() view returns (address)",
@@ -174,33 +220,27 @@ export const publicSaleABI = [
     "event TierSet(uint256 indexed tierId, uint256 price, uint256 maxSupply)"
 ];
 
-// =================================================================
-// 🟢 CORREÇÃO APLICADA AQUI
-// O fragmento notarizeDocument foi atualizado para incluir 3 argumentos.
-// =================================================================
 export const decentralizedNotaryABI = [
-  "event DocumentNotarized(address indexed user, uint256 indexed tokenId, string documentURI, uint256 feePaid)",
-  "function balanceOf(address owner) view returns (uint256)",
-  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
-  "function tokenURI(uint256 tokenId) view returns (string)",
-  "function notarizeDocument(string calldata _documentURI, string calldata _userDescription, uint256 _boosterTokenId)",
-  "function setBaseURI(string calldata newBaseURI)"
+    "event DocumentNotarized(address indexed user, uint256 indexed tokenId, string documentURI, uint256 feePaid)",
+    "function balanceOf(address owner) view returns (uint256)",
+    "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+    "function tokenURI(uint256 tokenId) view returns (string)",
+    "function notarizeDocument(string calldata _documentURI, string calldata _userDescription, uint256 _boosterTokenId)",
+    "function setBaseURI(string calldata newBaseURI)"
 ];
-// =================================================================
-
 
 export const faucetABI = [
-  "constructor(address _tokenAddress)",
-  "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
-  "event TokensClaimed(address indexed recipient, uint256 amount)",
-  "function claim()",
-  "function claimAmount() view returns (uint256)",
-  "function owner() view returns (address)",
-  "function renounceOwnership()",
-  "function token() view returns (address)",
-  "function transferOwnership(address newOwner)",
-  "function withdrawETH()",
-  "function withdrawRemainingTokens()"
+    "constructor(address _tokenAddress)",
+    "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
+    "event TokensClaimed(address indexed recipient, uint256 amount)",
+    "function claim()",
+    "function claimAmount() view returns (uint256)",
+    "function owner() view returns (address)",
+    "function renounceOwnership()",
+    "function token() view returns (address)",
+    "function transferOwnership(address newOwner)",
+    "function withdrawETH()",
+    "function withdrawRemainingTokens()"
 ];
 
 export const ecosystemManagerABI = [

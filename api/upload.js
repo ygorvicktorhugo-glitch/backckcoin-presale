@@ -52,21 +52,17 @@ export default async function handler(req, res) {
         }
 
         // =======================================================
-        // ### INÍCIO DA VERIFICAÇÃO DE ASSINATURA ###
+        // ### 1. VERIFICAÇÃO DE ASSINATURA ###
         // =======================================================
         console.log('🔑 Verifying wallet signature...');
         const signature = fields.signature ? fields.signature[0] : null;
-        const address = fields.address ? fields.address[0] : null;
+        const address = fields.address ? fields.address[0] : null; // A carteira do usuário
         
-        // --- ALTERAÇÃO: Mensagem de assinatura mais clara ---
         const message = "I am signing to authenticate my file for notarization on Backchain."; 
 
         if (!signature || !address) {
             console.error('❌ Signature or address missing from request');
-            return res.status(401).json({ 
-                error: 'Unauthorized',
-                details: 'Signature and address are required.' 
-            });
+            return res.status(401).json({ error: 'Unauthorized', details: 'Signature and address are required.' });
         }
 
         let recoveredAddress;
@@ -74,36 +70,23 @@ export default async function handler(req, res) {
             recoveredAddress = ethers.verifyMessage(message, signature);
         } catch (e) {
             console.error('❌ Signature verification failed:', e.message);
-            return res.status(401).json({ 
-                error: 'Unauthorized',
-                details: 'Invalid signature format.' 
-            });
+            return res.status(401).json({ error: 'Unauthorized', details: 'Invalid signature format.' });
         }
 
         if (recoveredAddress.toLowerCase() !== address.toLowerCase()) {
             console.error(`❌ Signature mismatch. Expected: ${address}, Got: ${recoveredAddress}`);
-            return res.status(401).json({ 
-                error: 'Unauthorized',
-                details: 'Signature does not match address.' 
-            });
+            return res.status(401).json({ error: 'Unauthorized', details: 'Signature does not match address.' });
         }
 
         console.log('✅ Signature verified for address:', recoveredAddress);
         // =======================================================
-        // ### FIM DA VERIFICAÇÃO DE ASSINATURA ###
+        // ### 2. UPLOAD DO ARQUIVO (ETAPA 1 de 2) ###
         // =======================================================
-
-        console.log('📄 File details:', {
-            originalName: file.originalFilename,
-            size: file.size,
-            mimetype: file.mimetype,
-            filepath: file.filepath 
-        });
 
         console.log('📖 Creating file stream from:', file.filepath);
         const stream = fs.createReadStream(file.filepath);
         
-        const options = {
+        const fileOptions = {
             pinataMetadata: {
                 name: file.originalFilename || 'Notary File (Backchain)',
             },
@@ -112,19 +95,77 @@ export default async function handler(req, res) {
             }
         };
 
-        console.log('☁️  Uploading to Piñata IPFS...');
-        const result = await pinata.pinFileToIPFS(stream, options); //
+        console.log('☁️  [ETAPA 1/2] Uploading FILE to Piñata IPFS...');
+        const fileResult = await pinata.pinFileToIPFS(stream, fileOptions);
+        const fileHash = `ipfs://${fileResult.IpfsHash}`;
+        console.log('✅ File uploaded:', fileHash);
 
-        const cid = result.IpfsHash;
-        const ipfsUri = `ipfs://${cid}`;
+        // =======================================================
+        // ### 3. UPLOAD DOS METADADOS (ETAPA 2 de 2) ###
+        // =======================================================
+        
+        // --- ✅ ALTERAÇÃO AQUI: CONSTRUINDO A DESCRIÇÃO COMBINADA ---
+
+        // 1. Pega a descrição opcional do usuário
+        const userDescription = fields.description ? fields.description[0] : 'No description provided.';
+        
+        // 2. Gera o timestamp do servidor
+        const notarizationTimestamp = new Date().toISOString();
+        
+        // 3. Pega a carteira verificada
+        const notarizerWallet = address;
+
+        // 4. Monta a string de descrição final
+        const finalDescription = `Notarized By Backcoin.Org Decentralized Notary On ${notarizationTimestamp}, Wallet ${notarizerWallet}. Description: "${userDescription}"`;
+        
+        // --- FIM DA ALTERAÇÃO ---
+
+
+        const mimeType = file.mimetype || '';
+        let contentField = 'image';
+        if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
+            contentField = 'animation_url';
+        }
+
+        // Cria o objeto JSON de metadados
+        const metadata = {
+            name: `Notary Certificate - ${file.originalFilename || 'File'}`,
+            
+            // ✅ A string combinada vai aqui
+            description: finalDescription, 
+            
+            [contentField]: fileHash, 
+            external_url: fileHash, 
+            
+            // ❌ REMOVIDO: 'issuer' e 'attributes' não são mais necessários
+        };
+        
+        const metadataOptions = {
+            pinataMetadata: {
+                name: `${file.originalFilename || 'Notary'}_Metadata.json`,
+            },
+            pinataOptions: {
+                cidVersion: 1 
+            }
+        };
+
+        console.log('☁️  [ETAPA 2/2] Uploading METADATA JSON to Piñata IPFS...');
+        const metadataResult = await pinata.pinJSONToIPFS(metadata, metadataOptions);
+        const metadataHash = `ipfs://${metadataResult.IpfsHash}`;
+        console.log('✅ Metadata uploaded:', metadataHash);
+
+
+        // =======================================================
+        // ### 4. RETORNO (Envia o hash dos metadados) ###
+        // =======================================================
 
         console.log('✅ Vercel Upload successful!');
-        console.log('CID:', cid);
+        console.log('Returning METADATA URI:', metadataHash);
 
         return res.status(200).json({ 
             success: true,
-            cid: cid, 
-            ipfsUri: ipfsUri,
+            cid: metadataResult.IpfsHash, 
+            ipfsUri: metadataHash, 
         });
 
     } catch (error) {
@@ -135,6 +176,7 @@ export default async function handler(req, res) {
         });
 
     } finally {
+        // Limpa o arquivo temporário
         if (file && file.filepath) {
             try {
                 fs.unlinkSync(file.filepath);

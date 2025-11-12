@@ -1,5 +1,9 @@
 /* ============================================
+<<<<<<< HEAD
    BKC REWARD GENERATOR (Redesign V9 - Single Pool)
+=======
+   BKC REWARD GENERATOR (Redesign V8 - 3 Pools)
+>>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
    ============================================ */
 
 :root {
@@ -98,10 +102,17 @@
     color: var(--tiger-text-secondary);
 }
 
+<<<<<<< HEAD
 /* ✅ CORRIGIDO: 1 coluna para a Piscina Única */
 .pools-info {
     display: grid;
     grid-template-columns: 1fr; /* 1 coluna */
+=======
+/* [DEPOIS] Atualizado para 3 colunas */
+.pools-info {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* 3 colunas */
+>>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
     gap: 8px;
     margin-top: 12px;
 }
@@ -379,7 +390,11 @@
     color: white !important;
 }
 
+<<<<<<< HEAD
 /* ✅ CORRIGIDO: pStake e Taxa do Oráculo agora em 2 colunas */
+=======
+/* [DEPOIS] UI simplificada, apenas pStake */
+>>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
 .payout-info {
     display: grid;
     grid-template-columns: 1fr 1fr; /* 2 colunas */
@@ -532,18 +547,48 @@
         font-size: 16px;
     }
 
+<<<<<<< HEAD
     /* ✅ CORRIGIDO: 1 coluna no desktop */
     .pools-info {
         grid-template-columns: 1fr; 
+=======
+    /* [DEPOIS] Desktop com 3 colunas */
+    .pools-info {
+        grid-template-columns: repeat(3, 1fr); 
+>>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
         gap: 12px;
     }
 
     .pool-item {
+<<<<<<< HEAD
         padding: 12px 16px;
         font-size: 14px;
     }
     .pool-value {
         font-size: 20px;
+=======
+        padding: 10px;
+        font-size: 12px;
+    }
+    .pool-value {
+        font-size: 14px;
+    }
+
+    .activation-area {
+        height: 220px; 
+    }
+    .activation-core {
+        width: 140px;
+        height: 140px;
+    }
+    .core-center {
+        width: 100px;
+        height: 100px;
+    }
+
+    .result-display h3 {
+        font-size: 18px;
+>>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
     }
 
     .activation-area {
@@ -574,7 +619,11 @@
     }
 
     .quick-bets {
+<<<<<<< HEAD
         grid-template-columns: repeat(7, 1fr); 
+=======
+        grid-template-columns: repeat(6, 1fr); 
+>>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
         gap: 8px;
     }
     .reset-btn {

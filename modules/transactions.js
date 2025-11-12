@@ -4,18 +4,23 @@ const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { showToast, closeModal } from '../ui-feedback.js';
-import { addresses, FAUCET_AMOUNT_WEI } from '../config.js';
+// [CORRIGIDO] Importa 'addresses' do config.js (que deve carregar o deployment-addresses.json)
+import { addresses, FAUCET_AMOUNT_WEI } from '../config.js'; 
 import { formatBigNumber } from '../utils.js';
-// =================================================================
-// --- IMPORT CORRECTION (Line 10) ---
 import { loadUserData, getHighestBoosterBoostFromAPI, safeContractCall } from './data.js';
-// =================================================================
 
 // --- Tolerance Constants ---
 const APPROVAL_TOLERANCE_BIPS = 100; // 1% in BIPS
 const BIPS_DENOMINATOR = 10000;
 
-// Generic Transaction Wrapper (Maintained)
+/**
+ * Generic wrapper to execute a transaction and provide UI feedback.
+ * @param {Promise} txPromise - The promise returned by the contract function call.
+ * @param {string} successMessage - Message to show on success.
+ * @param {string} failMessage - Message to show on failure.
+ * @param {HTMLElement} btnElement - The button element to show loading/disabled states.
+ * @returns {Promise<boolean>} - True if successful, false otherwise.
+ */
 async function executeTransaction(txPromise, successMessage, failMessage, btnElement) {
     if (!btnElement) {
         console.warn("Transaction executed without a button element for feedback.");
@@ -24,61 +29,54 @@ async function executeTransaction(txPromise, successMessage, failMessage, btnEle
     const originalText = btnElement ? btnElement.innerHTML : 'Processing...';
     if (btnElement) {
         btnElement.disabled = true;
-        btnElement.innerHTML = '<div class="loader inline-block mr-2"></div> Processing...'; // Better feedback
+        btnElement.innerHTML = '<div class="loader inline-block mr-2"></div> Processing...';
     }
 
     try {
         const tx = await txPromise;
-        if (btnElement) btnElement.innerHTML = '<div class="loader inline-block mr-2"></div> Awaiting Confirmation...'; // Better feedback
+        if (btnElement) btnElement.innerHTML = '<div class="loader inline-block mr-2"></div> Awaiting Confirmation...';
         showToast('Submitting transaction...', 'info');
+        
         const receipt = await tx.wait();
         showToast(successMessage, 'success', receipt.hash);
 
         // Reload user data after a successful transaction
-        // Use a small delay to give the blockchain time to update the balance
-        setTimeout(loadUserData, 1500); // <-- Added delay
+        setTimeout(loadUserData, 1500); // Delay to allow state propagation
 
         return true;
     } catch (e) {
-        console.error("Transaction Error:", e); // Log full error
-        let reason = 'Transaction rejected or failed.'; // Default message
+        console.error("Transaction Error:", e);
+        let reason = 'Transaction rejected or failed.';
 
-        // Try to extract the specific error message
+        // Extract detailed error reason
         if (e.reason) {
             reason = e.reason;
-        } else if (e.data && e.data.message) { // Provider errors (ex: MetaMask)
+        } else if (e.data && e.data.message) {
              reason = e.data.message;
         } else if (e.message) {
              reason = e.message;
         }
 
-        // Specific Faucet messages (from the new contract)
-        if (reason.includes("Faucet: Address has already claimed")) {
-            reason = "You have already claimed tokens from this faucet.";
-        }
-        if (reason.includes("Faucet: Insufficient funds")) {
-            reason = "Faucet is empty! Please contact an admin.";
-        }
-        // Specific Notary messages
+        // Handle common error codes
+        if (e.code === 'ACTION_REJECTED') reason = 'Transaction rejected by user.';
+        if (e.code === 'INSUFFICIENT_FUNDS') reason = 'Insufficient ETH for gas fees.';
+
+        // Handle contract-specific reverts
         if (reason.includes("Notary: Insufficient pStake")) {
              reason = "You don't meet the minimum pStake requirement.";
         }
-         if (reason.includes("Notary: Insufficient BKC balance for fee")) {
-             reason = "Insufficient $BKC balance for the notary fee.";
+        // [MODIFICADO] Adiciona tratamento de erro para o pStake do NFT Pool e outros
+        if (reason.includes("Ecosystem: Insufficient pStake")) {
+             reason = "Insufficient pStake for this service. Delegate more BKC.";
         }
-        // Common Ethers error messages
-        if (e.code === 'ACTION_REJECTED') reason = 'Transaction rejected by user.';
-        if (e.code === 'INSUFFICIENT_FUNDS') reason = 'Insufficient ETH for gas fees.';
 
 
         showToast(`${failMessage}: ${reason}`, "error");
         return false;
     } finally {
         if(btnElement) {
-            // Small delay before re-enabling the button on failure,
-            // so the user can read the error toast.
             setTimeout(() => {
-                if (btnElement) { // Check if it still exists
+                if (btnElement) {
                     btnElement.disabled = false;
                     btnElement.innerHTML = originalText;
                 }
@@ -88,14 +86,27 @@ async function executeTransaction(txPromise, successMessage, failMessage, btnEle
 }
 
 
-// --- Approval Helper Functions (Maintained) ---
+/**
+ * Ensures the user has approved a specific amount of BKC tokens for a spender.
+ * @param {string} spenderAddress - The contract address to approve.
+ * @param {BigInt} requiredAmount - The amount of tokens required.
+ * @param {HTMLElement} btnElement - The button for UI feedback.
+ * @param {string} purpose - A description for the toast message (e.g., "Delegation").
+ * @returns {Promise<boolean>} - True if approval is met or successful, false otherwise.
+ */
 async function ensureApproval(spenderAddress, requiredAmount, btnElement, purpose) {
     if (!State.signer) return false;
+    
+    // [CORRIGIDO] Validação do spenderAddress
+    if (!spenderAddress || spenderAddress === '0x...[POR FAVOR, ATUALIZE ESTE ENDEREÇO APÓS CRIAR O POOL NA DEX]...') {
+        showToast(`Error: Invalid contract address for ${purpose}.`, "error");
+        return false;
+    }
 
-    // Calculate amount with tolerance (to avoid failures from small fluctuations)
+    // Calculate amount with tolerance to avoid failures from small price fluctuations
     const toleratedAmount = (requiredAmount * BigInt(BIPS_DENOMINATOR + APPROVAL_TOLERANCE_BIPS)) / BigInt(BIPS_DENOMINATOR);
 
-    const originalText = btnElement ? btnElement.innerHTML : null; // Get original text BEFORE any loader
+    const originalText = btnElement ? btnElement.innerHTML : null;
     const setBtnLoading = (text) => {
         if(btnElement) {
             btnElement.innerHTML = `<div class="loader inline-block mr-2"></div> ${text}...`;
@@ -105,47 +116,62 @@ async function ensureApproval(spenderAddress, requiredAmount, btnElement, purpos
     const resetBtn = () => {
          if(btnElement && originalText) {
              btnElement.innerHTML = originalText;
-             // Re-enabling depends on context, so not forced here
          }
     };
 
     try {
-        setBtnLoading("Checking allowance"); // Immediate feedback
+        setBtnLoading("Checking allowance");
         const allowance = await State.bkcTokenContract.allowance(State.userAddress, spenderAddress);
 
         if (allowance < toleratedAmount) {
             showToast(`Approving ${formatBigNumber(toleratedAmount).toFixed(2)} $BKC for ${purpose}...`, "info");
-            setBtnLoading("Approving"); // Update text
+            setBtnLoading("Approving");
 
             const approveTx = await State.bkcTokenContract.approve(spenderAddress, toleratedAmount);
             await approveTx.wait();
             showToast('Approval successful!', "success");
         }
-        return true; // Returns true if it already had it or if approved successfully
+        return true;
     } catch (e) {
         console.error("Approval Error:", e);
         showToast(`Approval Error: ${e.reason || e.message || 'Transaction rejected.'}`, "error");
-        resetBtn(); // Restore button on approval error
+        resetBtn();
         return false;
     }
-    // No finally needed here, reset is done in catch
 }
 
 
-// --- DELEGATION / UNSTAKE (Maintained) ---
+// --- DELEGATION / UNSTAKE ---
+
 export async function executeDelegation(validatorAddr, totalAmount, durationSeconds, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
+    
+    // [MODIFICADO] Pega o melhor booster para o claim automático
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
+    const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
+    
     const approved = await ensureApproval(addresses.delegationManager, totalAmount, btnElement, "Delegation");
     if (!approved) return false;
-    const delegateTxPromise = State.delegationManagerContract.delegate(validatorAddr, totalAmount, BigInt(durationSeconds));
+    
+    // [MODIFICADO] Passa o boosterIdToSend
+    const delegateTxPromise = State.delegationManagerContract.delegate(validatorAddr, totalAmount, BigInt(durationSeconds), boosterIdToSend);
     const success = await executeTransaction(delegateTxPromise, 'Delegation successful!', 'Error delegating tokens', btnElement);
+    
     if (success) closeModal();
     return success;
 }
+
 export async function executeUnstake(index) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
+
+    // [MODIFICADO] Pega o melhor booster para o claim automático
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
+    const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
+    
     const btnElement = document.querySelector(`.unstake-btn[data-index='${index}']`)
-    const unstakeTxPromise = State.delegationManagerContract.unstake(index);
+    // [MODIFICADO] Passa o boosterIdToSend
+    const unstakeTxPromise = State.delegationManagerContract.unstake(index, boosterIdToSend);
+    
     return await executeTransaction(
         unstakeTxPromise,
         'Unstake successful!',
@@ -154,24 +180,18 @@ export async function executeUnstake(index) {
     );
 }
 
-// ====================================================================
-//  ADJUSTMENT 1: executeForceUnstake
-// ====================================================================
 export async function executeForceUnstake(index) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
 
-    // =================================================================
-    // --- CORRECTION: Get booster ID for penalty discount ---
-    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- FUNCTION NAME CORRECTED
+    // Get booster ID for penalty discount
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
     const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
-    // --- END CORRECTION ---
     
-    // The 'confirm' should be moved to the UI event listener, but we keep the logic
     if (!confirm("Are you sure? This action will incur a penalty (which may be reduced by your Booster NFT).")) return false;
     
     const btnElement = document.querySelector(`.force-unstake-btn[data-index='${index}']`)
     
-    // Pass the boosterIdToSend as the second argument
+    // Pass the boosterIdToSend as the second argument for the discount
     const forceUnstakeTxPromise = State.delegationManagerContract.forceUnstake(index, boosterIdToSend); 
     
     return await executeTransaction(
@@ -181,36 +201,47 @@ export async function executeForceUnstake(index) {
         btnElement
     );
 }
-// ====================================================================
 
 
-// --- VALIDATOR (Maintained) ---
+// --- VALIDATOR ---
+
 export async function payValidatorFee(feeAmount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
+    
     const approved = await ensureApproval(addresses.delegationManager, feeAmount, btnElement, "Validator Fee");
     if (!approved) return false;
+    
     const payTxPromise = State.delegationManagerContract.payRegistrationFee();
+    
     return await executeTransaction(payTxPromise, 'Fee paid successfully!', 'Error paying validator fee', btnElement);
 }
+
 export async function registerValidator(stakeAmount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
+    
     const approved = await ensureApproval(addresses.delegationManager, stakeAmount, btnElement, "Validator Stake");
     if (!approved) return false;
+    
     const registerTxPromise = State.delegationManagerContract.registerValidator(State.userAddress);
+    
     return await executeTransaction(registerTxPromise, 'Validator registered!', 'Error registering validator', btnElement);
 }
 
 
-// --- POP MINING / CERTIFICATES (Maintained) ---
+// --- POP MINING / CERTIFICATES ---
+
 export async function createVestingCertificate(recipientAddress, amount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     if (!ethers.isAddress(recipientAddress)) return showToast('Invalid beneficiary address.', 'error');
     if (amount <= 0n) return showToast('Invalid amount.', 'error');
     if (amount > State.currentUserBalance) return showToast("Insufficient $BKC balance.", "error");
+    
     const approved = await ensureApproval(addresses.rewardManager, amount, btnElement, "PoP Mining Purchase");
     if (!approved) return false;
+    
     const createTxPromise = State.rewardManagerContract.createVestingCertificate(recipientAddress, amount);
     const success = await executeTransaction(createTxPromise, 'PoP Mining completed successfully!', 'Error executing PoP Mining', btnElement);
+    
     if (success) {
         // Clear inputs only if the transaction is successful
         const recipientInput = document.getElementById('recipientAddressInput');
@@ -221,43 +252,46 @@ export async function createVestingCertificate(recipientAddress, amount, btnElem
     return success;
 }
 
-// ====================================================================
-//  ADJUSTMENT 2: executeWithdraw
-// ====================================================================
 export async function executeWithdraw(tokenId, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
 
-    // =================================================================
-    // --- CORRECTION: Get booster ID for penalty discount ---
-    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- FUNCTION NAME CORRECTED
+    // Get booster ID for penalty discount
+    const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
     const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
-    // --- END CORRECTION ---
 
-    // Pass the boosterIdToSend as the second argument
+    // Pass the boosterIdToSend as the second argument for the discount
     const withdrawTxPromise = State.rewardManagerContract.withdraw(tokenId, boosterIdToSend); 
     
     return await executeTransaction(withdrawTxPromise, 'Withdrawal successful!', 'Error during withdrawal', btnElement);
 }
-// ====================================================================
 
 
-// --- REWARD CLAIMS (Maintained) ---
+// --- REWARD CLAIMS ---
+
 export async function executeUniversalClaim(stakingRewards, minerRewards, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     if (stakingRewards === 0n && minerRewards === 0n) {
         showToast("No rewards to claim.", "info");
         return false;
     }
+    
     const originalText = btnElement ? btnElement.innerHTML : 'Claiming...';
     if (btnElement) {
         btnElement.disabled = true;
         btnElement.innerHTML = '<div class="loader inline-block"></div> Claiming...';
     }
+    
     try {
         let txHashes = [];
+
+        // [MODIFICADO] Pega o booster ANTES de fazer o claim
+        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI();
+        const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
+
         if (stakingRewards > 0n) {
             showToast("Claiming staking rewards...", "info");
-            const tx = await State.delegationManagerContract.claimDelegatorReward();
+            // [MODIFICADO] Passa o boosterIdToSend para a função de claim
+            const tx = await State.delegationManagerContract.claimDelegatorReward(boosterIdToSend);
             const receipt = await tx.wait();
             txHashes.push(receipt.hash);
         }
@@ -267,6 +301,7 @@ export async function executeUniversalClaim(stakingRewards, minerRewards, btnEle
             const receipt = await tx.wait();
             txHashes.push(receipt.hash);
         }
+        
         const successMessage = txHashes.length > 1 ? 'All rewards claimed successfully!' : 'Reward claimed successfully!';
         showToast(successMessage, "success", txHashes[0] || null);
         loadUserData(); // Reload data after claim
@@ -277,79 +312,72 @@ export async function executeUniversalClaim(stakingRewards, minerRewards, btnEle
         return false;
     } finally {
         if(btnElement) {
-            // Re-enable button after completion (success or fail)
              setTimeout(() => {
                 if(btnElement) {
                     btnElement.disabled = false;
                     btnElement.innerHTML = originalText;
                 }
-             }, 1000); // Small delay
+             }, 1000);
         }
     }
 }
 
-// --- BOOSTER STORE ---
 
-// ====================================================================
-//  ADJUSTMENT 3: executeBuyBooster
-// ====================================================================
-export async function executeBuyBooster(boostBips, price, btnElement) {
+// ####################################################################
+// ###               INÍCIO DAS MODIFICAÇÕES - BOOSTER STORE           ###
+// ####################################################################
+
+/**
+ * [MODIFICADO] Executa a COMPRA de um Booster NFT (BKC -> NFT)
+ * Agora aceita um 'boosterTokenId' para a verificação de pStake
+ */
+export async function executeBuyBooster(boostBips, price, boosterTokenId, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
+    
     const originalText = btnElement ? btnElement.innerHTML : 'Buy';
     if (btnElement) {
         btnElement.disabled = true;
         btnElement.innerHTML = '<div class="loader inline-block"></div>';
     }
+    
     try {
-        showToast("Finding an available NFT in the pool...", "info");
+        const priceWei = BigInt(price);
         
-        // --- Original placeholder logic (problematic, but maintained) ---
-         let availableTokenId = null;
-         const poolInfo = await safeContractCall(State.nftBondingCurveContract, 'pools', [boostBips], {nftCount: 0});
-         if(poolInfo.nftCount > 0) {
-             console.warn("Using placeholder logic (ID 0) for tokenId selection in buyBooster.");
-             availableTokenId = 0n; // Placeholder 
-         } else {
-             throw new Error("No NFTs available in this pool.");
-         }
-        // --- END PLACEHOLDER LOGIC ---
+        // [CORRIGIDO] Usa a chave correta: nftLiquidityPool
+        const approved = await ensureApproval(addresses.nftLiquidityPool, priceWei, btnElement, "NFT Purchase");
+        if (!approved) {
+             // ensureApproval já mostra o toast de erro, apenas resetamos o botão
+             if(btnElement) btnElement.innerHTML = originalText;
+             return false;
+        }
 
-        const priceWei = BigInt(price); // Price already comes as BigInt from StorePage
-        const approved = await ensureApproval(addresses.nftBondingCurve, priceWei, btnElement, "NFT Purchase");
-        if (!approved) return false; // Exits if approval fails
-
-        // If approval was ok, update button to "Buying"
         if (btnElement) btnElement.innerHTML = '<div class="loader inline-block"></div> Buying...';
 
-        // =================================================================
-        // --- CORRECTION: Get booster ID for pStake check ---
-        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- FUNCTION NAME CORRECTED
+        // O boosterTokenId já foi buscado pelo StorePage.js, apenas garantimos que seja um BigInt
         const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
-        // --- END CORRECTION ---
 
         showToast("Submitting buy transaction...", "info");
 
-        // The buyNFT function (V3 Contract) expects 3 arguments [boostBips, tokenId, boosterTokenId]
-        const buyTxPromise = State.nftBondingCurveContract.buyNFT(
-            boostBips, 
-            availableTokenId, // <-- This is the placeholder from original logic
-            boosterIdToSend   // <-- This is the 3rd argument that was missing
-        ); 
+        // [MODIFICADO] Chama buyNextAvailableNFT com os 2 argumentos corretos:
+        // 1. boostBips
+        // 2. boosterIdToSend (para verificação de pStake)
+        const buyTxPromise = State.nftBondingCurveContract.buyNextAvailableNFT(
+            boostBips,
+            boosterIdToSend 
+        );
 
         const success = await executeTransaction(buyTxPromise, 'Purchase successful!', 'Error during purchase', btnElement);
 
         if (success) {
-            console.log("Purchase successful. Add-to-wallet requires event listening implementation.");
+            console.log("Purchase successful.");
         }
         return success;
     } catch (e) {
         console.error("Error buying booster:", e);
         showToast(`Error: ${e.message || 'Transaction rejected.'}`, "error");
-        return false; // Return false on error
+        return false;
     } finally {
-        // Ensure button is restored at the end, regardless of outcome
          if(btnElement) {
-             // Small delay before re-enabling
              setTimeout(() => {
                  if(btnElement) {
                      btnElement.disabled = false;
@@ -359,21 +387,26 @@ export async function executeBuyBooster(boostBips, price, btnElement) {
          }
     }
 }
-// ====================================================================
 
-// ====================================================================
-//  ADJUSTMENT 4: executeSellBooster
-// ====================================================================
-export async function executeSellBooster(tokenId, btnElement) {
+/**
+ * [MODIFICADO] Executa a VENDA de um Booster NFT (NFT -> BKC)
+ * Agora aceita um 'boosterTokenId' para o DESCONTO NA TAXA
+ */
+export async function executeSellBooster(tokenIdToSell, boosterTokenIdForDiscount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
+    
     const originalText = btnElement ? btnElement.innerHTML : 'Sell NFT';
-
-    // Ensure tokenId is a valid BigInt or number
     let tokenIdBigInt;
+    
     try {
-        tokenIdBigInt = BigInt(tokenId);
+        tokenIdBigInt = BigInt(tokenIdToSell);
     } catch {
         showToast("Invalid Token ID provided.", "error");
+        return false;
+    }
+
+    if (!tokenIdBigInt || tokenIdBigInt <= 0n) {
+        showToast("No NFT of this type found in your wallet to sell.", "error");
         return false;
     }
 
@@ -383,37 +416,42 @@ export async function executeSellBooster(tokenId, btnElement) {
     }
 
     try {
-        // 1. Approve the Pool contract to transfer the NFT
-        showToast(`Approving transfer of NFT #${tokenId}...`, "info");
-        const approveTx = await State.rewardBoosterContract.approve(addresses.nftBondingCurve, tokenIdBigInt);
+        // 1. Aprova o Pool para pegar o NFT que queremos vender
+        showToast(`Approving transfer of NFT #${tokenIdToSell}...`, "info");
+        
+        // [MODIFICADO] Usa safeContractCall para melhor tratamento de erro
+        // [CORRIGIDO] Usa a chave correta: nftLiquidityPool
+        const approveTx = await safeContractCall(
+            State.rewardBoosterContract,
+            'approve',
+            [addresses.nftLiquidityPool, tokenIdBigInt],
+            null
+        );
+        if (!approveTx) throw new Error("Approval transaction failed to send.");
         await approveTx.wait();
+        
         showToast("NFT approved successfully!", "success");
 
-        // 2. Call the sell function on the Pool
         if (btnElement) btnElement.innerHTML = '<div class="loader inline-block"></div> Selling...';
         showToast("Submitting sell transaction...", "info");
 
-        // =================================================================
-        // --- CORRECTION: Get booster ID for pStake and fee discount ---
-        // Note: The user might want to use a different booster than the one they are selling.
-        // Using the 'highest' is the best default logic.
-        const { tokenId: boosterTokenId } = await getHighestBoosterBoostFromAPI(); // <-- FUNCTION NAME CORRECTED
-        const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
-        // --- END CORRECTION ---
+        // 2. Garante que o ID do booster para desconto seja um BigInt
+        const boosterIdToSend = boosterTokenIdForDiscount ? BigInt(boosterTokenIdForDiscount) : 0n;
 
-        // Pass the boosterIdToSend as the second argument
-        const sellTxPromise = State.nftBondingCurveContract.sellNFT(tokenIdBigInt, boosterIdToSend);
+        // 3. Chama sellNFT, passando ambos os argumentos
+        const sellTxPromise = State.nftBondingCurveContract.sellNFT(
+            tokenIdBigInt, // O NFT que estamos vendendo
+            boosterIdToSend  // O NFT que estamos usando para o desconto
+        );
 
-        // Use the executeTransaction wrapper
         const success = await executeTransaction(sellTxPromise, 'Sale successful!', 'Error during sale', btnElement);
-        return success; // Returns true or false
+        return success;
 
     } catch (e) {
         console.error("Error selling booster:", e);
         showToast(`Error: ${e.reason || e.message || 'Transaction rejected.'}`, "error");
-        return false; // Return false on error
+        return false;
     } finally {
-        // Ensure button is restored at the end
         if(btnElement) {
              setTimeout(() => {
                  if(btnElement) {
@@ -424,17 +462,23 @@ export async function executeSellBooster(tokenId, btnElement) {
         }
     }
 }
-// ====================================================================
+
+// ####################################################################
+// ###               FIM DAS MODIFICAÇÕES - BOOSTER STORE            ###
+// ####################################################################
 
 
-// --- FAUCET CLAIM (Maintained) ---
+// --- FAUCET CLAIM ---
+
 export async function executeFaucetClaim(btnElement) {
     if (!State.signer || !State.faucetContract) {
         showToast("Wallet not connected or Faucet not configured.", "error");
         return false;
     }
+    
     const claimTxPromise = State.faucetContract.claim();
     const faucetAmount = formatBigNumber(FAUCET_AMOUNT_WEI);
+    
     return await executeTransaction(
         claimTxPromise,
         `Successfully claimed ${faucetAmount} $BKC!`,
@@ -443,16 +487,11 @@ export async function executeFaucetClaim(btnElement) {
     );
 }
 
-// ====================================================================
-// ====================================================================
-// --- NOTARY (ADJUSTED FOR DESCRIPTION) ---
-// ====================================================================
-// ====================================================================
+
+// --- NOTARY ---
 
 /**
  * Executes the transaction to notarize a document.
- * This version fetches the BASE FEE from State (loaded by NotaryPage) for
- * approval, and passes the user's DESCRIPTION and BOOSTER ID to the contract.
  * @param {string} documentURI - The 'ipfs://...' URI of the document.
  * @param {string} description - The user-provided description (max 256 chars).
  * @param {BigInt} boosterId - The user's Booster NFT ID (0n if none).
@@ -465,39 +504,33 @@ export async function executeNotarizeDocument(documentURI, description, boosterI
         return false;
     }
 
-    // 1. Fetch the Base Fee (undiscounted) that NotaryPage.js loaded into State.
-    // This is the maximum fee the user might pay.
+    // 1. Fetch the Base Fee (undiscounted)
     const baseFee = State.notaryFee; 
     if (typeof baseFee === 'undefined') {
         showToast("Notary base fee not loaded. Please refresh.", "error");
         return false;
     }
 
-    // 2. Ensure Approval
-    // The user must approve the Notary contract to spend the BASE FEE.
+    // 2. Ensure Approval for the base fee
     const notaryAddress = await State.decentralizedNotaryContract.getAddress();
-    
-    // Only needs approval if the base fee is greater than zero
     if (baseFee > 0n) {
         const approved = await ensureApproval(notaryAddress, baseFee, submitButton, "Notary Fee");
-        if (!approved) return false; // Exits if approval fails or is rejected
+        if (!approved) return false;
     }
 
-    // 3. Execute the Notarization Transaction
-    // Passes the THREE correct arguments to the contract
+    // 3. Execute the Notarization
     const notarizeTxPromise = State.decentralizedNotaryContract.notarizeDocument(
-        documentURI, // 1st argument: string
-        description, // 2nd argument: string
-        boosterId    // 3rd argument: uint256
+        documentURI,
+        description,
+        boosterId
     );
 
-    // Use the executeTransaction wrapper to handle the transaction and feedback
     const success = await executeTransaction(
         notarizeTxPromise,
         'Document notarized successfully!',
         'Error notarizing document',
-        submitButton // Pass the button to the wrapper
+        submitButton
     );
 
-    return success; // Returns true or false
+    return success;
 }

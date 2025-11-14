@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-<<<<<<< HEAD
 // --- Imports for UUPS (Upgradeable) Pattern ---
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -15,6 +14,7 @@ import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
 // --- Import Interfaces and Contracts ---
 import "./IInterfaces.sol";
 import "./BKCToken.sol";
+
 /**
  * @title RewardManager (V3 - UUPS Spoke)
  * @author Gemini AI (Based on original contract)
@@ -28,11 +28,13 @@ contract RewardManager is
     ERC721EnumerableUpgradeable
 {
     using CountersUpgradeable for CountersUpgradeable.Counter;
+
     // --- Core Contracts ---
     IEcosystemManager public ecosystemManager;
     BKCToken public bkcToken;
     IDelegationManager public delegationManager;
     address public miningManagerAddress;
+
     // --- Tokenomic Constants ---
     uint256 public constant VESTING_DURATION = 5 * 365 days;
     uint256 public constant INITIAL_PENALTY_BIPS = 5000;
@@ -40,41 +42,13 @@ contract RewardManager is
     // --- State ---
     CountersUpgradeable.Counter private _tokenIdCounter;
     string private _baseTokenURI;
-=======
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol"; 
-import "./BKCToken.sol";
-import "./DelegationManager.sol"; 
-import "./EcosystemManager.sol";
-/**
- * @title RewardManager (Vesting Certificate NFT + PoP Mining)
- * @dev Manages "Proof-of-Purchase" Mining and the distribution of mining rewards.
- */
-contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard { 
-    BKCToken public immutable bkcToken;
-    DelegationManager public delegationManager;
-    IEcosystemManager public immutable ecosystemManager; 
-    address public immutable treasuryWallet;
-    string private baseURI;
-    // --- Constantes de Supply e Vesting ---
-    uint256 public constant MAX_SUPPLY = 200_000_000 * 10**18;
-    uint256 public constant TGE_SUPPLY = 40_000_000 * 10**18;
-    uint256 public constant MINT_POOL = MAX_SUPPLY - TGE_SUPPLY;
-    uint256 public constant VESTING_DURATION = 5 * 365 days;
-    uint256 public constant INITIAL_PENALTY_BIPS = 5000;
-    // --- Variáveis de Estado ---
-    uint256 private _tokenIdCounter;
-    mapping(address => uint256) public minerRewardsOwed;
-    uint256 public nextValidatorIndex;
-    address public tigerGameAddress;
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
+
     struct VestingPosition {
         uint256 totalAmount;
         uint256 startTime;
     }
     mapping(uint256 => VestingPosition) public vestingPositions;
-    
+
     // --- Events ---
     event VestingCertificateCreated(
         uint256 indexed tokenId,
@@ -102,13 +76,12 @@ contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard {
         address _initialOwner,
         address _ecosystemManagerAddress
     ) public initializer {
-        // ✅ CORREÇÃO (Aviso): Ordem dos inicializadores corrigida
+        // Ordem dos inicializadores corrigida
         __Ownable_init();
         __UUPSUpgradeable_init();
-        __ReentrancyGuard_init(); // Movido para cima
+        __ReentrancyGuard_init();
         __ERC721_init("Backchain Vesting Certificate", "BKCV");
         __ERC721Enumerable_init();
-        // ❌ __ReentrancyGuard_init(); (Removido da posição antiga)
 
         require(
             _ecosystemManagerAddress != address(0),
@@ -174,6 +147,7 @@ contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard {
         );
         uint256 certificateBonus = IMiningManager(miningManagerAddress)
             .performPurchaseMining("VESTING_SERVICE", purchaseAmount);
+            
         // --- 4. Mint NFT ---
         uint256 finalVestingAmount = purchaseAmount + certificateBonus;
         uint256 tokenId = _tokenIdCounter.current();
@@ -184,7 +158,6 @@ contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard {
         });
         _safeMint(_recipient, tokenId);
 
-<<<<<<< HEAD
         emit VestingCertificateCreated(
             tokenId,
             _recipient,
@@ -194,57 +167,6 @@ contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard {
     }
 
     // --- 2. Core Function: Withdraw Certificate ---
-=======
-            address selectedMiner = _selectNextValidator();
-            require(selectedMiner != address(0), "RM: Could not select a miner"); 
-
-            uint256 treasuryAmount = (totalMintAmount * 10) / 100;
-            uint256 minerRewardAmount = (totalMintAmount * 15) / 100; 
-            uint256 delegatorPoolAmount = totalMintAmount - (certificateRewardAmount + treasuryAmount + minerRewardAmount);
-            if (treasuryAmount > 0) bkcToken.mint(treasuryWallet, treasuryAmount);
-            if (minerRewardAmount > 0) { 
-                minerRewardsOwed[selectedMiner] += minerRewardAmount;
-                bkcToken.mint(address(this), minerRewardAmount); 
-            }
-            
-            if (delegatorPoolAmount > 0) { 
-                bkcToken.mint(address(this), delegatorPoolAmount);
-                bkcToken.approve(address(delegationManager), delegatorPoolAmount); 
-                delegationManager.depositRewards(0, delegatorPoolAmount); 
-            }
-        }
-        
-        uint256 tokenId = _tokenIdCounter++;
-        _safeMint(_recipient, tokenId); 
-        vestingPositions[tokenId] = VestingPosition({ totalAmount: finalVestingAmount, startTime: block.timestamp }); 
-        emit VestingCertificateCreated(tokenId, _recipient, finalVestingAmount);
-    }
-    
-    // --- NOVO: Função de Mineração para o TigerGame (Sem Certificado) ---
-    function performGameMiningAndDistribution(uint256 _purchaseAmount) external nonReentrant {
-        require(msg.sender == tigerGameAddress, "RM: Caller not authorized");
-        require(address(delegationManager) != address(0), "RM: DelegationManager not set");
-        
-        uint256 totalMintAmount = _calculateMintAmount(_purchaseAmount);
-        if (totalMintAmount > 0) {
-            
-            uint256 treasuryAmount = (totalMintAmount * 10) / 100;
-            uint256 minerRewardAmount = (totalMintAmount * 15) / 100; 
-            // 10% (Treasury) + 15% (Miner) = 25%.
-            // O restante é 75% para o Delegator Pool.
-            uint256 delegatorPoolAmount = totalMintAmount - (treasuryAmount + minerRewardAmount);
-            
-            bkcToken.mint(address(this), totalMintAmount);
-            address selectedMiner = _selectNextValidator();
-            
-            // ######################################################
-            // ### CORREÇÃO APLICADA: Usa Dívida do Minerador ###
-            // ######################################################
-            if (minerRewardAmount > 0 && selectedMiner != address(0)) {
-                // CORRIGIDO: Acumula a dívida, eliminando o bkcToken.transfer direto.
-                minerRewardsOwed[selectedMiner] += minerRewardAmount;
-            }
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
 
     /**
      * @notice Withdraws the BKC from a Vesting Certificate.
@@ -262,6 +184,7 @@ contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard {
             pos.totalAmount > 0,
             "RM: Certificate already withdrawn or invalid"
         );
+        
         // --- 1. Calculate Base Penalty ---
         uint256 timeElapsed = block.timestamp - pos.startTime;
         uint256 penaltyBips = 0;
@@ -274,63 +197,39 @@ contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard {
         // --- 2. Apply Booster Discount ---
         if (_boosterTokenId > 0 && penaltyBips > 0) {
             address boosterAddress = ecosystemManager.getBoosterAddress();
-<<<<<<< HEAD
+            
             if (boosterAddress != address(0)) {
                 try IRewardBoosterNFT(boosterAddress).ownerOf(_boosterTokenId)
                 returns (address owner) {
                     if (owner == msg.sender) {
+                       
                         uint256 boostBips = IRewardBoosterNFT(boosterAddress)
                             .boostBips(_boosterTokenId);
                         uint256 discountBips = ecosystemManager
                             .getBoosterDiscount(boostBips);
+
                         if (discountBips > 0) {
                             penaltyBips = (penaltyBips > discountBips)
                                 ? penaltyBips - discountBips
                                 : 0;
-=======
-            require(boosterAddress != address(0), "RM: Booster address not set in Hub");
-            
-            IRewardBoosterNFT booster = IRewardBoosterNFT(boosterAddress);
-            try booster.ownerOf(_boosterTokenId) returns (address owner) {
-                if (owner == msg.sender) {
-                    uint256 boostBips = booster.boostBips(_boosterTokenId);
-                    uint256 boostBipsDiscount = ecosystemManager.getBoosterDiscount(boostBips);
-                    
-                    if (boostBipsDiscount > 0) {
-                        if (penaltyBips < boostBipsDiscount) {
-                            penaltyBips = 0;
-                        } else {
-                            penaltyBips -= boostBipsDiscount;
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
                         }
                     }
-                } catch {}
+                } catch { 
+                    // Ignore if NFT is invalid or call fails
+                }
             }
         }
-<<<<<<< HEAD
 
         // --- 3. Calculate Final Amounts ---
         (
             uint256 amountToOwner,
             uint256 penaltyAmount
         ) = _calculateWithdrawalAmounts(pos, penaltyBips);
+        
         // --- 4. Execute Withdrawal ---
-=======
-        
-    
- 
-        // 3. Calcula os valores de saque com a penalidade final
-        (uint256 amountToOwner, uint256 penaltyAmount) = _calculateWithdrawalAmounts(pos, penaltyBips);
-        
-        // =================================================================
-        // ### AQUI ESTAVA O AVISO ###
-        // Linha removida pois 'totalVestingAmount' não era utilizada.
-        // uint256 totalVestingAmount = pos.totalAmount;
-        // =================================================================
-        
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
         delete vestingPositions[_tokenId];
         _burn(_tokenId);
+
         if (penaltyAmount > 0) {
             bkcToken.approve(address(delegationManager), penaltyAmount);
             delegationManager.depositRewards(0, penaltyAmount);
@@ -368,12 +267,15 @@ contract RewardManager is ERC721Enumerable, Ownable, ReentrancyGuard {
         if (totalPStake > 0) {
             uint256 userShareBIPS = (userPStake * 10000) / totalPStake;
             if (userShareBIPS < 10) {
-                feeAmount = (_grossAmount * 5) / 100;
+                // < 0.1% Share
+                feeAmount = (_grossAmount * 5) / 100; // 5% Fee
             } else if (userShareBIPS < 100) {
-                feeAmount = (_grossAmount * 2) / 100;
+                // < 1% Share
+                feeAmount = (_grossAmount * 2) / 100; // 2% Fee
             }
         } else {
-            feeAmount = (_grossAmount * 5) / 100;
+            // No pStake yet, set default high fee
+            feeAmount = (_grossAmount * 5) / 100; // 5% Fee
         }
         return feeAmount;
     }

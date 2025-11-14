@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: MIT 
+pragma solidity ^0.8.28;
+
 // --- Imports para a versão Upgradeable ---
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import "./IInterfaces.sol"; // Imports IEcosystemManager e IRewardBoosterNFT
+import "./IInterfaces.sol";
+// Imports IEcosystemManager e IRewardBoosterNFT
 
 /**
  * @title PublicSale (V4 - Price Update Support, Upgradeable)
@@ -17,12 +21,18 @@ contract PublicSale is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     IEcosystemManager public ecosystemManager;
 
     struct Tier {
-        uint256 priceInWei; // Price in native currency (BNB) Wei
-        uint256 maxSupply; // Maximum supply for this tier
-        uint256 mintedCount; // How many have been sold
-        uint256 boostBips; // The associated boost (e.g., 5000)
-        string metadataFile; // JSON file name (e.g., "diamond.json")
-        bool isConfigured; // Flag to know if the tier is set
+        uint256 priceInWei;
+        // Price in native currency (BNB) Wei
+        uint256 maxSupply;
+        // Maximum supply for this tier
+        uint256 mintedCount;
+        // How many have been sold
+        uint256 boostBips;
+        // The associated boost (e.g., 5000)
+        string metadataFile;
+        // JSON file name (e.g., "diamond.json")
+        bool isConfigured;
+        // Flag to know if the tier is set
     }
 
     mapping(uint256 => Tier) public tiers;
@@ -55,7 +65,6 @@ contract PublicSale is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address _ecosystemManagerAddress,
         address _initialOwner
     ) public initializer {
-        // CORRIGIDO: __Ownable_init() agora não aceita argumentos.
         __Ownable_init();
         __UUPSUpgradeable_init();
 
@@ -149,6 +158,7 @@ contract PublicSale is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 msg.sender,
                 tier.boostBips,
                 tier.metadataFile
+ 
             );
             emit NFTSold(msg.sender, _tierId, newTokenId, tier.priceInWei);
         }

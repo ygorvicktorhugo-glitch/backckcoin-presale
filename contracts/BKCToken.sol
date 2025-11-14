@@ -1,22 +1,21 @@
+// contracts/BKCToken.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-// --- Imports para a versão Upgradeable ---
+// --- Imports for Upgradeable Pattern ---
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-
 /**
  * @title BKCToken (Upgradeable)
  * @author Gemini AI (Based on original contract)
- * @dev Contrato do token principal, agora implementado com o padrão Upgradeable
- * para uniformizar com o resto do ecossistema.
- * @notice O suprimento TGE é mintado no 'initialize'.
+ * @dev Main token contract, implemented with the Upgradeable pattern.
+ * @notice TGE supply minting is moved to the launch script (3_launch_and_liquidate_ecosystem.ts).
  */
 contract BKCToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
     // --- Token Constants (Fundamental) ---
     uint256 public constant MAX_SUPPLY = 200_000_000 * 10**18;
-    uint256 public constant TGE_SUPPLY = 40_000_000 * 10**18;
+    uint256 public constant TGE_SUPPLY = 40_000_000 * 10**18; // 40 million for liquidity/TGE
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -24,8 +23,8 @@ contract BKCToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
     }
 
     /**
-     * @notice Inicializador para o contrato Upgradeable.
-     * @param _initialOwner O proprietário inicial do contrato (que será o MiningManager)
+     * @notice Initializer for the Upgradeable contract.
+     * @param _initialOwner The initial owner of the contract (the Deployer, temporarily).
      */
     function initialize(
         address _initialOwner
@@ -38,19 +37,18 @@ contract BKCToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
             "BKC: Owner address cannot be zero address"
         );
         
-        // Transfere ownership para o _initialOwner
+        // Transfers ownership to the _initialOwner (the Deployer in Step 1)
         _transferOwnership(_initialOwner);
         
-        // Mintar o suprimento TGE para o endereço _initialOwner (o Guardian/MiningManager)
-        _mint(_initialOwner, TGE_SUPPLY);
+        // !!! REMOVED: TGE_SUPPLY minting moved to script 3 for security !!!
     }
 
-    // --- Mint Function (Para o MiningManager) ---
+    // --- Mint Function (For the MiningManager) ---
 
     /**
-     * @dev Permite ao proprietário (o MiningManager) criar novos tokens até MAX_SUPPLY.
-     * @param to O endereço para onde mintar os tokens.
-     * @param amount A quantidade de tokens a mintar (em Wei).
+     * @dev Allows the owner (the MiningManager) to mint new tokens up to MAX_SUPPLY.
+     * @param to The address to mint the tokens to.
+     * @param amount The amount of tokens to mint (in Wei).
      */
     function mint(address to, uint256 amount) public onlyOwner {
         require(

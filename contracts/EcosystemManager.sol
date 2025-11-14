@@ -13,8 +13,6 @@ import "./IInterfaces.sol";
  * @title EcosystemManager (V3 - UUPS Upgradable & Flexible)
  * @author Gemini AI (Based on original contracts)
  * @dev The UUPS (upgradable) "Brain" that stores ALL business rules.
- * @notice This contract centralizes fees, discounts, and MINING RULES.
- * @notice MUST be deployed using a UUPS Proxy.
  */
 contract EcosystemManager is
     Initializable,
@@ -28,6 +26,15 @@ contract EcosystemManager is
     address public delegationManagerAddress;
     address public rewardBoosterAddress;
     address public miningManagerAddress;
+    address public rewardManagerAddress;
+    address public decentralizedNotaryAddress;
+    address public fortunePoolAddress;
+    
+    // --- ARCHITECTURE CHANGE ---
+    // address public nftLiquidityPoolAddress; // REMOVED
+    address public nftLiquidityPoolFactoryAddress; // ADDED
+
+
     // --- 2. SERVICE RULES (Spokes) ---
     mapping(string => uint256) public serviceFees;
     mapping(string => uint256) public servicePStakeMinimums;
@@ -38,7 +45,7 @@ contract EcosystemManager is
     mapping(string => uint256) public miningBonusBips;
     
     // --- Events ---
-    event AddressSet(string indexed key, address indexed newAddress); // ✅ NOVO EVENTO
+    event AddressSet(string indexed key, address indexed newAddress);
     event FeeSet(string indexed serviceKey, uint256 newFee);
     event PStakeMinimumSet(string indexed serviceKey, uint256 newPStake);
     event BoosterDiscountSet(uint256 indexed boostBips, uint256 discountBips);
@@ -50,10 +57,6 @@ contract EcosystemManager is
         _disableInitializers();
     }
 
-    /**
-     * @notice Initializer for the UUPS contract (replaces constructor).
-     * @param _initialOwner The address of your MultiSig that will control the Brain.
-     */
     function initialize(address _initialOwner) public initializer {
         __Ownable_init();
         __UUPSUpgradeable_init();
@@ -68,7 +71,6 @@ contract EcosystemManager is
         boosterDiscountsBips[1000] = 1000;
         boosterDiscountsBips[500] = 500;
         boosterDiscountsBips[100] = 100;
-
         // Sets the default mining percentages (Golden Rule)
         miningDistributionBips["TREASURY"] = 1000;
         miningDistributionBips["VALIDATOR_POOL"] = 1500;
@@ -81,9 +83,6 @@ contract EcosystemManager is
 
     // --- 5. ADMIN FUNCTIONS (Total Flexibility) ---
 
-    // ❌ REMOVIDO: setAddresses (função original que causava o erro)
-    
-    // ✅ NOVO: Funções de configuração individuais para implantação em fases
     function setBKCTokenAddress(address _addr) external onlyOwner {
         require(_addr != address(0), "Ecosystem: Address cannot be zero");
         bkcTokenAddress = _addr;
@@ -109,11 +108,33 @@ contract EcosystemManager is
         miningManagerAddress = _addr;
         emit AddressSet("MiningManager", _addr);
     }
-
-
+    function setRewardManagerAddress(address _addr) external onlyOwner {
+        require(_addr != address(0), "Ecosystem: Address cannot be zero");
+        rewardManagerAddress = _addr;
+        emit AddressSet("RewardManager", _addr);
+    }
+    function setDecentralizedNotaryAddress(address _addr) external onlyOwner {
+        require(_addr != address(0), "Ecosystem: Address cannot be zero");
+        decentralizedNotaryAddress = _addr;
+        emit AddressSet("DecentralizedNotary", _addr);
+    }
+    function setFortunePoolAddress(address _addr) external onlyOwner {
+        require(_addr != address(0), "Ecosystem: Address cannot be zero");
+        fortunePoolAddress = _addr;
+        emit AddressSet("FortunePool", _addr);
+    }
+    
+    // --- ARCHITECTURE CHANGE ---
     /**
-     * @notice (Owner) Sets the fee for a service.
+     * @notice (Owner) Sets the address of the NEW Pool Factory.
      */
+    function setNFTLiquidityPoolFactoryAddress(address _addr) external onlyOwner {
+        require(_addr != address(0), "Ecosystem: Address cannot be zero");
+        nftLiquidityPoolFactoryAddress = _addr;
+        emit AddressSet("NFTLiquidityPoolFactory", _addr);
+    }
+
+
     function setFee(string calldata _serviceKey, uint256 _fee)
         external
         onlyOwner
@@ -122,9 +143,6 @@ contract EcosystemManager is
         emit FeeSet(_serviceKey, _fee);
     }
 
-    /**
-     * @notice (Owner) Sets the minimum pStake for a service.
-     */
     function setPStakeMinimum(string calldata _serviceKey, uint256 _pStake)
         external
         onlyOwner
@@ -133,9 +151,6 @@ contract EcosystemManager is
         emit PStakeMinimumSet(_serviceKey, _pStake);
     }
 
-    /**
-     * @notice (Owner) Sets or changes a booster discount.
-     */
     function setBoosterDiscount(uint256 _boostBips, uint256 _discountBips)
         external
         onlyOwner
@@ -144,9 +159,6 @@ contract EcosystemManager is
         emit BoosterDiscountSet(_boostBips, _discountBips);
     }
 
-    /**
-     * @notice (Owner) Sets the mining share for a pool.
-     */
     function setMiningDistributionBips(
         string calldata _poolKey,
         uint256 _bips
@@ -155,9 +167,6 @@ contract EcosystemManager is
         emit MiningDistributionSet(_poolKey, _bips);
     }
 
-    /**
-     * @notice (Owner) Sets the "Buyer" bonus for a service.
-     */
     function setMiningBonusBips(string calldata _serviceKey, uint256 _bips)
         external
         onlyOwner
@@ -167,10 +176,7 @@ contract EcosystemManager is
     }
 
     // --- 6. AUTHORIZATION FUNCTION (Called by Spokes) ---
-
-    /**
-     * @notice Checks if a user can use a service and returns the final fee.
-     */
+    // NOTE: This logic is 100% UNCHANGED.
     function authorizeService(
         string calldata _serviceKey,
         address _user,
@@ -204,7 +210,8 @@ contract EcosystemManager is
                     if (discountBips > 0) {
                         uint256 discountAmount = (baseFee * discountBips) / 10000;
                         finalFee = (baseFee > discountAmount)
-                            ? baseFee - discountAmount
+                            ?
+                            baseFee - discountAmount
                             : 0;
                     }
                 }
@@ -275,7 +282,41 @@ contract EcosystemManager is
     {
         return miningManagerAddress;
     }
-
+    
+    function getRewardManagerAddress()
+        external
+        view
+        returns (address)
+    {
+        return rewardManagerAddress;
+    }
+    
+    function getDecentralizedNotaryAddress()
+        external
+        view
+        returns (address)
+    {
+        return decentralizedNotaryAddress;
+    }
+    
+    function getFortunePoolAddress()
+        external
+        view
+        returns (address)
+    {
+        return fortunePoolAddress;
+    }
+    
+    // --- ARCHITECTURE CHANGE ---
+    function getNFTLiquidityPoolFactoryAddress()
+        external
+        view
+        override // Added 'override'
+        returns (address)
+    {
+        return nftLiquidityPoolFactoryAddress;
+    }
+    
     function getMiningDistributionBips(string calldata _poolKey)
         external
         view

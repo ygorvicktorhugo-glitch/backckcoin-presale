@@ -71,8 +71,6 @@ export async function loadSystemDataFromAPI() {
     if (!State.systemPStakes) State.systemPStakes = {};
     if (!State.boosterDiscounts) State.boosterDiscounts = {};
 
-    // Removido a checagem if (!API_BASE_URL)
-
     try {
         console.log("Loading system rules from API...");
         // !!! CORREÇÃO: Usa o endpoint COMPLETO !!!
@@ -179,7 +177,6 @@ export async function loadPublicData() {
 }
 
 export async function loadUserData() {
-    // ... (lógica mantida) ...
     if (!State.signer || !State.userAddress) return;
 
     try {
@@ -205,7 +202,6 @@ export async function loadUserData() {
 }
 
 export async function calculateUserTotalRewards() {
-    // ... (lógica mantida) ...
     if (!State.delegationManagerContract || !State.rewardManagerContract || !State.userAddress) {
         return { stakingRewards: 0n, minerRewards: 0n, totalRewards: 0n };
     }
@@ -224,7 +220,6 @@ export async function calculateUserTotalRewards() {
 }
 
 export async function calculateClaimDetails() {
-    // ... (lógica mantida) ...
     if (!State.delegationManagerContract || !State.ecosystemManagerContract || !State.userAddress) {
         return { netClaimAmount: 0n, feeAmount: 0n, discountPercent: 0, totalRewards: 0n, basePenaltyPercent: 0 };
     }
@@ -269,7 +264,6 @@ export async function calculateClaimDetails() {
 }
 
 export async function getHighestBoosterBoostFromAPI() {
-    // ... (lógica mantida) ...
     if (!State.rewardBoosterContract || !State.userAddress) {
         return { highestBoost: 0, boostName: 'None', imageUrl: '', tokenId: null, efficiency: 50 };
     }
@@ -315,7 +309,6 @@ export async function getHighestBoosterBoostFromAPI() {
 }
 
 export async function loadMyCertificatesFromAPI() {
-    // ... (lógica mantida) ...
     if (State.myCertificates && State.myCertificates.length > 0) {
         return State.myCertificates;
     }
@@ -364,7 +357,6 @@ export async function loadMyCertificatesFromAPI() {
 }
 
 export async function loadMyBoostersFromAPI() {
-    // ... (lógica mantida) ...
     if (State.myBoosters && State.myBoosters.length > 0) {
         return State.myBoosters;
     }

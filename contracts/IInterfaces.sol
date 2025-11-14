@@ -78,27 +78,31 @@ interface IEcosystemManager {
         address _user,
         uint256 _boosterTokenId
     ) external view returns (uint256 finalFee);
+    
     function getServiceRequirements(
         string calldata _serviceKey
     ) external view returns (uint256 fee, uint256 pStake);
+    
     function getBoosterDiscount(uint256 _boostBips) external view returns (uint256);
     function getFee(string calldata _serviceKey) external view returns (uint256);
+
     // --- Address Getters ---
     function getTreasuryAddress() external view returns (address);
     function getDelegationManagerAddress() external view returns (address);
     function getBKCTokenAddress() external view returns (address);
     function getBoosterAddress() external view returns (address);
-    /**
-     * @notice (NEW) Returns the address of the Mining Guardian.
-     */
     function getMiningManagerAddress() external view returns (address);
-    // --- (NEW) Getters for the "Golden Rule" (Mining Distribution) ---
-    /**
-     * @notice Returns the mining share for a pool (e.g., "TREASURY").
-     */
+    
+    // --- (FIX) Added missing getters to match EcosystemManager.sol ---
+    function getRewardManagerAddress() external view returns (address);
+    function getDecentralizedNotaryAddress() external view returns (address);
+    function getFortunePoolAddress() external view returns (address);
+
+    // --- (REFACTOR) Replaced single pool with factory ---
+    // function getNFTLiquidityPoolAddress() external view returns (address); // REMOVED
+    function getNFTLiquidityPoolFactoryAddress() external view returns (address); // ADDED
+    
+    // --- Getters for the "Golden Rule" (Mining Distribution) ---
     function getMiningDistributionBips(string calldata _poolKey) external view returns (uint256);
-    /**
-     * @notice Returns the "Buyer" bonus for a service (e.g., "VESTING_SERVICE").
-     */
     function getMiningBonusBips(string calldata _serviceKey) external view returns (uint256);
 }

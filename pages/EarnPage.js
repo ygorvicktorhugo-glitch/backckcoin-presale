@@ -199,7 +199,8 @@ function renderValidatorsList() {
 
     // Se estiver conectado mas com saldo zero, mostra o card "Buy $BKC".
     if (State.currentUserBalance === 0n) {
-        const buyBkcLink = addresses.mainLPPairAddress || '#';
+        // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
+        const buyBkcLink = addresses.bkcDexPoolAddress || '#';
         
         listEl.innerHTML = `
             <div class="col-span-1 lg:col-span-2">
@@ -208,7 +209,7 @@ function renderValidatorsList() {
                     <h3 class="xl font-bold">Insufficient Balance</h3>
                     <p class="text-zinc-300">You need $BKC in your wallet to delegate to a validator.</p>
                     
-                    <a href="${buyBkcLink}" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
+                    <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
                         <i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC
                     </a>
                 </div>
@@ -270,7 +271,8 @@ function openDelegateModal(validatorAddr) {
     const defaultLockDays = 1825; 
 
     const balanceFormatted = formatBigNumber(State.currentUserBalance).toFixed(2);
-    const buyBkcLink = addresses.mainLPPairAddress || '#';
+    // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
+    const buyBkcLink = addresses.bkcDexPoolAddress || '#';
 
     const content = `
         <h3 class_broker.md="xl font-bold mb-4">Delegate to Validator</h3>
@@ -279,7 +281,7 @@ function openDelegateModal(validatorAddr) {
         <div class="flex justify-between items-center mb-4">
             <p class="text-sm text-zinc-400">Your balance: <span class="font-bold">${balanceFormatted}</span> $BKC</p>
             
-            <a href="${buyBkcLink}" rel="noopener noreferrer" class="text-xs bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-1 px-3 rounded-md transition-colors">
+            <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="text-xs bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-1 px-3 rounded-md transition-colors">
                 <i class="fa-solid fa-shopping-cart mr-1"></i> Buy $BKC
             </a>
         </div>
@@ -337,7 +339,8 @@ async function renderPopMiningPanel() {
 
     renderLoading(el);
     
-    const buyBkcLink = addresses.mainLPPairAddress || '#';
+    // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
+    const buyBkcLink = addresses.bkcDexPoolAddress || '#'; 
 
     // Verifica se o usuário tem o saldo mínimo (1 BKC) para mineração
     const minBalance = ethers.parseEther("1");
@@ -348,7 +351,7 @@ async function renderPopMiningPanel() {
                 <h3 class="xl font-bold">Insufficient Balance</h3>
                 <p class="text-zinc-300">You need at least 1 $BKC to execute PoP Mining.</p>
                 
-                <a href="${buyBkcLink}" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
+                <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
                     <i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC
                 </a>
             </div>
@@ -539,7 +542,8 @@ async function renderValidatorPanel() {
 
     renderLoading(el);
     
-    const buyBkcLink = addresses.mainLPPairAddress || '#';
+    // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
+    const buyBkcLink = addresses.bkcDexPoolAddress || '#';
 
     try {
         const fallbackValidatorStruct = { isRegistered: false, selfStakeAmount: 0n, totalDelegatedAmount: 0n };
@@ -571,7 +575,7 @@ async function renderValidatorPanel() {
                     <h3 class="xl font-bold">Insufficient Balance</h3>
                     <p class="text-zinc-300">You need ${formatBigNumber(requiredAmount).toFixed(2)} $BKC to become a validator (Fee + Self-Stake).</p>
                     
-                    <a href="${buyBkcLink}" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
+                    <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
                         <i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC
                     </a>
                 </div>

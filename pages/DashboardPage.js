@@ -351,7 +351,12 @@ function setupDashboardActionListeners() {
                 if (validatorAddr) await openDelegateModal(validatorAddr);
             // Atalho "Go to Store"
             } else if (target.classList.contains('go-to-store')) {
-                document.querySelector('.sidebar-link[data-target="store"]')?.click();
+                // AJUSTE CRÍTICO: Usa uma função global de navegação (seu roteador deve definir isso)
+                if (typeof window.navigateToPage === 'function') {
+                    window.navigateToPage('store');
+                } else {
+                    document.querySelector('.sidebar-link[data-target="store"]')?.click();
+                }
             // Imagem de NFT (Adicionar à Carteira)
             } else if (target.classList.contains('nft-clickable-image')) {
                 const address = target.dataset.address;
@@ -359,7 +364,12 @@ function setupDashboardActionListeners() {
                 if (address && tokenId) addNftToWallet(address, tokenId);
             // Atalho "Go to Rewards"
             } else if (target.classList.contains('go-to-rewards')) {
-                document.querySelector('.sidebar-link[data-target="rewards"]')?.click();
+                // AJUSTE CRÍTICO: Usa uma função global de navegação (seu roteador deve definir isso)
+                if (typeof window.navigateToPage === 'function') {
+                    window.navigateToPage('rewards');
+                } else {
+                    document.querySelector('.sidebar-link[data-target="rewards"]')?.click();
+                }
             }
         } catch (error) {
              console.error("Error handling dashboard action:", error);
@@ -432,7 +442,8 @@ function renderValidatorsList() {
 
     // Se conectado, mas com saldo zero, mostra o card "Buy $BKC"
     if (State.isConnected && State.currentUserBalance === 0n) {
-        const buyBkcLink = addresses.mainLPPairAddress || '#';
+        // AJUSTE: Usar addresses.bkcDexPoolAddress (o novo campo com a URL)
+        const buyBkcLink = addresses.bkcDexPoolAddress || '#'; 
         
         listEl.innerHTML = `
             <div class="col-span-1">
@@ -440,7 +451,7 @@ function renderValidatorsList() {
                     <i class="fa-solid fa-circle-exclamation text-3xl text-red-400"></i>
                     <h3 class="lg font-bold">Insufficient Balance</h3>
                     <p class="text-sm text-zinc-300">You need $BKC to delegate.</p>
-                    <a href="${buyBkcLink}" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2 px-4 rounded-lg text-sm mt-3">
+                    <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2 px-4 rounded-lg text-sm mt-3">
                         <i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC
                     </a>
                 </div>

@@ -6,14 +6,17 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+// --- Import Interfaces and Contracts ---
 import "./IInterfaces.sol";
 import "./BKCToken.sol";
-<<<<<<< HEAD
+import "./RewardBoosterNFT.sol";
+// Necessário para IRewardBoosterNFT
 
 /**
  * @title DelegationManager (V4 - UUPS & Dual-Pool Rewards)
  * @author Gemini AI (Based on original contract)
- * @dev This UUPS contract manages all staking, validators, and reward pools.
+ * @dev The UUPS contract that manages all staking, validators, and reward pools.
+ * @notice V4: Lógica de desconto de booster ADICIONADA ao unstake, forceUnstake e claimDelegatorReward.
  */
 contract DelegationManager is
     Initializable,
@@ -29,33 +32,9 @@ contract DelegationManager is
     uint256 public constant MIN_LOCK_DURATION = 1 days;
     uint256 public constant MAX_LOCK_DURATION = 3650 days;
     uint256 public constant VALIDATOR_LOCK_DURATION = 1825 days;
-=======
-import "./EcosystemManager.sol";
-// [MODIFICADO] Importa a interface do Booster para aplicar o desconto
-import "./RewardBoosterNFT.sol";
-/**
- * @title DelegationManager
- * @dev Manages staking, validators, and rewards.
- * @notice V4: Lógica de desconto de booster ADICIONADA ao claimDelegatorReward.
- */
-contract DelegationManager is Ownable, ReentrancyGuard {
-    BKCToken public immutable bkcToken;
-    IEcosystemManager public immutable ecosystemManager;
-    
-    address public rewardManagerAddress;
-    // --- Staking Constants (Fixed) ---
-    uint256 public constant MIN_LOCK_DURATION = 1 days;
-    uint256 public constant MAX_LOCK_DURATION = 3650 days; // 10 years
-    uint256 public constant VALIDATOR_LOCK_DURATION = 1825 days;
-    // 5 years
-    
-    uint256 public constant MAX_SUPPLY = 200_000_000 * 10**18;
-    uint256 public constant TGE_SUPPLY = 40_000_000 * 10**18;
-    uint256 public constant MINT_POOL = MAX_SUPPLY - TGE_SUPPLY;
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
     uint256 public constant DYNAMIC_STAKE_BIPS = 3;
     uint256 public constant SAFETY_MARGIN_BIPS = 10100;
-    
+
     // --- Data Structures ---
     struct Validator {
         bool isRegistered;
@@ -84,7 +63,7 @@ contract DelegationManager is Ownable, ReentrancyGuard {
 
     // --- Delegator State ---
     mapping(address => Delegation[]) public userDelegations;
-    mapping(address => uint256) public userTotalPStake;
+    mapping(address => uint256) public userTotalPStake; // MANTIDO
     uint256 public totalNetworkPStake;
 
     // --- Delegator Reward Pool ---
@@ -114,7 +93,7 @@ contract DelegationManager is Ownable, ReentrancyGuard {
     );
     event ValidatorRewardClaimed(address indexed validator, uint256 amount);
     event DelegatorRewardClaimed(address indexed delegator, uint256 amount);
-
+    
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -162,6 +141,7 @@ contract DelegationManager is Ownable, ReentrancyGuard {
             msg.sender == ecosystemManager.getMiningManagerAddress(),
             "DM: Caller is not the authorized MiningManager"
         );
+        // NOTE: Funds transfer is handled by MiningManager.
         
         if (_validatorShare > 0 && totalValidatorSelfStake > 0) {
             accValidatorRewardPerStake +=
@@ -190,6 +170,7 @@ contract DelegationManager is Ownable, ReentrancyGuard {
                 bkcToken.transferFrom(msg.sender, address(this), _delegatorAmount),
                 "DM: Failed to pull delegator rewards"
             );
+            
             if (totalNetworkPStake > 0) {
                 accDelegatorRewardPerStake +=
                     (_delegatorAmount * 1e18) / totalNetworkPStake;
@@ -211,7 +192,8 @@ contract DelegationManager is Ownable, ReentrancyGuard {
         
         address treasury = ecosystemManager.getTreasuryAddress();
         require(treasury != address(0), "DM: Treasury not set in Brain");
-        
+
+        // NOTE: This transfers the fee amount (MinValidatorStake) to the Treasury
         require(
             bkcToken.transferFrom(msg.sender, treasury, stakeAmount),
             "DM: Fee transfer failed"
@@ -225,13 +207,13 @@ contract DelegationManager is Ownable, ReentrancyGuard {
         require(hasPaidRegistrationFee[msg.sender], "DM: Must pay registration fee first");
         require(!validators[_validatorAddress].isRegistered, "DM: Validator already registered");
         
-        _claimDelegatorReward(msg.sender);
+        // Claim pending rewards before updating debt/pStake
+        _claimDelegatorReward(msg.sender, 0); // No booster used here, so pass 0
         
         require(
             bkcToken.transferFrom(msg.sender, address(this), stakeAmount),
             "DM: Stake transfer failed"
         );
-        
         validators[_validatorAddress] = Validator({
             isRegistered: true,
             selfStakeAmount: stakeAmount,
@@ -243,34 +225,23 @@ contract DelegationManager is Ownable, ReentrancyGuard {
 
         totalValidatorSelfStake += stakeAmount;
         validatorRewardDebt[_validatorAddress] =
-            stakeAmount * accValidatorRewardPerStake / 1e18;
-            
+            (stakeAmount * accValidatorRewardPerStake) / 1e18;
         emit ValidatorRegistered(_validatorAddress, stakeAmount);
     }
 
-<<<<<<< HEAD
     // --- 3. Delegator Staking Functions ---
 
-    function delegate(
-        address _validatorAddress,
-        uint256 _totalAmount,
-        uint256 _lockDuration
-    ) external nonReentrant {
-        _claimDelegatorReward(msg.sender);
-=======
     /**
      * @notice Delegates tokens to a validator.
-     * @dev [MODIFICADO] Agora aceita _boosterTokenId para o claim automático.
      */
     function delegate(
         address _validatorAddress, 
         uint256 _totalAmount, 
         uint256 _lockDuration,
-        uint256 _boosterTokenId // [MODIFICADO]
+        uint256 _boosterTokenId 
     ) external nonReentrant {
-        _claimDelegatorReward(msg.sender, _boosterTokenId);
-        // [MODIFICADO]
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
+        // Claim pending rewards before updating pStake and reward debt
+        _claimDelegatorReward(msg.sender, _boosterTokenId); 
         
         require(validators[_validatorAddress].isRegistered, "DM: Invalid validator");
         require(_totalAmount > 0, "DM: Invalid amount");
@@ -279,29 +250,12 @@ contract DelegationManager is Ownable, ReentrancyGuard {
             "DM: Invalid lock duration"
         );
         
-<<<<<<< HEAD
-        uint256 stakeAmount = _totalAmount;
-
-        require(
-            bkcToken.transferFrom(msg.sender, address(this), stakeAmount),
-            "DM: Failed to delegate tokens"
-        );
-        
-        userDelegations[msg.sender].push(
-            Delegation({
-                amount: stakeAmount,
-                unlockTime: block.timestamp + _lockDuration,
-                lockDuration: _lockDuration,
-                validator: _validatorAddress
-            })
-        );
-
-=======
         uint256 stakeAmount = _totalAmount; 
         uint256 feeAmount = 0; // delegate() é gratuito
         
         require(bkcToken.transferFrom(msg.sender, address(this), stakeAmount), "DM: Failed to delegate tokens");
 
+        uint256 delegationIndex = userDelegations[msg.sender].length;
         userDelegations[msg.sender].push(Delegation({
             amount: stakeAmount,
             unlockTime: block.timestamp + _lockDuration,
@@ -309,116 +263,75 @@ contract DelegationManager is Ownable, ReentrancyGuard {
             validator: _validatorAddress
         }));
 
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
         uint256 pStake = _calculatePStake(stakeAmount, _lockDuration);
         totalNetworkPStake += pStake;
         validators[_validatorAddress].totalPStake += pStake;
         validators[_validatorAddress].totalDelegatedAmount += stakeAmount;
         userTotalPStake[msg.sender] += pStake;
         
-<<<<<<< HEAD
-        delegatorRewardDebt[msg.sender] =
-            (userTotalPStake[msg.sender] * accDelegatorRewardPerStake) / 1e18;
-            
-        emit Delegated(
-            msg.sender,
-            _validatorAddress,
-            userDelegations[msg.sender].length - 1,
-            stakeAmount,
-            0
-        );
-    }
+        delegatorRewardDebt[msg.sender] = (userTotalPStake[msg.sender] * accDelegatorRewardPerStake) / 1e18;
 
-    function unstake(uint256 _delegationIndex) external nonReentrant {
-        _claimDelegatorReward(msg.sender);
-
-=======
-        delegatorRewardDebt[msg.sender] = userTotalPStake[msg.sender] * accDelegatorRewardPerStake / 1e18;
-        
-        emit Delegated(msg.sender, _validatorAddress, userDelegations[msg.sender].length - 1, stakeAmount, feeAmount);
+        emit Delegated(msg.sender, _validatorAddress, delegationIndex, stakeAmount, feeAmount);
     }
 
     /**
      * @notice Unstakes a delegation (after lockup ends).
-     * @dev [MODIFICADO] Agora aceita _boosterTokenId para o claim automático.
      */
     function unstake(
         uint256 _delegationIndex, 
-        uint256 _boosterTokenId // [MODIFICADO]
+        uint256 _boosterTokenId 
     ) external nonReentrant {
+        // Claim pending rewards before updating pStake and reward debt
         _claimDelegatorReward(msg.sender, _boosterTokenId);
-        // [MODIFICADO]
         
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
         Delegation[] storage delegationsOfUser = userDelegations[msg.sender];
         require(_delegationIndex < delegationsOfUser.length, "DM: Invalid index");
         
         Delegation storage d = delegationsOfUser[_delegationIndex];
         require(block.timestamp >= d.unlockTime, "DM: Lock period not over");
-
+        
         uint256 pStakeToRemove = _calculatePStake(d.amount, d.lockDuration);
+        
+        // --- 1. Calculate Fee ---
+        uint256 feeBips = ecosystemManager.getFee("UNSTAKE_FEE_BIPS");
+        uint256 finalFeeBips = _applyBoosterDiscount(feeBips, _boosterTokenId);
+        
+        uint256 feeAmount = (d.amount * finalFeeBips) / 10000;
+        uint256 amountToUser = d.amount - feeAmount;
+
+        // --- 2. Update State ---
         totalNetworkPStake -= pStakeToRemove;
         validators[d.validator].totalPStake -= pStakeToRemove;
         validators[d.validator].totalDelegatedAmount -= d.amount;
         userTotalPStake[msg.sender] -= pStakeToRemove;
-<<<<<<< HEAD
         
-=======
-
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
-        uint256 feeBips = ecosystemManager.getFee("UNSTAKE_FEE_BIPS");
-        uint256 feeAmount = (d.amount * feeBips) / 10000;
-        uint256 amountToUser = d.amount - feeAmount;
-        
+        // --- 3. Distribute Fee (to Delegator Pool) ---
         if (feeAmount > 0) {
-            _distributeFees(feeAmount);
+            _distributeFees(feeAmount); // Fees go to Treasury (50%) and Delegator Pool (50%)
         }
 
+        // --- 4. Clean up Array ---
         if (delegationsOfUser.length > 1 && _delegationIndex != delegationsOfUser.length - 1) {
-            // ###################
-            // ### AQUI ESTAVA O ERRO ###
-            // Corrigido de _delegATIONIndex para _delegationIndex
             delegationsOfUser[_delegationIndex] = delegationsOfUser[delegationsOfUser.length - 1];
-            // ###################
         }
         delegationsOfUser.pop();
-<<<<<<< HEAD
-=======
-        
-        require(bkcToken.transfer(msg.sender, amountToUser), "DM: Failed to transfer tokens back");
-        
-        delegatorRewardDebt[msg.sender] = userTotalPStake[msg.sender] * accDelegatorRewardPerStake / 1e18;
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
 
-        require(
-            bkcToken.transfer(msg.sender, amountToUser),
-            "DM: Failed to transfer tokens back"
-        );
-        
-        delegatorRewardDebt[msg.sender] =
-            (userTotalPStake[msg.sender] * accDelegatorRewardPerStake) / 1e18;
-            
+        // --- 5. Transfer Payout ---
+        require(bkcToken.transfer(msg.sender, amountToUser), "DM: Failed to transfer tokens back");
+
+        // Update reward debt
+        delegatorRewardDebt[msg.sender] = (userTotalPStake[msg.sender] * accDelegatorRewardPerStake) / 1e18;
+
         emit Unstaked(msg.sender, _delegationIndex, amountToUser, feeAmount);
     }
-<<<<<<< HEAD
 
-    function forceUnstake(
-        uint256 _delegationIndex,
-        uint256 _boosterTokenId
-    ) external nonReentrant {
-        _claimDelegatorReward(msg.sender);
-
-=======
-    
     /**
      * @notice Force unstakes a delegation (before lockup ends).
-     * @dev [MODIFICADO] Passa o _boosterTokenId para o claim automático.
      */
     function forceUnstake(uint256 _delegationIndex, uint256 _boosterTokenId) external nonReentrant {
-        _claimDelegatorReward(msg.sender, _boosterTokenId);
-        // [MODIFICADO]
+        // Claim pending rewards before updating pStake and reward debt
+        _claimDelegatorReward(msg.sender, _boosterTokenId); 
         
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
         Delegation[] storage delegationsOfUser = userDelegations[msg.sender];
         require(_delegationIndex < delegationsOfUser.length, "DM: Invalid index");
         
@@ -430,88 +343,49 @@ contract DelegationManager is Ownable, ReentrancyGuard {
         
         uint256 originalAmount = d.amount;
 
-<<<<<<< HEAD
-=======
-        // --- LÓGICA DE DESCONTO DE PENALIDADE (Original - Mantida) ---
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
+        // --- 1. Calculate Penalty ---
         uint256 basePenaltyBips = ecosystemManager.getFee("FORCE_UNSTAKE_PENALTY_BIPS");
-        uint256 discountBips = 0;
-        address rewardBoosterAddress = ecosystemManager.getBoosterAddress();
-
-        if (_boosterTokenId > 0 && rewardBoosterAddress != address(0)) {
-<<<<<<< HEAD
-            try IRewardBoosterNFT(rewardBoosterAddress).ownerOf(_boosterTokenId)
-            returns (address owner) {
-=======
-            try IRewardBoosterNFT(rewardBoosterAddress).ownerOf(_boosterTokenId) returns (address owner) {
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
-                if (owner == msg.sender) {
-                    uint256 userBoostBips = IRewardBoosterNFT(rewardBoosterAddress)
-                        .boostBips(_boosterTokenId);
-                    discountBips = ecosystemManager.getBoosterDiscount(userBoostBips);
-                }
-<<<<<<< HEAD
-            } catch {}
-        }
-
-        uint256 finalPenaltyBips = (basePenaltyBips > discountBips)
-            ? (basePenaltyBips - discountBips)
-            : 0;
-
-        uint256 penaltyAmount = (originalAmount * finalPenaltyBips) / 10000;
-        uint256 amountToUser = originalAmount - penaltyAmount;
-
-=======
-            } catch { /* Ignore */ }
-        }
-
-        uint256 finalPenaltyBips = (basePenaltyBips > discountBips) ?
-            (basePenaltyBips - discountBips) : 0;
+        uint256 finalPenaltyBips = _applyBoosterDiscount(basePenaltyBips, _boosterTokenId);
         
         uint256 penaltyAmount = (originalAmount * finalPenaltyBips) / 10000;
         uint256 amountToUser = originalAmount - penaltyAmount;
-        // --- FIM DA LÓGICA DE DESCONTO ---
         
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
         uint256 pStakeToRemove = _calculatePStake(originalAmount, d.lockDuration);
+
+        // --- 2. Update State ---
         totalNetworkPStake -= pStakeToRemove;
         validators[d.validator].totalPStake -= pStakeToRemove;
         validators[d.validator].totalDelegatedAmount -= originalAmount;
         userTotalPStake[msg.sender] -= pStakeToRemove;
-        
-        if (penaltyAmount > 0) {
-            _distributeFees(penaltyAmount);
-        }
 
-<<<<<<< HEAD
-        require(
-            bkcToken.transfer(msg.sender, amountToUser),
-            "DM: Failed to return tokens to user"
-        );
+        // --- 3. Distribute Penalty ---
+        if (penaltyAmount > 0) {
+            _distributeFees(penaltyAmount); // Penalty goes to Treasury (50%) and Delegator Pool (50%)
+        }
         
-=======
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
+        // --- 4. Clean up Array ---
         if (delegationsOfUser.length > 1 && _delegationIndex != delegationsOfUser.length - 1) {
             delegationsOfUser[_delegationIndex] = delegationsOfUser[delegationsOfUser.length - 1];
         }
         delegationsOfUser.pop();
-<<<<<<< HEAD
+        
+        // --- 5. Transfer Payout ---
+        require(bkcToken.transfer(msg.sender, amountToUser), "DM: Failed to return tokens to user");
 
-        delegatorRewardDebt[msg.sender] =
-            (userTotalPStake[msg.sender] * accDelegatorRewardPerStake) / 1e18;
-            
-=======
-        
-        delegatorRewardDebt[msg.sender] = userTotalPStake[msg.sender] * accDelegatorRewardPerStake / 1e18;
-        
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
+        // Update reward debt
+        delegatorRewardDebt[msg.sender] = (userTotalPStake[msg.sender] * accDelegatorRewardPerStake) / 1e18;
+
         emit Unstaked(msg.sender, _delegationIndex, amountToUser, penaltyAmount);
     }
 
     // --- 4. Reward Claiming Functions ---
 
-    function claimDelegatorReward() external nonReentrant {
-        _claimDelegatorReward(msg.sender);
+    /**
+     * @notice Public claim function.
+     */
+    function claimDelegatorReward(uint256 _boosterTokenId) external nonReentrant {
+        // This is the public entry point, calls the internal function
+        _claimDelegatorReward(msg.sender, _boosterTokenId);
     }
 
     function claimValidatorReward() external nonReentrant {
@@ -519,37 +393,50 @@ contract DelegationManager is Ownable, ReentrancyGuard {
         Validator storage v = validators[_validator];
         require(v.isRegistered, "DM: Not a validator");
         
-        uint256 pending = (v.selfStakeAmount * accValidatorRewardPerStake / 1e18) -
-            validatorRewardDebt[_validator];
-            
+        // Calculate pending reward
+        uint256 pending = pendingValidatorRewards(_validator);
+
         if (pending > 0) {
-            validatorRewardDebt[_validator] =
-                (v.selfStakeAmount * accValidatorRewardPerStake) / 1e18;
-                
+            validatorRewardDebt[_validator] = (v.selfStakeAmount * accValidatorRewardPerStake) / 1e18;
+            
             require(
                 bkcToken.transfer(_validator, pending),
                 "DM: Validator reward transfer failed"
             );
+
             emit ValidatorRewardClaimed(_validator, pending);
         }
     }
 
     // --- 5. Internal & View Functions ---
 
-    function _claimDelegatorReward(address _user) internal {
+    /**
+     * @notice Claims pending rewards for the user.
+     * @dev Applies the booster discount to the claim fee.
+     */
+    function _claimDelegatorReward(address _user, uint256 _boosterTokenId) internal {
         uint256 pending = pendingDelegatorRewards(_user);
+
         if (pending > 0) {
-            uint256 feeBips = ecosystemManager.getFee("CLAIM_REWARD_FEE_BIPS");
-            uint256 feeAmount = (pending * feeBips) / 10000;
+            // 1. Get the BASE fee (in BIPS) from the Hub
+            uint256 baseFeeBips = ecosystemManager.getFee("CLAIM_REWARD_FEE_BIPS");
+
+            // --- Apply Booster Discount ---
+            uint256 finalFeeBips = _applyBoosterDiscount(baseFeeBips, _boosterTokenId);
+            // --- End New Logic ---
+
+            uint256 feeAmount = (pending * finalFeeBips) / 10000;
             uint256 amountToUser = pending - feeAmount;
             
-            delegatorRewardDebt[_user] =
-                (userTotalPStake[_user] * accDelegatorRewardPerStake) / 1e18;
-            
+            // 2. Update the reward debt (sempre com o valor total pendente)
+            delegatorRewardDebt[_user] = (userTotalPStake[_user] * accDelegatorRewardPerStake) / 1e18;
+
+            // 3. Distribute Fee (50% Treasury, 50% Delegator Pool)
             if (feeAmount > 0) {
                 _distributeFees(feeAmount);
             }
 
+            // 4. Transfer Payout
             if (amountToUser > 0) {
                 require(
                     bkcToken.transfer(_user, amountToUser),
@@ -561,6 +448,9 @@ contract DelegationManager is Ownable, ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice Distributes fees/penalties to Treasury (50%) and Delegator Pool (50%).
+     */
     function _distributeFees(uint256 _amount) internal {
         if (_amount == 0) return;
         
@@ -577,14 +467,54 @@ contract DelegationManager is Ownable, ReentrancyGuard {
             );
         }
 
-        if (delegatorAmount > 0 && totalNetworkPStake > 0) {
-            accDelegatorRewardPerStake +=
-                (delegatorAmount * 1e18) / totalNetworkPStake;
+        if (delegatorAmount > 0) {
+            // Funds are already in this contract from the fee/penalty transfer
+            if (totalNetworkPStake > 0) {
+                 accDelegatorRewardPerStake += (delegatorAmount * 1e18) / totalNetworkPStake;
+            }
             emit RewardsDeposited(address(this), 0, delegatorAmount);
         }
     }
 
-<<<<<<< HEAD
+    /**
+     * @notice Applies the booster discount to a base fee BIPS (centralized internal logic).
+     */
+    function _applyBoosterDiscount(uint256 _baseFeeBips, uint256 _boosterTokenId) internal view returns (uint256 finalFeeBips) {
+        if (_boosterTokenId == 0) return _baseFeeBips;
+
+        address boosterAddress = ecosystemManager.getBoosterAddress();
+        if (boosterAddress == address(0)) return _baseFeeBips;
+        
+        IRewardBoosterNFT booster = IRewardBoosterNFT(boosterAddress);
+        
+        try booster.ownerOf(_boosterTokenId) returns (address owner) {
+            if (owner == msg.sender) {
+                uint256 boostBips = booster.boostBips(_boosterTokenId);
+                uint256 discountBips = ecosystemManager.getBoosterDiscount(boostBips);
+                
+                if (discountBips > 0) {
+                    return (_baseFeeBips > discountBips) ? _baseFeeBips - discountBips : 0;
+                }
+            }
+        } catch {
+            // Ignore if NFT is invalid
+        }
+        return _baseFeeBips;
+    }
+
+    /**
+     * @notice Calculates the total pStake based on amount and lock duration.
+     * @dev Simple calculation: (Amount * LockDays) / 1e18
+     */
+    function _calculatePStake(uint256 _amount, uint256 _lockDuration)
+        internal
+        pure
+        returns (uint256)
+    {
+        // Simple calculation: Amount * (LockDuration / 1 day) / 1e18
+        return (_amount * (_lockDuration / 1 days)) / 1e18;
+    }
+
     function pendingDelegatorRewards(address _user)
         public
         view
@@ -603,59 +533,6 @@ contract DelegationManager is Ownable, ReentrancyGuard {
         if (!v.isRegistered) return 0;
         return (v.selfStakeAmount * accValidatorRewardPerStake / 1e18) -
             validatorRewardDebt[_validator];
-    }
-=======
-    /**
-     * @notice Public claim function.
-     * @dev [MODIFICADO] Agora aceita _boosterTokenId.
-     */
-    function claimDelegatorReward(uint256 _boosterTokenId) external nonReentrant { // [MODIFICADO]
-        _claimDelegatorReward(msg.sender, _boosterTokenId);
-        // [MODIFICADO]
-    }
-    
-    /**
-     * @notice Claims pending rewards for the user.
-     * @dev [MODIFICADO] Aplica o desconto do booster na taxa.
-     */
-    function _claimDelegatorReward(address _user, uint256 _boosterTokenId) internal { // [MODIFICADO]
-        uint256 pending = pendingDelegatorRewards(_user);
-        
-        if (pending > 0) {
-            // 1. Get the BASE fee (in BIPS) from the Hub
-            uint256 baseFeeBips = ecosystemManager.getFee("CLAIM_REWARD_FEE_BIPS");
-
-            // --- [NOVA LÓGICA DE DESCONTO] ---
-            uint256 discountBips = 0;
-            address rewardBoosterAddress = ecosystemManager.getBoosterAddress();
-            
-            if (_boosterTokenId > 0 && rewardBoosterAddress != address(0)) {
-                try IRewardBoosterNFT(rewardBoosterAddress).ownerOf(_boosterTokenId) returns (address owner) {
-                    if (owner == _user) { // Check ownership
-                        uint256 userBoostBips = IRewardBoosterNFT(rewardBoosterAddress).boostBips(_boosterTokenId);
-                        discountBips = ecosystemManager.getBoosterDiscount(userBoostBips);
-                    }
-                } catch { /* Ignore if booster is invalid or ownerOf fails */ }
-            }
-
-            // Calcula a taxa final
-            uint256 finalFeeBips = (baseFeeBips > discountBips) ?
-                (baseFeeBips - discountBips) : 0;
-            // --- [FIM DA NOVA LÓGICA] ---
-
-            uint256 feeAmount = (pending * finalFeeBips) / 10000;
-            uint256 amountToUser = pending - feeAmount;
-            
-            // 2. Update the reward debt (sempre com o valor total pendente)
-            delegatorRewardDebt[_user] = userTotalPStake[_user] * accDelegatorRewardPerStake / 1e18;
->>>>>>> 778c7fd9d1d9116dad11d65edd265337431e0407
-
-    function _calculatePStake(uint256 _amount, uint256 _lockDuration)
-        internal
-        pure
-        returns (uint256)
-    {
-        return (_amount * (_lockDuration / 1 days)) / 1e18;
     }
 
     function getDelegationsOf(address _user)

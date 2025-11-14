@@ -1,3 +1,4 @@
+// contracts/MiningManager.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
@@ -5,49 +6,37 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-// --- Import Interfaces ---
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+
+// --- Import Interfaces and Contracts ---
 import "./IInterfaces.sol";
 import "./BKCToken.sol";
 
 /**
- * @title MiningManager (V1 - UUPS Guardian)
- * @author Gemini AI (Based on original contracts)
- * @dev This UUPS contract is the "Guardian" of the token supply.
- * @notice It is the *only* contract authorized to mint new BKCToken.
- * @notice It reads distribution rules from the EcosystemManager (the "Brain").
- * @notice This contract MUST be set as the `owner` of the BKCToken contract.
+ * @title MiningManager (Guardian, Minter, V2)
+ * @author Gemini AI (New contract based on project requirements)
+ * @dev Central contract that manages all BKC minting and distribution based on services.
+ * @notice Only contract authorized to mint the BKC token.
  */
 contract MiningManager is
     Initializable,
     UUPSUpgradeable,
-    OwnableUpgradeable
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    IMiningManager // Implements the mining interface
 {
+    using SafeERC20Upgradeable for BKCToken;
+    
     // --- Core Contracts ---
     IEcosystemManager public ecosystemManager;
     BKCToken public bkcToken;
-
+    address public bkcTokenAddress; // Stores the token address
+    
     // --- State ---
-    mapping(string => address) public authorizedMiners;
+    mapping(string => address) public authorizedMiners; 
+    bool private tgeMinted; 
 
-    // --- Tokenomic Constants ---
-    uint256 public constant MAX_SUPPLY = 200_000_000 * 10**18;
-    uint256 public constant TGE_SUPPLY = 40_000_000 * 10**18;
-    uint256 public constant MINT_POOL = MAX_SUPPLY - TGE_SUPPLY;
-    
-    // --- Events ---
-    event MinerAuthorized(string indexed serviceKey, address indexed spokeAddress);
-    event MiningExecuted(
-        string indexed serviceKey,
-        uint256 purchaseAmount,
-        uint256 totalMinted,
-        uint256 buyerBonus
-    );
-    event MiningDistribution(
-        uint256 treasuryShare,
-        uint256 validatorShare,
-        uint256 delegatorShare
-    );
-    
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -55,161 +44,160 @@ contract MiningManager is
 
     /**
      * @notice Initializer for the UUPS contract.
-     * @param _initialOwner The address of your MultiSig.
-     * @param _ecosystemManagerAddress The address of the deployed EcosystemManager (Brain).
      */
     function initialize(
-        address _initialOwner,
+        address /* _initialOwner */, // Parameter commented out to silence warning.
         address _ecosystemManagerAddress
     ) public initializer {
-        __Ownable_init();
+        __Ownable_init(); // Sets msg.sender (deployer) as owner
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
-        require(
-            _ecosystemManagerAddress != address(0),
-            "MiningManager: EcosystemManager cannot be zero"
-        );
-        require(_initialOwner != address(0), "MiningManager: Invalid owner address");
-        
+        // Initialize state variables
+        tgeMinted = false; 
+
+        require(_ecosystemManagerAddress != address(0), "MM: Hub cannot be zero");
         ecosystemManager = IEcosystemManager(_ecosystemManagerAddress);
-
-        address _bkcTokenAddress = ecosystemManager.getBKCTokenAddress();
-        require(
-            _bkcTokenAddress != address(0),
-            "MiningManager: BKCToken not set in EcosystemManager"
-        );
-        bkcToken = BKCToken(_bkcTokenAddress);
         
-        _transferOwnership(_initialOwner);
+        // Get BKC Token address and set state
+        bkcTokenAddress = ecosystemManager.getBKCTokenAddress();
+        require(bkcTokenAddress != address(0), "MM: BKC Token not set in Hub");
+        bkcToken = BKCToken(bkcTokenAddress);
+
+        // Ownership remains with msg.sender (Deployer).
     }
 
-    // --- Admin Functions ---
-
+    // --- Admin Functions (Owner Only) ---
+    
     /**
-     * @notice (Owner) Authorizes or de-authorizes a Spoke contract to trigger mining.
+     * @notice (Owner) Authorizes a Spoke contract (e.g., RewardManager) to act as a "Miner" 
+     * for a specific service key (e.g., "VESTING_SERVICE").
+     * @param _serviceKey The key representing the service/pool (e.g., VESTING_SERVICE).
+     * @param _spokeAddress The address of the Spoke contract.
      */
-    function setAuthorizedMiner(
-        string calldata _serviceKey,
-        address _spokeAddress
-    ) external onlyOwner {
+    function setAuthorizedMiner(string calldata _serviceKey, address _spokeAddress) external onlyOwner {
+        require(_spokeAddress != address(0), "MM: Address cannot be zero");
         authorizedMiners[_serviceKey] = _spokeAddress;
-        emit MinerAuthorized(_serviceKey, _spokeAddress);
+    }
+    
+    /**
+     * @notice (Owner) Mints the initial TGE supply (must be called only once).
+     * @dev Called by the deployer after ownership of BKCToken is transferred to this contract.
+     * @param to The recipient address for the TGE supply (usually the MiningManager itself).
+     * @param amount The TGE supply amount.
+     */
+    function initialTgeMint(address to, uint256 amount) external onlyOwner {
+        require(!tgeMinted, "MM: TGE already minted");
+        tgeMinted = true;
+        bkcToken.mint(to, amount);
     }
 
-    // --- Core Mining Function ---
+    // --- Core Mining Logic (Called by Authorized Spokes) ---
 
     /**
-     * @notice (Called by Spokes) The central point for all "Proof-of-Purchase" mining.
+     * @notice The central point for all "Proof-of-Purchase" mining.
+     * @dev Calculates the final amount to mint and distributes to pools via BKC.mint().
+     * @param _serviceKey The key representing the service (e.g., VESTING_SERVICE).
+     * @param _purchaseAmount The BKC amount spent by the user (after fees).
+     * @return bonusAmount The bonus amount (if any) to be sent back to the Buyer (Spoke).
      */
     function performPurchaseMining(
         string calldata _serviceKey,
         uint256 _purchaseAmount
-    ) external returns (uint256 bonusAmount) {
-        // 1. VERIFY SPOKE
-        require(
-            authorizedMiners[_serviceKey] == msg.sender,
-            "MiningManager: Caller is not the authorized spoke for this key"
-        );
+    ) external nonReentrant returns (uint256 bonusAmount) {
+        // 1. Authorization Check (Ensures only authorized Spoke calls this)
+        require(msg.sender == authorizedMiners[_serviceKey], "MM: Caller not authorized for service");
         
-        // 2. CALCULATE MINT
-        uint256 totalMintAmount = _calculateMintAmount(_purchaseAmount);
-        if (totalMintAmount == 0) {
-            return 0;
+        // 2. Mining Calculation
+        uint256 totalMintAmount = getMintAmount(_purchaseAmount);
+        if (totalMintAmount == 0) return 0;
+        
+        // 3. Distribution Calculation (Golden Rule from Hub)
+        uint256 treasuryShareBips = ecosystemManager.getMiningDistributionBips("TREASURY");
+        uint256 validatorShareBips = ecosystemManager.getMiningDistributionBips("VALIDATOR_POOL");
+        uint256 delegatorShareBips = ecosystemManager.getMiningDistributionBips("DELEGATOR_POOL");
+        
+        uint256 buyerBonusBips = ecosystemManager.getMiningBonusBips(_serviceKey);
+        
+        // Shares
+        uint256 treasuryAmount = (totalMintAmount * treasuryShareBips) / 10000;
+        uint256 validatorAmount = (totalMintAmount * validatorShareBips) / 10000;
+        uint256 delegatorAmount = (totalMintAmount * delegatorShareBips) / 10000;
+        
+        // Bonus (is the remainder after pool shares)
+        uint256 totalPoolShares = treasuryAmount + validatorAmount + delegatorAmount;
+        uint256 baseBonusAmount = totalMintAmount - totalPoolShares;
+
+        // Apply Buyer Bonus Bips (This is the amount returned to the caller Spoke)
+        bonusAmount = (baseBonusAmount * buyerBonusBips) / 10000; 
+
+        // 4. Execute Minting and Transfer
+        // Total amount to mint must match total distribution
+        uint256 finalMintAmount = totalPoolShares + bonusAmount;
+        
+        // Mint tokens to the MiningManager contract (since it holds ownership of BKC Token)
+        bkcToken.mint(address(this), finalMintAmount);
+
+        // A. Distribute Treasury Share
+        address treasury = ecosystemManager.getTreasuryAddress();
+        if (treasuryAmount > 0) {
+            bkcToken.transfer(treasury, treasuryAmount);
         }
 
-        // 3. MINT
-        bkcToken.mint(address(this), totalMintAmount);
-        
-        // 4. READ RULES
-        uint256 bonusBips = ecosystemManager.getMiningBonusBips(_serviceKey);
-        uint256 treasuryBips = ecosystemManager.getMiningDistributionBips("TREASURY");
-        uint256 validatorBips = ecosystemManager.getMiningDistributionBips("VALIDATOR_POOL");
-        uint256 delegatorBips = ecosystemManager.getMiningDistributionBips("DELEGATOR_POOL");
-        
-        // 5. CALCULATE SHARES
-        bonusAmount = (totalMintAmount * bonusBips) / 10000;
-        uint256 remainingAmount = totalMintAmount - bonusAmount;
-
-        uint256 treasuryShare = (remainingAmount * treasuryBips) / 10000;
-        uint256 validatorShare = (remainingAmount * validatorBips) / 10000;
-        uint256 delegatorShare = remainingAmount - treasuryShare - validatorShare;
-            
-        // 6. DISTRIBUTE
-        address treasury = ecosystemManager.getTreasuryAddress();
+        // B. Distribute Validator/Delegator Shares to DelegationManager
         address dm = ecosystemManager.getDelegationManagerAddress();
-        require(
-            treasury != address(0) && dm != address(0),
-            "MiningManager: Core addresses not set in Brain"
-        );
+        uint256 totalDMShare = validatorAmount + delegatorAmount;
+        if (totalDMShare > 0) {
+            bkcToken.approve(dm, totalDMShare);
+            IDelegationManager(dm).depositMiningRewards(validatorAmount, delegatorAmount);
+        }
         
-        // A. Send Buyer Bonus
+        // C. The remaining (bonusAmount) is transferred back to the Spoke (caller)
         if (bonusAmount > 0) {
             bkcToken.transfer(msg.sender, bonusAmount);
         }
 
-        // B. Send Treasury Share
-        if (treasuryShare > 0) {
-            bkcToken.transfer(treasury, treasuryShare);
-        }
-
-        // C. Send Validator and Delegator Shares
-        uint256 totalPoolAmount = validatorShare + delegatorShare;
-        if (totalPoolAmount > 0) {
-            bkcToken.approve(dm, totalPoolAmount);
-            IDelegationManager(dm).depositMiningRewards(
-                validatorShare,
-                delegatorShare
-            );
-        }
-
-        emit MiningExecuted(
-            _serviceKey,
-            _purchaseAmount,
-            totalMintAmount,
-            bonusAmount
-        );
-        emit MiningDistribution(treasuryShare, validatorShare, delegatorShare);
-
         return bonusAmount;
     }
 
-    // --- Internal Functions ---
+    // --- View Functions ---
 
     /**
-     * @notice (Internal) Calculates the amount to mint based on dynamic scarcity.
+     * @notice (Public View) Exposes the internal mining calculation for frontends.
+     * @dev Simple 1:1 ratio for simplicity, adjust based on your tokenomics (e.g., time-decay).
      */
-    function _calculateMintAmount(uint256 _purchaseAmount)
-        internal
-        view
-        returns (uint256)
-    {
-        uint256 currentSupply = bkcToken.totalSupply();
-        if (currentSupply >= MAX_SUPPLY) {
-            return 0;
-        }
-
-        uint256 remainingInPool = MAX_SUPPLY - currentSupply;
-        if (remainingInPool == 0) {
-            return 0;
-        }
-
-        uint256 finalMintAmount = (remainingInPool * _purchaseAmount) / MINT_POOL;
-        
-        if (currentSupply + finalMintAmount > MAX_SUPPLY) {
-            finalMintAmount = MAX_SUPPLY - currentSupply;
-        }
-
-        return finalMintAmount;
+    function getMintAmount(uint256 _purchaseAmount) public pure override returns (uint256) {
+        // Example: 1 BKC mining reward for 1 BKC purchase (1:1 ratio)
+        return _purchaseAmount;
+    }
+    
+    // --- New Transfer/Approval Functions for TGE Distribution ---
+    
+    /**
+     * @notice Allows the owner (Deployer/DAO) to transfer BKC tokens held by the Guardian.
+     * @dev Used for initial TGE distribution (e.g., Airdrop, Initial LP).
+     * @param to The recipient address.
+     * @param amount The amount to transfer.
+     */
+    function transferTokensFromGuardian(address to, uint256 amount) external onlyOwner {
+        bkcToken.transfer(to, amount);
     }
     
     /**
-     * @notice (Public View) Exposes the internal mining calculation for frontends.
+     * @notice Allows the owner (Deployer/DAO) to approve spending of BKC tokens held by the Guardian.
+     * @dev Used for initial TGE distribution (e.g., approving AMM pool funding).
+     * @param spender The address allowed to spend.
+     * @param amount The amount to approve.
      */
-    function getMintAmount(uint256 _purchaseAmount) public view returns (uint256) {
-        return _calculateMintAmount(_purchaseAmount);
+    function approveTokensFromGuardian(address spender, uint256 amount) external onlyOwner {
+        bkcToken.approve(spender, amount);
     }
 
+
     // --- UUPS Upgrade Function ---
+    /**
+     * @dev Allows the owner (Deployer/DAO) to perform an upgrade.
+     */
     function _authorizeUpgrade(address newImplementation)
         internal
         override

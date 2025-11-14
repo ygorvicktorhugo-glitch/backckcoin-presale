@@ -33,7 +33,7 @@ function renderNotaryPageLayout() {
             Turn any file into undeniable proof of authorship — minted forever on the blockchain as a BKCN NFT.
         </p>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="grid grid-cols-1 lg:col-span-3 gap-8">
 
             <div id="notary-main-box" class="lg:col-span-2 bg-sidebar border border-border-color rounded-xl p-6 shadow-xl">
                 <h2 class="text-xl font-bold mb-5">Notarize Document</h2>
@@ -233,7 +233,8 @@ function updateNotaryUserStatus() {
     const userBalance = State.currentUserBalance || 0n;
     const isFileUploaded = (notaryButtonState === 'upload_ready'); 
 
-    const swapLink = addresses.swapLink || '#';
+    // AJUSTADO: Usando addresses.bkcDexPoolAddress para o link de compra (swap)
+    const swapLink = addresses.bkcDexPoolAddress || '#';
 
     const baseFee = State.notaryFee;
     const boosterBips = State.userBoosterBips || 0n; 

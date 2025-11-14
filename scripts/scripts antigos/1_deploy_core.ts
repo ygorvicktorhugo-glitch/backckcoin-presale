@@ -22,9 +22,21 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   const addresses: { [key: string]: string } = {};
 
   // Ensure the addresses file is clean or exists
-  // __dirname now works natively (CommonJS)
+  // __dirname now now works natively (CommonJS)
   const addressesFilePath = path.join(__dirname, "../deployment-addresses.json");
-  fs.writeFileSync(addressesFilePath, JSON.stringify({}, null, 2));
+  
+  // Lê o arquivo para preservar informações se ele já existir (melhor prática)
+  if (fs.existsSync(addressesFilePath)) {
+      try {
+          Object.assign(addresses, JSON.parse(fs.readFileSync(addressesFilePath, "utf8")));
+          console.log("⚠️ Existing deployment-addresses.json found. Will be updated.");
+      } catch (e) {
+          console.log("Existing deployment-addresses.json is invalid. Creating a new one.");
+          fs.writeFileSync(addressesFilePath, JSON.stringify({}, null, 2));
+      }
+  } else {
+      fs.writeFileSync(addressesFilePath, JSON.stringify({}, null, 2));
+  }
 
 
   try {
@@ -135,11 +147,15 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   }
 
   // =================================================================
-  // ### NOVO BLOCO ADICIONADO ###
-  // Adiciona o placeholder para o pool da DEX (BKC/ETH, etc.)
-  console.log("Adding placeholder for external DEX pool (BKC/ETH)...");
-  addresses.bkcDexPoolAddress = "0x...[POR FAVOR, ATUALIZE ESTE ENDEREÇO APÓS CRIAR O POOL NA DEX]...";
-  console.log("✅ Placeholder 'bkcDexPoolAddress' added.");
+  // ### BLOCO DE ENDEREÇO DA POOL DA DEX (INFORMAÇÃO SALVA) ###
+  // Este campo armazena uma URL para funções de front-end (Comprar BKC)
+  // =================================================================
+  console.log("Adding/Updating DEX Swap Link (bkcDexPoolAddress)...");
+  
+  // Usando a URL solicitada
+  addresses.bkcDexPoolAddress = "https://pancakeswap.finance/swap";
+  
+  console.log(`✅ DEX Link saved: ${addresses.bkcDexPoolAddress}`);
   console.log("----------------------------------------------------");
   // =================================================================
 
@@ -151,4 +167,12 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
 
   console.log("\n🎉🎉🎉 CORE CONTRACTS DEPLOYED SUCCESSFULLY! 🎉🎉🎉");
   console.log("\nNext step: Run '0_faucet_test_supply.ts'");
+}
+
+// Bloco de entrada para execução standalone
+if (require.main === module) {
+  runScript(require("hardhat")).catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }

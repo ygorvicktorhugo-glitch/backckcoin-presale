@@ -45,9 +45,11 @@ export async function loadAddresses() {
         addresses.ecosystemManager = jsonAddresses.ecosystemManager; 
         addresses.nftBondingCurve = jsonAddresses.nftLiquidityPool; 
         addresses.actionsManager = jsonAddresses.fortunePool;
-        addresses.mainLPPairAddress = jsonAddresses.mainLPPairAddress || "#"; 
+        // CORREÇÃO CRÍTICA: Prioriza bkcDexPoolAddress (que será o '#faucet' em testnet)
+        addresses.mainLPPairAddress = jsonAddresses.bkcDexPoolAddress || jsonAddresses.mainLPPairAddress || "#"; 
         addresses.miningManager = jsonAddresses.miningManager;
         addresses.oracleWalletAddress = jsonAddresses.oracleWalletAddress;
+        addresses.faucet = jsonAddresses.faucet; 
 
         console.log("✅ Contract addresses loaded:", addresses);
         return true;
@@ -55,7 +57,7 @@ export async function loadAddresses() {
     } catch (error) {
         console.error("❌ CRITICAL ERROR: Failed to load contract addresses.", error);
         
-        // Show user-friendly error
+        // CÓDIGO DE TRATAMENTO DE ERRO EM TELA CHEIA (Mantido)
         const errorDiv = document.createElement('div');
         errorDiv.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); color: white; display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;';
         errorDiv.innerHTML = `
@@ -80,13 +82,58 @@ export async function loadAddresses() {
 }
 
 // ============================================================================
-// NETWORK CONFIGURATION
+// NETWORK CONFIGURATION (AJUSTADO PARA SEGURANÇA MÁXIMA)
 // ============================================================================
 
-// FIXED: Environment-based RPC configuration
-export const sepoliaRpcUrl = isDevelopment 
-    ? "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz" // Development (your Alchemy key)
-    : "https://eth-sepolia.g.alchemy.com/v2/GNfs8FTc-lBMgbTvpudoz"; // Production (replace with prod key)
+// ✅ CORREÇÃO: Função para acessar variáveis de ambiente de forma segura
+function getEnv(key) {
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+        return process.env[key];
+    }
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+        return import.meta.env[key];
+    }
+    return null; 
+}
+
+// 1. Tenta carregar a URL WSS COMPLETA da variável de ambiente ALCHEMY_ENDPOINT_WSS
+const ENV_WSS_URL = getEnv('ALCHEMY_ENDPOINT_WSS');
+
+// 🛡️ NOVO BLOCO DE VALIDAÇÃO DE SEGURANÇA
+if (!ENV_WSS_URL) {
+    const errorMessage = "❌ ERRO CRÍTICO: ALCHEMY_ENDPOINT_WSS não está definida. Verifique seu .env local ou as variáveis de ambiente do Vercel/Produção.";
+    console.error(errorMessage);
+    
+    // Mostra erro em tela cheia se a variável crítica estiver faltando
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); color: white; display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;';
+    errorDiv.innerHTML = `
+        <div style="max-width: 600px; background: #1e1e1e; border: 2px solid #ef4444; border-radius: 8px; padding: 30px;">
+            <h2 style="color: #ef4444; margin-bottom: 15px; font-size: 24px;">⚠️ Erro de Configuração de Rede</h2>
+            <p style="margin-bottom: 10px;">Variável de ambiente crítica faltando.</p>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px;">A dApp não pode se conectar à blockchain sem a chave <code style="background: #333; padding: 2px 6px; border-radius: 3px;">ALCHEMY_ENDPOINT_WSS</code>.</p>
+            <details style="margin-bottom: 20px; background: #2a2a2a; padding: 10px; border-radius: 4px;">
+                <summary style="cursor: pointer; font-weight: bold; color: #fbbf24;">Detalhes</summary>
+                <pre style="margin-top: 10px; color: #ef4444; font-size: 12px; overflow-x: auto;">${errorMessage}</pre>
+            </details>
+            <button onclick="location.reload()" style="background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
+                🔄 Recarregar
+            </button>
+        </div>
+    `;
+    document.body.innerHTML = '';
+    document.body.appendChild(errorDiv);
+    
+    // Lança um erro para interromper a execução do script
+    throw new Error(errorMessage);
+}
+// ------------------------------------------
+
+// 2. Define a URL usando a variável de ambiente carregada
+export const sepoliaWssUrl = ENV_WSS_URL; 
+
+// Converte WSS para HTTP/HTTPS para RPC tradicional
+export const sepoliaRpcUrl = sepoliaWssUrl.replace('wss://', 'https://');
 
 export const sepoliaChainId = 11155111n;
 
@@ -100,9 +147,9 @@ export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/
 // Faucet amount (100 BKC)
 export const FAUCET_AMOUNT_WEI = 100n * 10n**18n; 
 
-// Booster tiers configuration
+// Booster tiers configuration (Mantido)
 export const boosterTiers = [
-    { name: "Diamond", boostBips: 5000, color: "text-cyan-400", img: "https://ipfs.io/ipfs/bafybeign2k73pq5pdicg2v2jdgumavw6kjmc4nremdenzvq27ngtcusv5i", borderColor: "border-cyan-400/50", glowColor: "bg-cyan-500/10" },
+    { name: "Diamond", boostBips: 5000, color: "text-cyan-400", img: "https://ipfs.io/ipfs/bafybeigf3n2q2cbsnsmqytv57e6dvuimtzsg6pp7iyhhhmqpaxgpzlmgem", borderColor: "border-cyan-400/50", glowColor: "bg-cyan-500/10" },
     { name: "Platinum", boostBips: 4000, color: "text-gray-300", img: "https://ipfs.io/ipfs/bafybeiag32gp4wssbjbpxjwxewer64fecrtjryhmnhhevgec74p4ltzrau", borderColor: "border-gray-300/50", glowColor: "bg-gray-400/10" },
     { name: "Gold", boostBips: 3000, color: "text-amber-400", img: "https://ipfs.io/ipfs/bafybeido6ah36xn4rpzkvl5avicjzf225ndborvx726sjzpzbpvoogntem", borderColor: "border-amber-400/50", glowColor: "bg-amber-500/10" },
     { name: "Silver", boostBips: 2000, color: "text-gray-400", img: "https://ipfs.io/ipfs/bafybeiaktaw4op7zrvsiyx2sghphrgm6sej6xw362mxgu326ahljjyu3gu", borderColor: "border-gray-400/50", glowColor: "bg-gray-500/10" },
@@ -112,7 +159,7 @@ export const boosterTiers = [
 ];
 
 // ============================================================================
-// CONTRACT ABIs
+// CONTRACT ABIs (Mantidos)
 // ============================================================================
 
 export const bkcTokenABI = [
@@ -169,7 +216,6 @@ export const rewardManagerABI = [
 ];
 
 export const rewardBoosterABI = [
-    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
     "function balanceOf(address owner) view returns (uint256)",
     "function boostBips(uint256) view returns (uint256)",
     "function tokenURI(uint256 tokenId) view returns (string)",
@@ -184,6 +230,7 @@ export const nftBondingCurveABI = [
     "function buyNFT(uint256 _boostBips, uint256 _boosterTokenId)", 
     "function sellNFT(uint256 _tokenId, uint256 _boosterTokenId)",
     "function PSTAKE_SERVICE_KEY() view returns (string)",
+    "function getPoolInfo(uint256 _boostBips) view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)",
     "event NFTBought(address indexed buyer, uint256 indexed boostBips, uint256 tokenId, uint256 price)",
     "event NFTSold(address indexed seller, uint256 indexed boostBips, uint256 tokenId, uint256 payout, uint256 feePaid)"
 ];
@@ -196,6 +243,7 @@ export const fortuneTigerABI = [
     "event GamePlayed(address indexed user, uint256 amountWagered, uint256 totalPrizeWon)"
 ];
 
+// ABI CORRIGIDO/ATUALIZADO (FortunePoolV3/ActionsManager)
 export const actionsManagerABI = [ 
     "function actionCounter() view returns (uint256)",
     "function actions(uint256) view returns (uint256 id, address creator, string description, uint8 actionType, uint8 status, uint256 endTime, uint256 totalPot, uint256 creatorStake, bool isStakeReturned, address beneficiary, uint256 totalCoupons, address winner, uint256 closingBlock, uint256 winningCoupon)",
@@ -203,6 +251,8 @@ export const actionsManagerABI = [
     "function createAction(uint256 _duration, uint8 _actionType, uint256 _charityStake, string calldata _description, uint256 _boosterTokenId)",
     "function participate(uint256 _actionId, uint256 _bkcAmount, uint256 _boosterTokenId)",
     "function finalizeAction(uint256 _actionId)",
+    // [CORREÇÃO CRÍTICA]: Adiciona a função de leitura de saldo da piscina única (resolvendo o TypeError no TigerGame.js)
+    "function prizePoolBalance() view returns (uint256)" 
 ];
 
 export const publicSaleABI = [

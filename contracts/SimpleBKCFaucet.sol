@@ -6,25 +6,31 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol"; // <-- ADICIONADO
 
 /**
  * @title SimpleBKCFaucet (Upgradeable)
  * @author Gemini AI (Based on original contract)
- * @dev Faucet convertido para o padrão Upgradeable para uniformizar o ecossistema.
- * @notice Permite a qualquer endereço reivindicar uma quantidade fixa de tokens.
+ * @dev Faucet converted to UUPS pattern to standardize the ecosystem.
+ * @notice Allows any address to claim a fixed amount of tokens.
  * @notice DO NOT deploy on mainnet with real funds. This is for testnets only.
  */
-contract SimpleBKCFaucet is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
-    
-    /** @notice O token ERC20 que este faucet irá distribuir (BKC).
+contract SimpleBKCFaucet is
+    Initializable,
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable // <-- ADICIONADO
+{
+    /** @notice The ERC20 token this faucet will distribute (BKC).
      */
-    IERC20Upgradeable public token; // Removido 'immutable'
+    IERC20Upgradeable public token;
 
-    /** @notice A quantidade fixa de tokens (em Wei) dada por reivindicação.
+    /** @notice The fixed amount of tokens (in Wei) given per claim.
      */
-    uint256 public constant claimAmount = 100 * 10**18; // 100 BKC 
+    uint256 public constant claimAmount = 100 * 10**18;
+    // 100 BKC
 
-    /** @notice Emitido quando um usuário reivindica tokens.
+    /** @notice Emitted when a user claims tokens.
      */
     event TokensClaimed(address indexed recipient, uint256 amount);
 
@@ -34,25 +40,24 @@ contract SimpleBKCFaucet is Initializable, OwnableUpgradeable, ReentrancyGuardUp
     }
 
     /**
-     * @notice Inicializador para o contrato Upgradeable.
-     * @param _tokenAddress O endereço do token BKC. 
-     * @param _initialOwner O endereço do seu MultiSig.
+     * @notice Initializer for the Upgradeable contract.
+     * @param _tokenAddress The address of the BKC token.
      */
     function initialize(
         address _tokenAddress,
-        address _initialOwner
+        address /* _initialOwner */ // Parameter commented out to silence warning.
     ) public initializer {
-        // CORRIGIDO: __Ownable_init() agora não aceita argumentos.
-        __Ownable_init(); 
+        __Ownable_init();
         __ReentrancyGuard_init();
+        __UUPSUpgradeable_init(); // <-- ADICIONADO
 
         require(_tokenAddress != address(0), "Faucet: Invalid token address");
-        token = IERC20Upgradeable(_tokenAddress); 
+        token = IERC20Upgradeable(_tokenAddress);
     }
 
     /**
-     * @notice Permite a qualquer usuário reivindicar a quantidade definida de tokens.
-     * @dev Verifica se o faucet tem fundos suficientes antes de enviar.
+     * @notice Allows any user to claim the defined amount of tokens.
+     * @dev Checks if the faucet has sufficient funds before sending.
      */
     function claim() external nonReentrant {
         require(
@@ -61,38 +66,47 @@ contract SimpleBKCFaucet is Initializable, OwnableUpgradeable, ReentrancyGuardUp
         );
         // Transfer the tokens
         bool sent = token.transfer(msg.sender, claimAmount);
-        require(sent, "Faucet: Token transfer failed"); 
+        require(sent, "Faucet: Token transfer failed");
 
         // Emit the event
         emit TokensClaimed(msg.sender, claimAmount);
     }
 
     /**
-     * @notice (Owner) Permite ao proprietário retirar todos os tokens BKC restantes.
-     * @dev Use isso para recuperar fundos restantes após a conclusão dos testes.
+     * @notice (Owner) Allows the owner to withdraw all remaining BKC tokens.
+     * @dev Use this to recover remaining funds after testing is complete.
      */
     function withdrawRemainingTokens() external onlyOwner {
         uint256 balance = token.balanceOf(address(this));
-        if (balance > 0) { 
+        if (balance > 0) {
             bool sent = token.transfer(owner(), balance);
-            require(sent, "Faucet: Withdrawal transfer failed"); 
+            require(sent, "Faucet: Withdrawal transfer failed");
         }
     }
 
     /**
-     * @notice (Owner) Permite ao proprietário retirar qualquer moeda nativa (ex: ETH/BNB)
-     * acidentalmente enviada para este contrato.
+     * @notice (Owner) Allows the owner to withdraw any native currency (e.g., ETH/BNB)
+     * accidentally sent to this contract.
      */
     function withdrawNativeCurrency() external onlyOwner {
         uint256 balance = address(this).balance;
-        if (balance > 0) { 
+        if (balance > 0) {
             (bool success, ) = owner().call{value: balance}("");
-            require(success, "Faucet: Native currency withdrawal failed"); 
+            require(success, "Faucet: Native currency withdrawal failed");
         }
     }
 
     /**
-     * @dev Função de fallback para rejeitar envios diretos de moeda nativa.
+     * @dev Authorizes an upgrade to a new implementation, restricted to the owner.
+     */
+    function _authorizeUpgrade(address newImplementation)
+        internal
+        override
+        onlyOwner
+    {}
+
+    /**
+     * @dev Fallback function to reject direct native currency sends.
      */
     receive() external payable {
         revert("Faucet: Contract does not accept native currency");

@@ -119,18 +119,17 @@ function getEnv(key) {
 let ENV_WSS_URL = getEnv('NEXT_PUBLIC_ALCHEMY_ENDPOINT_WSS');
 
 // ##############################################################
-// ###           💡 INÍCIO DA CORREÇÃO LOCAL 💡               ###
+// ###           💡 INÍCIO DA CORREÇÃO DEFINITIVA 💡           ###
 // ##############################################################
-// Se a variável de ambiente NÃO for encontrada E estivermos em 'localhost'
-if (!ENV_WSS_URL && isDevelopment) {
-    console.warn("⚠️ Variável de ambiente 'NEXT_PUBLIC_ALCHEMY_ENDPOINT_WSS' não encontrada.");
-    console.warn("Usando fallback de desenvolvimento (chave hardcoded). ISSO NÃO DEVE APARECER EM PRODUÇÃO.");
+// Se a variável de ambiente NÃO for encontrada (em dev OU prod estático)...
+if (!ENV_WSS_URL) {
+    console.warn("⚠️ Variável de ambiente não encontrada. Usando fallback hardcoded.");
     
     // Use a chave que você confirmou que funciona, no formato WSS
     ENV_WSS_URL = "wss://eth-sepolia.g.alchemy.com/v2/chSfmmKaeEl_C6O2y17WB";
 }
 // ##############################################################
-// ###            💡 FIM DA CORREÇÃO LOCAL 💡                 ###
+// ###            💡 FIM DA CORREÇÃO DEFINITIVA 💡            ###
 // ##############################################################
 
 
@@ -283,7 +282,7 @@ export const actionsManagerABI = [
     "function oracleFeeInWei() view returns (uint256)",
     "function gameResults(uint256) view returns (uint256[3] memory)",
     "event GameRequested(uint256 indexed gameId, address indexed user, uint256 purchaseAmount)",
-    "event GameFulfilled(uint256 indexed gameId, address indexed user, uint256 prizeWon, uint256[3] rolls)",
+    "event GameFulfilled(uint256 indexed gameId, address indexed user, uint2D prizeWon, uint256[3] rolls)",
     "function prizePoolBalance() view returns (uint256)" // <-- A função chave para o TVL
 ];
 

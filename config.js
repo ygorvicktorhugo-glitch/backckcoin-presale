@@ -96,12 +96,24 @@ function getEnv(key) {
     return null; 
 }
 
-// 1. Tenta carregar a URL WSS COMPLETA da variável de ambiente ALCHEMY_ENDPOINT_WSS
-const ENV_WSS_URL = getEnv('ALCHEMY_ENDPOINT_WSS');
+// 1. Tenta carregar a URL WSS COMPLETA da variável de ambiente
+// ##############################################################
+// ###               💡 INÍCIO DA CORREÇÃO 💡                 ###
+// ##############################################################
+// O Vercel (e Next.js) SÓ expõe variáveis para o frontend (navegador)
+// se elas tiverem o prefixo NEXT_PUBLIC_
+
+const ENV_WSS_URL = getEnv('NEXT_PUBLIC_ALCHEMY_ENDPOINT_WSS'); // <-- CORRIGIDO AQUI
+
+// ##############################################################
+// ###                💡 FIM DA CORREÇÃO 💡                  ###
+// ##############################################################
+
 
 // 🛡️ NOVO BLOCO DE VALIDAÇÃO DE SEGURANÇA
 if (!ENV_WSS_URL) {
-    const errorMessage = "❌ ERRO CRÍTICO: ALCHEMY_ENDPOINT_WSS não está definida. Verifique seu .env local ou as variáveis de ambiente do Vercel/Produção.";
+    const errorKey = "NEXT_PUBLIC_ALCHEMY_ENDPOINT_WSS"; // <-- CORRIGIDO AQUI
+    const errorMessage = `❌ ERRO CRÍTICO: ${errorKey} não está definida. Verifique seu .env local ou as variáveis de ambiente do Vercel/Produção.`;
     console.error(errorMessage);
     
     // Mostra erro em tela cheia se a variável crítica estiver faltando
@@ -111,7 +123,7 @@ if (!ENV_WSS_URL) {
         <div style="max-width: 600px; background: #1e1e1e; border: 2px solid #ef4444; border-radius: 8px; padding: 30px;">
             <h2 style="color: #ef4444; margin-bottom: 15px; font-size: 24px;">⚠️ Erro de Configuração de Rede</h2>
             <p style="margin-bottom: 10px;">Variável de ambiente crítica faltando.</p>
-            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px;">A dApp não pode se conectar à blockchain sem a chave <code style="background: #333; padding: 2px 6px; border-radius: 3px;">ALCHEMY_ENDPOINT_WSS</code>.</p>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px;">A dApp não pode se conectar à blockchain sem a chave <code style="background: #333; padding: 2px 6px; border-radius: 3px;">${errorKey}</code>.</p>
             <details style="margin-bottom: 20px; background: #2a2a2a; padding: 10px; border-radius: 4px;">
                 <summary style="cursor: pointer; font-weight: bold; color: #fbbf24;">Detalhes</summary>
                 <pre style="margin-top: 10px; color: #ef4444; font-size: 12px; overflow-x: auto;">${errorMessage}</pre>

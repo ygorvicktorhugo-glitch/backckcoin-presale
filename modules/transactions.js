@@ -5,7 +5,8 @@ const ethers = window.ethers;
 import { State } from '../state.js';
 import { showToast, closeModal } from '../ui-feedback.js';
 // [CORRIGIDO] Importa 'addresses' do config.js (que deve carregar o deployment-addresses.json)
-import { addresses, FAUCET_AMOUNT_WEI } from '../config.js'; 
+// (REFA) Importa o nftPoolABI para criar instâncias de contrato
+import { addresses, FAUCET_AMOUNT_WEI, nftPoolABI } from '../config.js'; 
 import { formatBigNumber } from '../utils.js';
 import { loadUserData, getHighestBoosterBoostFromAPI, safeContractCall } from './data.js';
 
@@ -98,7 +99,7 @@ async function ensureApproval(spenderAddress, requiredAmount, btnElement, purpos
     if (!State.signer) return false;
     
     // [CORRIGIDO] Validação do spenderAddress
-    if (!spenderAddress || spenderAddress === '0x...[POR FAVOR, ATUALIZE ESTE ENDEREÇO APÓS CRIAR O POOL NA DEX]...') {
+    if (!spenderAddress || spenderAddress.includes('...')) {
         showToast(`Error: Invalid contract address for ${purpose}.`, "error");
         return false;
     }
@@ -324,14 +325,14 @@ export async function executeUniversalClaim(stakingRewards, minerRewards, btnEle
 
 
 // ####################################################################
-// ###               INÍCIO DAS MODIFICAÇÕES - BOOSTER STORE           ###
+// ###               (REFA) BOOSTER STORE (FACTORY)                ###
 // ####################################################################
 
 /**
- * [MODIFICADO] Executa a COMPRA de um Booster NFT (BKC -> NFT)
- * Agora aceita um 'boosterTokenId' para a verificação de pStake
+ * (REFA) Executa a COMPRA de um Booster NFT (BKC -> NFT)
+ * Agora aceita o 'poolAddress' e não precisa mais do 'tokenIdForBuy'
  */
-export async function executeBuyBooster(boostBips, price, boosterTokenId, btnElement) {
+export async function executeBuyBooster(poolAddress, price, boosterTokenIdForPStake, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     
     const originalText = btnElement ? btnElement.innerHTML : 'Buy';
@@ -343,26 +344,24 @@ export async function executeBuyBooster(boostBips, price, boosterTokenId, btnEle
     try {
         const priceWei = BigInt(price);
         
-        // [CORRIGIDO] Usa a chave correta: nftLiquidityPool
-        const approved = await ensureApproval(addresses.nftLiquidityPool, priceWei, btnElement, "NFT Purchase");
+        // 1. Aprova o POOL CLONE correto
+        const approved = await ensureApproval(poolAddress, priceWei, btnElement, "NFT Purchase");
         if (!approved) {
-             // ensureApproval já mostra o toast de erro, apenas resetamos o botão
              if(btnElement) btnElement.innerHTML = originalText;
              return false;
         }
 
         if (btnElement) btnElement.innerHTML = '<div class="loader inline-block"></div> Buying...';
 
-        // O boosterTokenId já foi buscado pelo StorePage.js, apenas garantimos que seja um BigInt
-        const boosterIdToSend = boosterTokenId ? BigInt(boosterTokenId) : 0n;
+        // 2. Cria uma instância do contrato do pool com o signer
+        const poolContract = new ethers.Contract(poolAddress, nftPoolABI, State.signer);
+
+        const boosterIdToSend = boosterTokenIdForPStake ? BigInt(boosterTokenIdForPStake) : 0n;
 
         showToast("Submitting buy transaction...", "info");
 
-        // [MODIFICADO] Chama buyNextAvailableNFT com os 2 argumentos corretos:
-        // 1. boostBips
-        // 2. boosterIdToSend (para verificação de pStake)
-        const buyTxPromise = State.nftBondingCurveContract.buyNextAvailableNFT(
-            boostBips,
+        // 3. (REFA) Chama buyNextAvailableNFT com o booster de pStake
+        const buyTxPromise = poolContract.buyNextAvailableNFT(
             boosterIdToSend 
         );
 
@@ -389,10 +388,10 @@ export async function executeBuyBooster(boostBips, price, boosterTokenId, btnEle
 }
 
 /**
- * [MODIFICADO] Executa a VENDA de um Booster NFT (NFT -> BKC)
- * Agora aceita um 'boosterTokenId' para o DESCONTO NA TAXA
+ * (REFA) Executa a VENDA de um Booster NFT (NFT -> BKC)
+ * Agora aceita o 'poolAddress'
  */
-export async function executeSellBooster(tokenIdToSell, boosterTokenIdForDiscount, btnElement) {
+export async function executeSellBooster(poolAddress, tokenIdToSell, boosterTokenIdForDiscount, btnElement) {
     if (!State.signer) return showToast("Wallet not connected.", "error");
     
     const originalText = btnElement ? btnElement.innerHTML : 'Sell NFT';
@@ -416,15 +415,13 @@ export async function executeSellBooster(tokenIdToSell, boosterTokenIdForDiscoun
     }
 
     try {
-        // 1. Aprova o Pool para pegar o NFT que queremos vender
+        // 1. Aprova o POOL CLONE correto para pegar o NFT
         showToast(`Approving transfer of NFT #${tokenIdToSell}...`, "info");
         
-        // [MODIFICADO] Usa safeContractCall para melhor tratamento de erro
-        // [CORRIGIDO] Usa a chave correta: nftLiquidityPool
         const approveTx = await safeContractCall(
             State.rewardBoosterContract,
             'approve',
-            [addresses.nftLiquidityPool, tokenIdBigInt],
+            [poolAddress, tokenIdBigInt], // (REFA) Aprova o endereço do pool
             null
         );
         if (!approveTx) throw new Error("Approval transaction failed to send.");
@@ -438,8 +435,11 @@ export async function executeSellBooster(tokenIdToSell, boosterTokenIdForDiscoun
         // 2. Garante que o ID do booster para desconto seja um BigInt
         const boosterIdToSend = boosterTokenIdForDiscount ? BigInt(boosterTokenIdForDiscount) : 0n;
 
-        // 3. Chama sellNFT, passando ambos os argumentos
-        const sellTxPromise = State.nftBondingCurveContract.sellNFT(
+        // 3. Cria uma instância do contrato do pool com o signer
+        const poolContract = new ethers.Contract(poolAddress, nftPoolABI, State.signer);
+
+        // 4. (REFA) Chama sellNFT no pool clone correto
+        const sellTxPromise = poolContract.sellNFT(
             tokenIdBigInt, // O NFT que estamos vendendo
             boosterIdToSend  // O NFT que estamos usando para o desconto
         );
@@ -519,9 +519,9 @@ export async function executeNotarizeDocument(documentURI, description, boosterI
     }
 
     // 3. Execute the Notarization
-    const notarizeTxPromise = State.decentralizedNotaryContract.notarizeDocument(
+    // (REFA) A função do contrato mudou para 'notarize'
+    const notarizeTxPromise = State.decentralizedNotaryContract.notarize(
         documentURI,
-        description,
         boosterId
     );
 

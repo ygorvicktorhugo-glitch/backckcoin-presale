@@ -1,5 +1,6 @@
 // data.js
 // ARQUIVO ATUALIZADO: Substituído API_BASE_URL por API_ENDPOINTS e ajustado CORS.
+// ARQUIVO CORRIGIDO: Corrigidos bugs críticos em loadPublicData e calculateUserTotalRewards.
 
 const ethers = window.ethers;
 
@@ -107,7 +108,7 @@ export async function loadSystemDataFromAPI() {
 
 
 // ====================================================================
-// LÓGICA DE DADOS PÚBLICOS E PRIVADOS (Mantida)
+// LÓGICA DE DADOS PÚBLICOS E PRIVADOS
 // ====================================================================
 
 export async function loadPublicData() {
@@ -118,40 +119,36 @@ export async function loadPublicData() {
         const publicDelegationContract = State.delegationManagerContractPublic;
         const publicBkcContract = State.bkcTokenContractPublic;
 
+        // ✅ *** INÍCIO DA CORREÇÃO ***
+        // Removidas as chamadas de balanço com falha (nftPoolBalance, actionsManagerBalance)
+        // que estavam causando o erro 'unsupported addressable value'.
+        // A lógica de TVL é tratada separadamente e corretamente pelo DashboardPage.js.
         const [
             totalSupply, 
             validators, 
             MAX_SUPPLY, 
-            TGE_SUPPLY,
-            delegatedManagerBalance, 
-            nftPoolBalance, 
-            rewardManagerBalance, 
-            actionsManagerBalance
+            TGE_SUPPLY
         ] = await Promise.all([
             safeContractCall(publicBkcContract, 'totalSupply', [], 0n), 
             safeContractCall(publicDelegationContract, 'getAllValidators', [], []),
             safeContractCall(publicBkcContract, 'MAX_SUPPLY', [], 0n), 
-            safeContractCall(publicBkcContract, 'TGE_SUPPLY', [], 0n), 
-            safeBalanceOf(publicBkcContract, addresses.delegationManager), 
-            safeBalanceOf(publicBkcContract, addresses.nftBondingCurve), 
-            safeBalanceOf(publicBkcContract, addresses.rewardManager), 
-            safeBalanceOf(publicBkcContract, addresses.actionsManager)
+            safeContractCall(publicBkcContract, 'TGE_SUPPLY', [], 0n)
         ]);
+        // ✅ *** FIM DA CORREÇÃO ***
 
         const MINT_POOL = MAX_SUPPLY > TGE_SUPPLY ? MAX_SUPPLY - TGE_SUPPLY : 0n;
         if (totalSupply === 0n && TGE_SUPPLY > 0n) {
              console.warn("Usando TGE_SUPPLY como estimativa de Total Supply devido à falha na chamada totalSupply().");
         }
-        const totalLockedWei = delegatedManagerBalance + nftPoolBalance + rewardManagerBalance + actionsManagerBalance;
-        let lockedPercentage = 0;
-        if (totalSupply > 0n) {
-             lockedPercentage = (Number(totalLockedWei) * 100) / Number(totalSupply);
-        }
+        
+        // ✅ CORREÇÃO: Lógica de TVL removida daqui, pois estava quebrada e é redundante.
+        // O DashboardPage.js tem sua própria lógica de TVL que funciona.
 
         if (validators.length === 0) {
             State.allValidatorsData = [];
         } else {
             const validatorDataPromises = validators.map(async (addr) => {
+                // ✅ CORREÇÃO: 'totalDelegatedAmount' foi adicionado para consistência
                 const fallbackStruct = { isRegistered: false, selfStakeAmount: 0n, totalDelegatedAmount: 0n, totalPStake: 0n };
                 const validatorInfo = await safeContractCall(publicDelegationContract, 'validators', [addr], fallbackStruct);
                 
@@ -161,7 +158,7 @@ export async function loadPublicData() {
                     addr,
                     pStake, 
                     selfStake: validatorInfo.selfStakeAmount,
-                    delegatedStake: validatorInfo.totalDelegatedAmount 
+                    totalDelegatedAmount: validatorInfo.totalDelegatedAmount // Corrigido
                 };
             });
             State.allValidatorsData = await Promise.all(validatorDataPromises);
@@ -173,7 +170,11 @@ export async function loadPublicData() {
         // Chamar o carregamento de dados do sistema (regras)
         await loadSystemDataFromAPI();
 
-    } catch (e) { console.error("Error loading public data", e)}
+    } catch (e) { 
+        console.error("Error loading public data", e)
+        // Lança o erro para que as páginas saibam que falhou
+        throw new Error(`Error loading public data: ${e.message}`);
+    }
 }
 
 export async function loadUserData() {
@@ -202,13 +203,16 @@ export async function loadUserData() {
 }
 
 export async function calculateUserTotalRewards() {
-    if (!State.delegationManagerContract || !State.rewardManagerContract || !State.userAddress) {
+    // ✅ CORREÇÃO: Dependência do RewardManager removida, pois a função estava incorreta.
+    if (!State.delegationManagerContract || !State.userAddress) {
         return { stakingRewards: 0n, minerRewards: 0n, totalRewards: 0n };
     }
 
     try {
         const delegatorReward = await safeContractCall(State.delegationManagerContract, 'pendingDelegatorRewards', [State.userAddress], 0n);
-        const minerRewards = await safeContractCall(State.rewardManagerContract, 'minerRewardsOwed', [State.userAddress], 0n);
+        
+        // ✅ CORREÇÃO: "Miner Rewards" são "Validator Rewards" e são buscadas no DelegationManager
+        const minerRewards = await safeContractCall(State.delegationManagerContract, 'pendingValidatorRewards', [State.userAddress], 0n);
 
         const stakingRewards = delegatorReward;
         return { stakingRewards, minerRewards, totalRewards: stakingRewards + minerRewards };

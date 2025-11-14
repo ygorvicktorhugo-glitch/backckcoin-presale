@@ -1,10 +1,6 @@
 // pages/EarnPage.js
-// Gerencia a página "Earn", permitindo aos usuários delegar (pStake),
-// executar PoP Mining e gerenciar o status de validador.
-
-// --- IMPORTAÇÕES E CONFIGURAÇÕES GLOBAIS ---
-// Importa bibliotecas, módulos de estado, transações,
-// utils e o arquivo de configuração de endereços.
+// GERENCIA A PÁGINA "EARN", COM O MODAL DE DELEGAÇÃO REESTRUTURADO
+// E MODAIS DE TOOLTIP CLICÁVEIS.
 
 const ethers = window.ethers;
 
@@ -17,103 +13,161 @@ import { openModal, showToast } from '../ui-feedback.js';
 import { addresses } from '../config.js';
 
 // --- ESTADO E CONSTANTES DO MÓDULO ---
-// Variáveis de estado locais e constantes usadas pela página "Earn".
-
 let currentDelegateValidator = null;
 const ONE_DAY_IN_SECONDS = 86400;
-const MINING_SERVICE_KEY = "POP_MINING_SERVICE"; 
+const MINING_SERVICE_KEY = "VESTING_SERVICE"; // Chave correta para PoP Mining
 
-// Constantes de distribuição do RewardManager.sol
-const RECIPIENT_BONUS_BIPS = 1000; 
-const TREASURY_SHARE_BIPS = 1000; 
-const MINER_SHARE_BIPS = 1500;     
-const DELEGATOR_SHARE_BIPS = 6500; 
+// Constantes de distribuição (baseadas no MiningManager.sol)
+const TREASURY_BIPS = 1000;   // 10%
+const VALIDATOR_BIPS = 1500;  // 15%
+const DELEGATOR_BIPS = 7500;  // 75%
+const VESTING_BONUS_BIPS = 1000; // 10% do bônus base
 
-let currentScarcityRate = 0; 
+let currentScarcityRate = 1.0; // Padrão 1:1
 
 
 // --- UTILS E LÓGICA DE MINERAÇÃO ---
-// Funções de ajuda para a UI. 'setAmountUtil' preenche inputs com
-// percentuais do saldo. 'updateDelegationFeedback' e 'updateMiningDistribution'
-// atualizam os painéis de estimativa em tempo real.
 
 function setAmountUtil(elementId, percentage) {
     const input = document.getElementById(elementId);
-    if (State.currentUserBalance > 0n && input) {
+    // Garante que o saldo do usuário (um BigInt) exista
+    if (State.currentUserBalance !== null && State.currentUserBalance !== undefined && input) {
         const amount = (State.currentUserBalance * BigInt(Math.floor(percentage * 10000))) / 10000n;
         input.value = ethers.formatUnits(amount, 18);
         
-        if (elementId === 'delegateAmountInput') updateDelegationFeedback();
-        if (elementId === 'certificateAmountInput') updateMiningDistribution();
+        // Dispara o evento 'input' para atualizar os previews
+        input.dispatchEvent(new Event('input', { bubbles: true }));
     }
 }
+// Expõe as funções globalmente para os botões 'onclick'
 window.setDelegateAmount = (p) => setAmountUtil('delegateAmountInput', p);
 window.setCertificateAmount = (p) => setAmountUtil('certificateAmountInput', p);
 
+
+// ✅ *** NOVO HELPER PARA MODAIS DE TOOLTIP ***
+function openTooltipModal(id) {
+    let title = "Information";
+    let message = "No information found for this topic.";
+
+    const tooltips = {
+        // Tooltips do Modal de Delegação
+        'delegate-amount': {
+            title: "Amount to Delegate",
+            message: "This is the total amount of $BKC you want to lock (stake). This amount will be transferred from your wallet into the secure Delegation contract."
+        },
+        'delegate-multiplier': {
+            title: "Time Multiplier (Lock Duration)",
+            message: "This is the most important factor for maximizing your rewards! The longer you lock your $BKC, the higher your 'pStake' (Power Stake) multiplier. A 10-year lock (3650 days) gives you a 3650x multiplier on your amount."
+        },
+        'delegate-pstake': {
+            title: "What is pStake?",
+            message: "pStake (Power Stake) is your earning power in the ecosystem. It determines your share of all network rewards (from PoP Mining, fees, etc.).\n\n<strong>Formula:</strong>\nYour pStake = (Amount Delegated) x (Lock Duration in Days).\n\nMaximize both to earn the most!"
+        },
+        // Tooltips do PoP Mining
+        'bonus': {
+            title: "Recipient Bonus (Vesting)",
+            message: "This bonus is minted and added directly to your Vesting Certificate NFT, increasing its total value. It vests along with the principal amount."
+        },
+        'miner': {
+            title: "Validator Pool (15%)",
+            message: "This share of the minted tokens is sent to the Delegation Manager and distributed to all active Validators as a reward for securing the network."
+        },
+        'delegator': {
+            title: "Delegator Pool (75%)",
+            message: "This is the largest share, sent to the Delegation Manager and distributed to all users who are delegating (staking) their $BKC."
+        },
+        'treasury': {
+            title: "Treasury Share (10%)",
+            message: "This share is sent directly to the protocol's Treasury wallet to fund operations, development, and marketing."
+        }
+    };
+
+    if (tooltips[id]) {
+        title = tooltips[id].title;
+        message = tooltips[id].message;
+    }
+
+    const content = `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="xl font-bold text-white">${title}</h3>
+            <button class="closeModalBtn text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <p class="text-sm text-zinc-300" style="white-space: pre-wrap;">${message}</p>
+        <button class="w-full bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2 px-4 rounded-md transition-colors mt-6 closeModalBtn">
+            Got it
+        </button>
+    `;
+    openModal(content);
+}
+
+
+// ✅ *** BUG DE CÁLCULO DO PSTAKE CORRIGIDO ***
 function updateDelegationFeedback() {
     const amountInput = document.getElementById('delegateAmountInput');
     const durationSlider = document.getElementById('delegateDurationSlider');
     const pStakeEl = document.getElementById('modalPStakeEl');
     const netEl = document.getElementById('modalNetAmountEl');
+    const bonusTextEl = document.getElementById('durationBonusText');
 
-    if (!amountInput || !durationSlider || !pStakeEl || !netEl) return;
+    if (!amountInput || !durationSlider || !pStakeEl || !netEl || !bonusTextEl) return;
 
     const amountStr = amountInput.value || '0';
     const durationDays = parseInt(durationSlider.value, 10);
     
-    let amount = 0;
+    let amountWei = 0n;
     try {
-        amount = parseFloat(amountStr);
-        if (isNaN(amount) || amount < 0) amount = 0;
-    } catch(e) { amount = 0; }
+        // Converte o valor de ether (ex: "10") para wei (BigInt)
+        amountWei = ethers.parseEther(amountStr);
+        if (amountWei < 0n) amountWei = 0n;
+    } catch {
+        amountWei = 0n; // Se o input for inválido (ex: "1.2.3")
+    }
+
+    const netAmountWei = amountWei; // (Taxa é 0)
     
-    const netAmount = amount; 
-    const pStake = netAmount * durationDays;
+    // ✅ CORREÇÃO: O cálculo de pStake é (Amount * LockDays)
+    // Para evitar números decimais em JS, usamos BigInt
+    // pStake = (amountWei * durationDays) / 1e18
+    const durationBigInt = BigInt(durationDays);
+    const etherDivisor = 1_000_000_000_000_000_000n; // 1e18
+    
+    // Multiplica primeiro, depois divide
+    const pStake = (netAmountWei * durationBigInt) / etherDivisor;
 
-    netEl.textContent = `${netAmount.toFixed(4)} $BKC`;
-    pStakeEl.textContent = formatPStake(pStake.toFixed(0));
-}
+    netEl.textContent = `${ethers.formatUnits(netAmountWei, 18)} $BKC`;
+    pStakeEl.textContent = formatPStake(pStake); // formatPStake espera um BigInt
+    bonusTextEl.textContent = `x${durationDays} Day Multiplier`;
 
-/**
- * Tenta buscar a taxa de cunhagem (Scarcity Rate) do RewardManager.
- * Usa 99.99% como fallback em caso de escassez extrema ou falha na leitura.
- */
-async function loadScarcityRate() {
-    try {
-        if (!State.rewardManagerContract) {
-            console.warn("loadScarcityRate: RewardManagerContract não está pronto. Usando fallback.");
-            currentScarcityRate = 0.9999;
-            return;
-        }
-
-        const totalMintForOneToken = await safeContractCall(
-            State.rewardManagerContract, 
-            'getMintRate', 
-            [ethers.parseEther('1')], 
-            ethers.parseEther('0.5') // Fallback 50%
-        );
-
-        let rate = Number(ethers.formatUnits(totalMintForOneToken, 18));
-        
-        // Lógica de escassez extrema (99.99%)
-        if (rate >= 0.9999 || rate >= 1.0) { 
-            currentScarcityRate = 0.9999;
-        } else if (rate <= 0 || rate > 1.5) { 
-            currentScarcityRate = 0.5; // Fallback se houver erro
-        } else {
-            currentScarcityRate = rate;
-        }
-
-    } catch (e) {
-        console.warn("Falha ao buscar Scarcity Rate do RM. Usando 99.99% como fallback para alta escassez.", e);
-        currentScarcityRate = 0.9999; 
+    // Incentivo visual para durações longas
+    if (durationDays > 3000) { // ~8+ anos
+         bonusTextEl.className = 'text-sm font-bold text-green-400 mt-1';
+    } else if (durationDays > 1000) { // ~3+ anos
+         bonusTextEl.className = 'text-sm font-bold text-amber-400 mt-1';
+    } else {
+         bonusTextEl.className = 'text-sm font-bold text-zinc-400 mt-1';
     }
 }
 
+async function loadScarcityRate() {
+    try {
+        if (!State.miningManagerContractPublic) {
+            console.warn("loadScarcityRate: MiningManagerContractPublic not loaded. Using 1:1 fallback.");
+            currentScarcityRate = 1.0; // 1:1 ratio
+            return;
+        }
+        const totalMintForOneToken = await safeContractCall(
+            State.miningManagerContractPublic, 
+            'getMintAmount', 
+            [ethers.parseEther('1')], 
+            ethers.parseEther('1') // Fallback 1:1
+        );
+        currentScarcityRate = Number(ethers.formatUnits(totalMintForOneToken, 18));
+    } catch (e) {
+        console.warn("Failed to fetch Mint Rate from MM. Using 1:1 as fallback.", e);
+        currentScarcityRate = 1.0; 
+    }
+}
 
-/**
- * Atualiza o painel de distribuição de mineração com base no input do usuário.
- */
 function updateMiningDistribution() {
     const amountInput = document.getElementById('certificateAmountInput');
     const outputEl = document.getElementById('mining-distribution-details');
@@ -121,10 +175,7 @@ function updateMiningDistribution() {
 
     if (!amountInput || !outputEl || !scarcityEl) return;
 
-    // Exibição da Taxa
-    scarcityEl.textContent = (currentScarcityRate === 0.9999) ? 
-        `99.99%` : 
-        `${(currentScarcityRate * 100).toFixed(2)}%`;
+    scarcityEl.textContent = `${(currentScarcityRate * 100).toFixed(0)}% (1:${currentScarcityRate.toFixed(2)})`;
     
     const amountStr = amountInput.value || '0';
     let purchaseAmount = 0;
@@ -138,18 +189,20 @@ function updateMiningDistribution() {
          return;
     }
 
-    // 1. Cunhagem Total Estimada (Total Mint Amount)
     const totalMintAmount = purchaseAmount * currentScarcityRate;
 
-    // 2. Distribuição
-    const recipientBonus = totalMintAmount * (RECIPIENT_BONUS_BIPS / 10000); 
-    const minerReward = totalMintAmount * (MINER_SHARE_BIPS / 10000);       
-    const delegatorPool = totalMintAmount * (DELEGATOR_SHARE_BIPS / 10000); 
-    const treasuryShare = totalMintAmount * (TREASURY_SHARE_BIPS / 10000); 
+    // Distribuição (Valores do MiningManager.sol)
+    const treasuryAmount = totalMintAmount * (TREASURY_BIPS / 10000);   // 10%
+    const validatorAmount = totalMintAmount * (VALIDATOR_BIPS / 10000);  // 15%
+    const delegatorAmount = totalMintAmount * (DELEGATOR_BIPS / 10000);  // 75%
+    
+    const totalPoolShares = treasuryAmount + validatorAmount + delegatorAmount;
+    const baseBonusAmount = totalMintAmount - totalPoolShares; 
+    
+    const recipientBonus = baseBonusAmount * (VESTING_BONUS_BIPS / 10000); 
     
     const finalVestingAmount = purchaseAmount + recipientBonus;
     
-    // 3. Renderização
     outputEl.innerHTML = `
         <div class="space-y-3">
             <div class="flex justify-between items-center bg-green-900/40 p-2 rounded">
@@ -158,67 +211,71 @@ function updateMiningDistribution() {
             </div>
             
             <div class="flex justify-between items-center">
-                <span class="text-zinc-400"><i class="fa-solid fa-plus-circle text-amber-400 mr-1"></i> Recipient Bonus (10% of Mint):</span>
-                <span class="font-semibold text-amber-400">+ ${recipientBonus.toFixed(4)} $BKC 
-                    <i class="fa-solid fa-circle-question text-zinc-500 ml-1 cursor-pointer" data-info-id="bonus"></i>
+                <span class="text-zinc-400 flex items-center">
+                    <i class="fa-solid fa-plus-circle text-amber-400 mr-1"></i> Recipient Bonus (Vesting):
+                    <button class="tooltip-btn" data-tooltip-id="bonus">
+                        <i class="fa-solid fa-circle-question text-zinc-500 ml-1 text-xs"></i>
+                    </button>
                 </span>
+                <span class="font-semibold text-amber-400">+ ${recipientBonus.toFixed(4)} $BKC</span>
             </div>
-            <div class="flex justify-between items-center border-t border-border-color pt-2">
-                <span class="text-zinc-400"><i class="fa-solid fa-user-shield text-purple-400 mr-1"></i> Miner Reward (15% of Mint):</span>
-                <span class="font-semibold text-purple-400">${minerReward.toFixed(4)} $BKC
-                    <i class="fa-solid fa-circle-question text-zinc-500 ml-1 cursor-pointer" data-info-id="miner"></i>
-                </span>
-            </div>
-            <div class="flex justify-between items-center">
-                <span class="text-zinc-400"><i class="fa-solid fa-coins text-cyan-400 mr-1"></i> Delegator Pool (65% of Mint):</span>
-                <span class="font-semibold text-cyan-400">${delegatorPool.toFixed(4)} $BKC
-                    <i class="fa-solid fa-circle-question text-zinc-500 ml-1 cursor-pointer" data-info-id="delegator"></i>
-                </span>
+            
+            <div class="border-t border-border-color pt-2">
+                <span class="text-xs text-zinc-400">Network Mint Distribution (Total: ${totalMintAmount.toFixed(4)} $BKC)</span>
             </div>
             <div class="flex justify-between items-center">
-                <span class="text-zinc-400"><i class="fa-solid fa-vault text-blue-400 mr-1"></i> Treasury Share (10% of Mint):</span>
-                <span class="font-semibold text-blue-400">${treasuryShare.toFixed(4)} $BKC
-                    <i class="fa-solid fa-circle-question text-zinc-500 ml-1 cursor-pointer" data-info-id="treasury"></i>
+                <span class="text-zinc-400 flex items-center">
+                    <i class="fa-solid fa-user-shield text-purple-400 mr-1"></i> Validator Pool (15%):
+                    <button class="tooltip-btn" data-tooltip-id="miner">
+                        <i class="fa-solid fa-circle-question text-zinc-500 ml-1 text-xs"></i>
+                    </button>
                 </span>
+                <span class="font-semibold text-purple-400">${validatorAmount.toFixed(4)} $BKC</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-zinc-400 flex items-center">
+                    <i class="fa-solid fa-coins text-cyan-400 mr-1"></i> Delegator Pool (75%):
+                    <button class="tooltip-btn" data-tooltip-id="delegator">
+                        <i class="fa-solid fa-circle-question text-zinc-500 ml-1 text-xs"></i>
+                    </button>
+                </span>
+                <span class="font-semibold text-cyan-400">${delegatorAmount.toFixed(4)} $BKC</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-zinc-400 flex items-center">
+                    <i class="fa-solid fa-vault text-blue-400 mr-1"></i> Treasury Share (10%):
+                    <button class="tooltip-btn" data-tooltip-id="treasury">
+                        <i class="fa-solid fa-circle-question text-zinc-500 ml-1 text-xs"></i>
+                    </button>
+                </span>
+                <span class="font-semibold text-blue-400">${treasuryAmount.toFixed(4)} $BKC</span>
             </div>
         </div>
     `;
 }
 
 // --- RENDERIZAÇÃO DOS PAINÉIS DA PÁGINA ---
-// Funções responsáveis por construir o HTML de cada
-// componente principal e modal da página "Earn".
 
-/**
- * Renderiza a lista de validadores na aba "Delegate".
- * Se o usuário estiver conectado mas com saldo zero, mostra um card "Buy $BKC".
- */
 function renderValidatorsList() {
     const listEl = document.getElementById('validatorsList');
     if (!listEl) return;
 
-    // Se estiver conectado mas com saldo zero, mostra o card "Buy $BKC".
     if (State.currentUserBalance === 0n) {
-        // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
         const buyBkcLink = addresses.bkcDexPoolAddress || '#';
-        
         listEl.innerHTML = `
-            <div class="col-span-1 lg:col-span-2">
+            <div class="col-span-1 lg:col-span-3">
                 <div class="text-center p-6 border border-red-500/50 bg-red-500/10 rounded-lg space-y-3 max-w-2xl mx-auto">
                     <i class="fa-solid fa-circle-exclamation text-4xl text-red-400"></i>
                     <h3 class="xl font-bold">Insufficient Balance</h3>
                     <p class="text-zinc-300">You need $BKC in your wallet to delegate to a validator.</p>
-                    
                     <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
                         <i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC
                     </a>
                 </div>
             </div>
         `;
-        return; // Para a execução aqui
+        return; 
     }
-
-    // Se o saldo for > 0, continua a lógica original...
     
     if (!State.allValidatorsData) {
         listEl.innerHTML = renderLoading(listEl);
@@ -230,7 +287,6 @@ function renderValidatorsList() {
         return;
     }
 
-    // Ordena os validadores por pStake (maior primeiro)
     const sortedData = [...State.allValidatorsData].sort((a, b) => {
         if (b.pStake > a.pStake) return 1;
         if (b.pStake < a.pStake) return -1;
@@ -259,72 +315,101 @@ function renderValidatorsList() {
     listEl.innerHTML = sortedData.map(generateValidatorHtml).join('');
 }
 
-/**
- * Abre o modal para o usuário inserir valor e duração da delegação.
- */
+// ✅ *** MODAL REDESENHADO ***
 function openDelegateModal(validatorAddr) {
     if (!State.isConnected) return showToast("Please connect your wallet first.", "error");
     currentDelegateValidator = validatorAddr;
     
     const minLockDays = 1; 
-    const maxLockDays = 3650; 
-    const defaultLockDays = 1825; 
+    const maxLockDays = 3650; // 10 years
+    const defaultLockDays = 1825; // 5 years
 
     const balanceFormatted = formatBigNumber(State.currentUserBalance).toFixed(2);
-    // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
-    const buyBkcLink = addresses.bkcDexPoolAddress || '#';
 
     const content = `
-        <h3 class_broker.md="xl font-bold mb-4">Delegate to Validator</h3>
-        <p class="text-sm text-zinc-400 mb-2">To: <span class="font-mono bg-zinc-900/50 text-zinc-400 text-xs py-1 px-2 rounded-md">${formatAddress(validatorAddr)}</span></p>
+        <h3 class="text-2xl font-bold mb-2 text-white">Delegate & Maximize pStake</h3>
+        <p class="text-sm text-zinc-400 mb-4">To Validator: <span class="font-mono text-xs py-1 px-2 rounded-md bg-zinc-900/50">${formatAddress(validatorAddr)}</span></p>
         
-        <div class="flex justify-between items-center mb-4">
-            <p class="text-sm text-zinc-400">Your balance: <span class="font-bold">${balanceFormatted}</span> $BKC</p>
-            
-            <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="text-xs bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-1 px-3 rounded-md transition-colors">
-                <i class="fa-solid fa-shopping-cart mr-1"></i> Buy $BKC
-            </a>
-        </div>
-        <div class="space-y-4">
-            <div>
-                <label for="delegateAmountInput" class="block text-sm font-medium text-zinc-400 mb-2">Amount to Delegate ($BKC)</label>
-                <input type="number" id="delegateAmountInput" class="form-input" placeholder="0.00" step="0.01">
-                <div class="flex gap-2 mt-2">
-                    <button onclick="setDelegateAmount(0.25)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">25%</button>
-                    <button onclick="setDelegateAmount(0.50)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">50%</button>
-                    <button onclick="setDelegateAmount(0.75)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">75%</button>
-                    <button onclick="setDelegateAmount(1.00)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">100%</button>
+        <div class="bg-main border border-border-color rounded-xl p-5 mb-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                <div class="space-y-4">
+                    <div>
+                        <label for="delegateAmountInput" class="block text-sm font-medium text-zinc-300 mb-1">
+                            Amount to Delegate
+                            <button class="tooltip-btn" data-tooltip-id="delegate-amount">
+                                <i class="fa-solid fa-circle-question text-zinc-500 ml-1 text-xs"></i>
+                            </button>
+                        </label>
+                        <div class="relative">
+                            <input type="number" id="delegateAmountInput" class="form-input w-full text-2xl font-bold bg-main border-border-color focus:ring-amber-500 focus:border-amber-500 pr-16" placeholder="0.00">
+                            <span class="absolute right-3 top-3 text-zinc-400 font-bold">$BKC</span>
+                        </div>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-xs text-zinc-400">Balance: ${balanceFormatted}</span>
+                            <div class="flex gap-1">
+                                <button class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-0.5 px-2" onclick="setDelegateAmount(0.25)">25%</button>
+                                <button class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-0.5 px-2" onclick="setDelegateAmount(0.30)">30%</button>
+                                <button class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-0.5 px-2" onclick="setDelegateAmount(0.75)">75%</button>
+                                <button class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-0.5 px-2" onclick="setDelegateAmount(1.00)">100%</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label for="delegateDurationSlider" class="block text-sm font-medium text-zinc-300 mb-1">
+                            Time Multiplier (Lock Duration)
+                            <button class="tooltip-btn" data-tooltip-id="delegate-multiplier">
+                                <i class="fa-solid fa-circle-question text-zinc-500 ml-1 text-xs"></i>
+                            </button>
+                        </label>
+                        <input type="range" id="delegateDurationSlider" min="${minLockDays}" max="${maxLockDays}" value="${defaultLockDays}" class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
+                        <div class="flex justify-between text-xs text-zinc-400 mt-1">
+                            <span>1 day</span>
+                            <span>10 years</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col items-center justify-center bg-sidebar rounded-lg p-4 text-center border border-purple-500/30">
+                    <span class="text-sm text-zinc-400 uppercase tracking-wider">You Will Earn</span>
+                    <div class="my-2">
+                        <span id="modalPStakeEl" class="text-5xl font-extrabold text-purple-400">0</span>
+                    </div>
+                    <span class="text-2xl font-bold text-zinc-300 flex items-center">
+                        pStake
+                        <button class="tooltip-btn ml-2" data-tooltip-id="delegate-pstake">
+                            <i class="fa-solid fa-circle-question text-zinc-500 text-base"></i>
+                        </button>
+                    </span>
+                    <span id="durationBonusText" class="text-sm font-bold text-amber-400 mt-1">x${defaultLockDays} Day Multiplier</span>
                 </div>
             </div>
-            <div>
-                <label for="delegateDurationSlider" class="block text-sm font-medium text-zinc-400 mb-2">Lock Duration: <span id="delegateDurationLabel" class="font-bold text-amber-400">${defaultLockDays} days</span></label>
-                <input type="range" id="delegateDurationSlider" min="${minLockDays}" max="${maxLockDays}" value="${defaultLockDays}" class="w-full">
-            </div>
-            <div class="p-3 bg-main border border-border-color rounded space-y-2 text-sm">
-                <div class="flex justify-between items-center"><span class="text-zinc-400">Delegation Fee:</span><span class="font-bold text-green-400 font-mono">0.00 $BKC (FREE)</span></div>
-                <div class="flex justify-between items-center"><span class="text-zinc-400">Net Delegate Amount:</span><span id="modalNetAmountEl" class="font-bold text-green-400 font-mono">0.00 $BKC</span></div>
-                <div class="border-t border-border-color my-1"></div>
-                <div class="flex justify-between items-center"><span class="text-zinc-400">Estimated pStake:</span><span id="modalPStakeEl" class="font-bold text-purple-400 text-lg font-mono">0</span></div>
-            </div>
-            <div class="flex gap-3">
-                <button id="confirmDelegateBtn" class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2 px-4 rounded-md transition-colors flex-1">Confirm Delegation</button>
-                <button class="bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-2 px-4 rounded-md transition-colors closeModalBtn" id="closeModalBtn">Cancel</button>
-            </div>
+        </div>
+
+        <div class="p-3 bg-main border border-border-color rounded space-y-2 text-sm mb-5">
+            <div class="flex justify-between items-center"><span class="text-zinc-400">Delegation Fee (Free):</span><span class="font-bold text-green-400 font-mono">0.00 $BKC</span></div>
+            <div class="flex justify-between items-center"><span class="text-zinc-400">Net Amount to Delegate:</span><span id="modalNetAmountEl" class="font-bold text-zinc-200 font-mono">0.00 $BKC</span></div>
+        </div>
+
+        <div class="flex gap-3">
+            <button class="bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 px-5 rounded-md transition-colors closeModalBtn" id="closeModalBtn">Cancel</button>
+            <button id="confirmDelegateBtn" class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-5 rounded-md transition-colors flex-1">
+                Stake & Earn pStake
+            </button>
         </div>
     `;
+    
     openModal(content);
+    
+    // Anexa listeners aos novos elementos do modal
     document.getElementById('delegateAmountInput').addEventListener('input', updateDelegationFeedback);
-    document.getElementById('delegateDurationSlider').addEventListener('input', (e) => {
-        const days = parseInt(e.target.value);
-        document.getElementById('delegateDurationLabel').textContent = `${days} days`;
-        updateDelegationFeedback();
-    });
+    document.getElementById('delegateDurationSlider').addEventListener('input', updateDelegationFeedback);
+    
+    // Inicializa os valores
     updateDelegationFeedback();
 }
 
-/**
- * Renderiza o painel de PoP Mining (criação de Certificados).
- */
 async function renderPopMiningPanel() {
     await loadScarcityRate(); 
 
@@ -339,10 +424,8 @@ async function renderPopMiningPanel() {
 
     renderLoading(el);
     
-    // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
     const buyBkcLink = addresses.bkcDexPoolAddress || '#'; 
 
-    // Verifica se o usuário tem o saldo mínimo (1 BKC) para mineração
     const minBalance = ethers.parseEther("1");
     if (State.currentUserBalance < minBalance) {
         el.innerHTML = `<div class="p-8 text-center">
@@ -350,7 +433,6 @@ async function renderPopMiningPanel() {
                 <i class="fa-solid fa-circle-exclamation text-4xl text-red-400"></i>
                 <h3 class="xl font-bold">Insufficient Balance</h3>
                 <p class="text-zinc-300">You need at least 1 $BKC to execute PoP Mining.</p>
-                
                 <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
                     <i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC
                 </a>
@@ -359,7 +441,6 @@ async function renderPopMiningPanel() {
         return;
     }
     
-    // 1. Obter Requisitos do Hub
     let serviceFee = 0n;
     let minPStake = 0n;
     let feeDisplay = "0.00 $BKC";
@@ -381,7 +462,6 @@ async function renderPopMiningPanel() {
         return;
     }
     
-    // 2. Montar o painel
     el.innerHTML = `
         <div class="p-6 md:p-8">
             <div class="flex flex-col md:flex-row items-center gap-6 md:gap-8">
@@ -414,7 +494,7 @@ async function renderPopMiningPanel() {
                         <input type="number" id="certificateAmountInput" class="form-input" placeholder="e.g., 5000">
                         <div class="flex gap-2 mt-2">
                             <button onclick="setCertificateAmount(0.25)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">25%</button>
-                            <button onclick="setCertificateAmount(0.50)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">50%</button>
+                            <button onclick="setCertificateAmount(0.30)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">30%</button>
                             <button onclick="setCertificateAmount(0.75)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">75%</button>
                             <button onclick="setCertificateAmount(1.00)" class="text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md py-1 px-3">100%</button>
                         </div>
@@ -424,8 +504,8 @@ async function renderPopMiningPanel() {
                         <h3 class="font-bold mb-2">Mining Distribution Estimate</h3>
                         
                         <div class="flex justify-between items-center text-xs font-bold bg-zinc-700/50 p-1 rounded">
-                            <span class="text-zinc-300">Current Scarcity Rate (Mint Factor):</span>
-                            <span class="text-amber-400" id="currentScarcityRateDisplay">~${(currentScarcityRate * 100).toFixed(2)}%</span>
+                            <span class="text-zinc-300">Current Mint Ratio:</span>
+                            <span class="text-amber-400" id="currentScarcityRateDisplay">100% (1:1)</span>
                         </div>
 
                         <div id="mining-distribution-details" class="pt-2">
@@ -447,13 +527,11 @@ async function renderPopMiningPanel() {
         </div>
     `;
     
-    // 3. Configurar listeners de interação
     document.getElementById('autoPopToggle').addEventListener('change', (e) => {
         const isAuto = e.target.checked;
         const inputGroup = document.getElementById('recipientAddressGroup');
         const inputEl = document.getElementById('recipientAddressInput');
         const labelEl = document.getElementById('recipientModeLabel');
-
         if (isAuto) {
             inputGroup.style.display = 'none';
             inputEl.value = State.userAddress; 
@@ -464,16 +542,11 @@ async function renderPopMiningPanel() {
             labelEl.textContent = 'Mining for Another (Manual)';
         }
     });
-
     document.getElementById('certificateAmountInput').addEventListener('input', updateMiningDistribution);
-
     updateMiningDistribution();
 }
 
-/**
- * Renderiza o painel "Etapa 1: Pagar Taxa" para se tornar validador.
- */
-function renderValidatorPayFeePanel(feeAmount, el) {
+async function renderValidatorPayFeePanel(feeAmount, el) {
     el.innerHTML = `
         <div class="bg-sidebar border border-border-color rounded-xl overflow-hidden">
             <div class="p-6 md:p-8">
@@ -498,10 +571,7 @@ function renderValidatorPayFeePanel(feeAmount, el) {
     `;
 }
 
-/**
- * Renderiza o painel "Etapa 2: Registrar" para se tornar validador.
- */
-function renderValidatorRegisterPanel(stakeAmount, el) {
+async function renderValidatorRegisterPanel(stakeAmount, el) {
      el.innerHTML = `
         <div class="bg-sidebar border border-border-color rounded-xl overflow-hidden">
             <div class="p-6 md:p-8">
@@ -526,12 +596,8 @@ function renderValidatorRegisterPanel(stakeAmount, el) {
     `;
 }
 
-/**
- * Renderiza a aba "Become a Validator", verificando o estado do usuário
- * (já é validador, precisa pagar taxa, precisa registrar, ou saldo insuficiente).
- */
 async function renderValidatorPanel() {
-    const el = document.getElementById('validator-content-wrapper');
+    const el = document.getElementById('validator-content');
     
     if (!el || !State.isConnected || !State.delegationManagerContract || !State.ecosystemManagerContract) {
         if(el) {
@@ -542,7 +608,6 @@ async function renderValidatorPanel() {
 
     renderLoading(el);
     
-    // AJUSTADO: Usando addresses.bkcDexPoolAddress (a URL do swap)
     const buyBkcLink = addresses.bkcDexPoolAddress || '#';
 
     try {
@@ -552,7 +617,6 @@ async function renderValidatorPanel() {
         let minValidatorStakeWei = await safeContractCall(State.delegationManagerContract, 'getMinValidatorStake', [], 0n); 
         const stakeAmount = minValidatorStakeWei;
         
-        // 1. Usuário já é validador
         if (validatorInfo.isRegistered) {
             el.innerHTML = `<div class="bg-sidebar border border-border-color rounded-xl p-8 text-center"><i class="fa-solid fa-shield-halved text-5xl text-green-400 mb-4"></i><h2 class="2xl font-bold">You are a Registered Validator</h2><p class="text-zinc-400 mt-1">Thank you for helping secure the Backchain network.</p></div>`;
             return;
@@ -563,29 +627,25 @@ async function renderValidatorPanel() {
             return;
         }
 
-        // 2. Verificar se já pagou a taxa
         const hasPaid = await safeContractCall(State.delegationManagerContract, 'hasPaidRegistrationFee', [State.userAddress], false);
-        const requiredAmount = hasPaid ? stakeAmount : stakeAmount * 2n; // Se não pagou, precisa do dobro (taxa + stake)
+        const requiredAmount = hasPaid ? stakeAmount : stakeAmount * 2n; 
 
-        // 3. Saldo insuficiente
         if (State.currentUserBalance < requiredAmount) {
              el.innerHTML = `<div class="bg-sidebar border border-border-color rounded-xl p-8 text-center">
                 <div class="text-center p-6 border border-red-500/50 bg-red-500/10 rounded-lg space-y-3">
                     <i class="fa-solid fa-circle-exclamation text-4xl text-red-400"></i>
                     <h3 class="xl font-bold">Insufficient Balance</h3>
                     <p class="text-zinc-300">You need ${formatBigNumber(requiredAmount).toFixed(2)} $BKC to become a validator (Fee + Self-Stake).</p>
-                    
                     <a href="${buyBkcLink}" target="_blank" rel="noopener noreferrer" class="inline-block bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2.5 px-6 rounded-lg text-md mt-4 shadow-lg hover:shadow-xl transition-all">
                         <i class="fa-solid fa-shopping-cart mr-2"></i> Buy $BKC
                     </a>
                 </div>
             </div>`;
         } else {
-            // 4. Saldo suficiente, renderiza a etapa correta
             if (!hasPaid) {
-               renderValidatorPayFeePanel(stakeAmount, el); // Etapa 1
+               await renderValidatorPayFeePanel(stakeAmount, el);
             } else {
-               renderValidatorRegisterPanel(stakeAmount, el); // Etapa 2
+               await renderValidatorRegisterPanel(stakeAmount, el);
             }
         }
     } catch (e) {
@@ -595,43 +655,17 @@ async function renderValidatorPanel() {
 }
 
 // --- SETUP DE LISTENERS ---
-// Configura o listener principal da página 'Earn' (DOMElements.earn).
-// Ele usa delegação de eventos para gerenciar todos os cliques
-// (abrir modal, confirmar transações, tooltips de ajuda).
 
 function setupEarnPageListeners() {
     DOMElements.earn.addEventListener('click', async (e) => {
-        // Usa closest() para delegação de eventos
-        const target = e.target.closest('button') || e.target.closest('a') || e.target.closest('.fa-circle-question');
+        const target = e.target.closest('button') || e.target.closest('a');
         if (!target) return;
         
-        // Tooltips de ajuda (PoP Mining)
-        if (target.classList.contains('fa-circle-question')) {
-            const infoId = target.dataset.infoId;
-            let title = "";
-            let message = "";
-            
-            switch(infoId) {
-                case 'bonus':
-                    title = "Recipient Bonus (10%)";
-                    message = "This portion is immediately added to your Certificado de Vesting NFT, increasing its final value. It is locked for 5 years.";
-                    break;
-                case 'miner':
-                    title = "Miner Reward (15%)";
-                    message = "This amount goes to the current block validator (the miner) as a reward for processing your PoP transaction. It is added to their claimable rewards.";
-                    break;
-                case 'delegator':
-                    title = "Delegator Pool (65%)";
-                    message = "This is the largest share, distributed back into the Delegation Manager's reward pool to be paid out to all staking delegators over time.";
-                    break;
-                case 'treasury':
-                    title = "Treasury Share (10%)";
-                    message = "This amount is permanently transferred to the protocol's Treasury Wallet, used for ecosystem development, grants, and operational costs.";
-                    break;
-            }
-            if (title) {
-                 alert(`${title}:\n${message}`);
-            }
+        // ✅ NOVO: Botão de Tooltip (Modal)
+        if (target.classList.contains('tooltip-btn')) {
+            e.preventDefault();
+            const tooltipId = target.dataset.tooltipId;
+            openTooltipModal(tooltipId); // Chama a nova função helper
             return;
         }
 
@@ -657,9 +691,9 @@ function setupEarnPageListeners() {
             
             const success = await executeDelegation(currentDelegateValidator, totalAmount, durationSeconds, target);
             if (success) {
-                await loadPublicData(); // Atualiza dados públicos (lista de validadores)
-                await loadUserData(); // Atualiza dados do usuário (saldo, delegações)
-                await EarnPage.render(true); // Re-renderiza a página
+                await loadPublicData(); 
+                await loadUserData(); 
+                await EarnPage.render(true); 
             }
             return;
         }
@@ -685,11 +719,10 @@ function setupEarnPageListeners() {
             }
             if (amount <= 0n) return showToast('Amount must be greater than zero.', 'error');
 
-
             const success = await createVestingCertificate(recipientAddress, amount, targetBtn);
             if (success) {
-                await loadUserData(); // Atualiza saldo e certificados
-                await renderPopMiningPanel(); // Re-renderiza o painel de mineração
+                await loadUserData(); 
+                await renderPopMiningPanel(); 
             }
             return;
         }
@@ -699,7 +732,7 @@ function setupEarnPageListeners() {
             e.preventDefault();
             let feeAmount = await safeContractCall(State.delegationManagerContract, 'getMinValidatorStake', [], 0n);
             const success = await payValidatorFee(feeAmount, target);
-            if (success) await renderValidatorPanel(); // Avança para a Etapa 2
+            if (success) await renderValidatorPanel(); 
             return;
         }
         
@@ -711,14 +744,13 @@ function setupEarnPageListeners() {
             if (success) {
                 await loadPublicData();
                 await loadUserData();
-                await renderValidatorPanel(); // Mostra o painel "Você é um validador"
+                await renderValidatorPanel(); 
             }
             return;
         }
     });
 }
 
-// Inicializa os Listeners apenas na primeira vez que a página é carregada
 if (!DOMElements.earn._listenersInitialized) {
     setupEarnPageListeners();
     DOMElements.earn._listenersInitialized = true;
@@ -726,20 +758,104 @@ if (!DOMElements.earn._listenersInitialized) {
 
 
 // --- OBJETO PRINCIPAL DA PÁGINA (EarnPage) ---
-// Define o objeto 'EarnPage' que será usado pelo app.js.
-// Contém a função 'render', que é o ponto de entrada principal
-// para desenhar o conteúdo da página com base no estado (conectado/desconectado).
 
 export const EarnPage = {
+    activeTab: 'delegate',
+    
+    // ✅ *** BUG DA ABA EM BRANCO CORRIGIDO ***
+    async setActiveTab(tabId) {
+        this.activeTab = tabId;
+        
+        // Atualiza botões
+        const tabButtons = DOMElements.earn.querySelectorAll('.tab-btn');
+        if (tabButtons.length > 0) {
+            tabButtons.forEach(btn => {
+                const isThisBtnActive = btn.dataset.tab === tabId;
+                btn.classList.toggle('active', isThisBtnActive);
+                btn.classList.toggle('border-amber-500', isThisBtnActive);
+                btn.classList.toggle('text-amber-500', isThisBtnActive);
+                btn.classList.toggle('border-transparent', !isThisBtnActive);
+                btn.classList.toggle('text-zinc-400', !isThisBtnActive);
+                btn.classList.toggle('hover:text-zinc-200', !isThisBtnActive);
+                btn.classList.toggle('hover:border-zinc-300', !isThisBtnActive);
+            });
+        }
+
+        // Atualiza conteúdo
+        DOMElements.earn.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.toggle('hidden', content.id !== `${tabId}-content`);
+        });
+
+        // ✅ CORREÇÃO: Renderiza o conteúdo da aba recém-ativada
+        // (Isso impede que as abas fiquem em branco)
+        if (State.isConnected) {
+            // Mostra loaders antes de carregar
+            const contentEl = document.getElementById(`${tabId}-content`);
+            if (contentEl) renderLoading(contentEl);
+
+            switch (tabId) {
+                case 'delegate':
+                    await renderValidatorsList();
+                    break;
+                case 'pop-mining':
+                    await renderPopMiningPanel();
+                    break;
+                case 'validator':
+                    await renderValidatorPanel();
+                    break;
+            }
+        }
+    },
+
     async render(isUpdate = false) {
+        
+        if (!isUpdate || !DOMElements.earn.querySelector('.tab-content')) {
+            DOMElements.earn.innerHTML = `
+                <div class="container max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+                    <h1 class="text-3xl font-bold text-white mb-8">Earn Rewards</h1>
+                    
+                    <div class="border-b border-border-color mb-8">
+                        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                            <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm" data-tab="delegate">
+                                Delegate (pStake)
+                            </button>
+                            <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm" data-tab="pop-mining">
+                                PoP Mining
+                            </button>
+                            <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm" data-tab="validator">
+                                Become a Validator
+                            </button>
+                        </nav>
+                    </div>
+
+                    <div>
+                        <div id="delegate-content" class="tab-content">
+                            <p class="text-zinc-400 max-w-2xl mb-6">Select an active validator to delegate (stake) your $BKC. This increases your pStake, making you eligible for ecosystem rewards and services.</p>
+                            <div id="validatorsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                </div>
+                        </div>
+                        <div id="pop-mining-content" class="tab-content hidden">
+                            </div>
+                        <div id="validator-content" class="tab-content hidden">
+                            </div>
+                    </div>
+                </div>
+            `;
+            
+            DOMElements.earn.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    this.setActiveTab(e.currentTarget.dataset.tab);
+                });
+            });
+        }
+
         const popMiningContent = document.getElementById('pop-mining-content');
-        const validatorContent = document.getElementById('validator-content-wrapper');
+        const validatorContent = document.getElementById('validator-content');
         const validatorsList = document.getElementById('validatorsList');
 
-        // Função de ajuda interna para o card "Conectar"
         const createConnectCard = (title, message, iconClass) => {
             return `
-                <div class="col-span-1 lg:col-span-2">
+                <div class="col-span-1 lg:col-span-3">
                     <div class="bg-sidebar border border-border-color rounded-xl p-8 text-center flex flex-col items-center max-w-2xl mx-auto">
                         <i class="fa-solid ${iconClass} text-5xl text-zinc-600 mb-6"></i>
                         <h3 class="text-2xl font-bold mb-3">${title}</h3>
@@ -756,43 +872,37 @@ export const EarnPage = {
         };
 
         // --- Estado: Desconectado ---
-        // Mostra cards interativos pedindo para conectar
         if (!State.isConnected) {
-            
-            if(validatorsList) {
-                validatorsList.innerHTML = createConnectCard(
-                    'Connect to Delegate',
-                    'You need to connect your wallet to view the list of validators and start delegating your $BKC.',
-                    'fa-wallet' // Ícone para delegação
-                );
-            }
-            
-            if(popMiningContent) {
-                popMiningContent.innerHTML = createConnectCard(
-                    'Connect for PoP Mining',
-                    'Connect your wallet to access the Proof-of-Purchase Mining (PoP) panel and create Vesting Certificates.',
-                    'fa-gem' // Ícone para mineração
-                );
-            }
-            
-            if(validatorContent) {
-                validatorContent.innerHTML = createConnectCard(
-                    'Connect to Manage Validator',
-                    'Connect your wallet to check your registration status or to become a network validator.',
-                    'fa-user-shield' // Ícone para validador
-                );
-            }
-
-            return; // Interrompe a renderização
+            if(validatorsList) validatorsList.innerHTML = createConnectCard('Connect to Delegate', 'You need to connect your wallet to view the list of validators and start delegating your $BKC.', 'fa-wallet');
+            if(popMiningContent) popMiningContent.innerHTML = createConnectCard('Connect for PoP Mining', 'Connect your wallet to access the Proof-of-Purchase Mining (PoP) panel and create Vesting Certificates.', 'fa-gem');
+            if(validatorContent) validatorContent.innerHTML = createConnectCard('Connect to Manage Validator', 'Connect your wallet to check your registration status or to become a network validator.', 'fa-user-shield');
+            // Define a aba 'delegate' como ativa visualmente, mesmo desconectado
+            this.setActiveTab('delegate');
+            return;
         }
         
         // --- Estado: Conectado ---
-        // Renderiza os painéis com os dados do usuário e da rede
+        try {
+            // Mostra o loader para a aba ativa
+            if (this.activeTab === 'delegate' && validatorsList) renderLoading(validatorsList);
+            if (this.activeTab === 'pop-mining' && popMiningContent) renderLoading(popMiningContent);
+            if (this.activeTab === 'validator' && validatorContent) renderLoading(validatorContent);
+
+            // Sempre carrega os dados
+            await Promise.all([
+                loadPublicData(),
+                loadUserData()
+            ]);
+
+        } catch (e) {
+            console.error("Error loading initial EarnPage data", e);
+            if(validatorsList) renderError(validatorsList, "Failed to load validator data.");
+            if(popMiningContent) renderError(popMiningContent, "Failed to load mining data.");
+            if(validatorContent) renderError(validatorContent, "Failed to load validator data.");
+            return; 
+        }
         
-        if(validatorsList) renderValidatorsList();
-        
-        if(popMiningContent) await renderPopMiningPanel();
-        
-        if(validatorContent) await renderValidatorPanel();
+        // Renderiza a aba ativa
+        await this.setActiveTab(this.activeTab);
     }
 };

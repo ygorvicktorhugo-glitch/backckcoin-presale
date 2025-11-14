@@ -33,7 +33,7 @@ function renderNotaryPageLayout() {
             Turn any file into undeniable proof of authorship — minted forever on the blockchain as a BKCN NFT.
         </p>
 
-        <div class="grid grid-cols-1 lg:col-span-3 gap-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
             <div id="notary-main-box" class="lg:col-span-2 bg-sidebar border border-border-color rounded-xl p-6 shadow-xl">
                 <h2 class="text-xl font-bold mb-5">Notarize Document</h2>
@@ -377,7 +377,7 @@ async function renderMyNotarizedDocuments() {
         for (let i = Number(balance) - 1; i >= 0; i--) {
             const tokenId = await safeContractCall(State.decentralizedNotaryContract, 'tokenOfOwnerByIndex', [State.userAddress, i]);
             
-            // ✅ CORRIGIDO: O contrato agora retorna a URI dos METADADOS
+            // ✅ CORRIGIDO: O contrato agora retorna a URI dos METADATOS
             const metadataURI = await safeContractCall(State.decentralizedNotaryContract, 'tokenURI', [tokenId]);
             
             let metadataGatewayLink = metadataURI;
@@ -687,7 +687,8 @@ function initNotaryListeners() {
                     formData.append('address', userAddress);
                     formData.append('description', description); // ✅ CORREÇÃO: Envia a descrição para a API
 
-                    const response = await fetch('/api/upload', { 
+                    // ✅ CORREÇÃO: Usando API_ENDPOINTS
+                    const response = await fetch(API_ENDPOINTS.uploadFileToIPFS, { 
                         method: 'POST',
                         body: formData,
                     });
@@ -728,12 +729,19 @@ function initNotaryListeners() {
 
                 const boosterId = State.userBoosterId || 0n; 
                 
-                // ✅ CORREÇÃO: A descrição não é mais enviada para o contrato
+                // ✅ *** INÍCIO DA CORREÇÃO CRÍTICA ***
+                // A definição da função em transactions.js espera 4 argumentos:
+                // (documentURI, description, boosterId, submitButton)
+                // Estávamos passando apenas 3, desalinhando os argumentos.
+                const description = descriptionInput.value; // Pega a descrição (mesmo que não seja usada pela tx, é esperada)
+                
                 const success = await executeNotarizeDocument(
-                    currentUploadedIPFS_URI, // Este é o hash dos METADATOS
-                    boosterId, 
-                    submitBtn 
+                    currentUploadedIPFS_URI, // Arg 1: A URI
+                    description,             // Arg 2: A Descrição
+                    boosterId,               // Arg 3: O ID do Booster
+                    submitBtn                // Arg 4: O elemento do botão
                 );
+                // ✅ *** FIM DA CORREÇÃO CRÍTICA ***
 
                 if (success) {
                     currentFileToUpload = null;

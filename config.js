@@ -1,5 +1,6 @@
 // config.js
 // FIXED: Environment-based configuration, better error handling
+// REFA V3: Hardcoded WSS key, Updated ABIs for Factory Architecture
 
 // ============================================================================
 // ENVIRONMENT DETECTION
@@ -55,24 +56,14 @@ export async function loadAddresses() {
         addresses.pool_crystal = jsonAddresses.pool_crystal;
         // --- (REFA) FIM ---
 
-        addresses.actionsManager = jsonAddresses.fortunePool;
-
-        // ##############################################################
-        // ###               💡 INÍCIO DA CORREÇÃO 💡                 ###
-        // ##############################################################
-        // O `bkcDexPoolAddress` continha o link da PancakeSwap.
-        // O `mainLPPairAddress` continha o placeholder do LP (0x...).
-        // O código antigo estava misturando os dois.
+        addresses.actionsManager = jsonAddresses.fortunePool; // actionsManager é o novo nome do FortunePool
         
         // Carrega o link da DEX (PancakeSwap)
         addresses.bkcDexPoolAddress = jsonAddresses.bkcDexPoolAddress || "#"; 
         
-        // Carrega o endereço real do par LP (quando for criado)
-        addresses.mainLPPairAddress = jsonAddresses.mainLPPairAddress || "0x...[PLEASE UPDATE...]"; 
-        // ##############################################################
-        // ###                💡 FIM DA CORREÇÃO 💡                  ###
-        // ##############################################################
-        
+        // Mantém o 'mainLPPairAddress' para o TVL
+        addresses.mainLPPairAddress = jsonAddresses.mainLPPairAddress || "0x...[PLEASE UPDATE AFTER CREATING LP]..."; 
+
         addresses.miningManager = jsonAddresses.miningManager;
         addresses.oracleWalletAddress = jsonAddresses.oracleWalletAddress;
         addresses.faucet = jsonAddresses.faucet; 
@@ -235,10 +226,10 @@ export const delegationManagerABI = [
     "function getMinValidatorStake() view returns (uint256)",
     "function payRegistrationFee()",
     "function registerValidator(address _validatorAddress)",
-    "function delegate(address _validatorAddress, uint256 _totalAmount, uint256 _lockDuration)",
-    "function unstake(uint256 _delegationIndex)",
+    "function delegate(address _validatorAddress, uint256 _totalAmount, uint256 _lockDuration, uint256 _boosterTokenId)",
+    "function unstake(uint256 _delegationIndex, uint256 _boosterTokenId)",
     "function forceUnstake(uint256 _delegationIndex, uint256 _boosterTokenId)",
-    "function claimDelegatorReward()",
+    "function claimDelegatorReward(uint256 _boosterTokenId)",
     "event Delegated(address indexed user, address indexed validator, uint256 delegationIndex, uint256 amount, uint256 feePaid)",
     "event Unstaked(address indexed user, uint256 delegationIndex, uint256 amount, uint256 feePaid)",
     "event DelegatorRewardClaimed(address indexed delegator, uint256 amount)"
@@ -269,39 +260,31 @@ export const rewardBoosterABI = [
     "function approve(address to, uint256 tokenId)",
 ];
 
-// --- (REFA) INÍCIO: ABI da Piscina Refatorada ---
-// (Não precisamos mais da ABI inteira, apenas da ABI do Molde)
-export const nftPoolABI = [
-    "function getPoolInfo() view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)",
-    "function getBuyPrice() view returns (uint256)",
-    "function getSellPrice() view returns (uint256)",
-    "function buyNextAvailableNFT(uint256 _boosterTokenId)",
+// --- (REFA) ABI Renomeada e Atualizada ---
+// ABI para o "Molde" (NFTLiquidityPool.sol)
+export const nftPoolABI = [ 
+    // "function pools(uint256 boostBips) view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)", // Removida (não é mais mapeamento)
+    "function getBuyPrice() view returns (uint256)", // Removido 'boostBips'
+    "function getSellPrice() view returns (uint256)", // Removido 'boostBips'
+    "function buyNFT(uint256 _tokenId, uint256 _boosterTokenId)", // Removido 'boostBips'
+    "function buyNextAvailableNFT(uint256 _boosterTokenId)", // Nova função
     "function sellNFT(uint256 _tokenId, uint256 _boosterTokenId)",
     "function PSTAKE_SERVICE_KEY() view returns (string)",
+    "function getPoolInfo() view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)", // Removido 'boostBips'
+    "function getAvailableTokenIds() view returns (uint256[] memory)", // Nova função
     "event NFTBought(address indexed buyer, uint256 indexed boostBips, uint256 tokenId, uint256 price)",
     "event NFTSold(address indexed seller, uint256 indexed boostBips, uint256 tokenId, uint256 payout, uint256 taxPaid)"
 ];
 
-// --- (REFA) FIM ---
-
-export const fortuneTigerABI = [
-    "function play(uint256 _amount, uint256 _boosterTokenId)",
-    "function prizePools(uint256) view returns (uint256 multiplier, uint256 chanceDenominator, uint256 balance, uint256 contributionShareBips)",
-    "function setPools(uint256[] calldata _multipliers, uint256[] calldata _denominators, uint256[] calldata _contributionBips)",
-    "function SERVICE_FEE_BIPS() view returns (uint256)",
-    "event GamePlayed(address indexed user, uint256 amountWagered, uint256 totalPrizeWon)"
-];
-
 // ABI CORRIGIDO/ATUALIZADO (FortunePoolV3/ActionsManager)
 export const actionsManagerABI = [ 
-    "function actionCounter() view returns (uint256)",
-    "function actions(uint256) view returns (uint256 id, address creator, string description, uint8 actionType, uint8 status, uint256 endTime, uint256 totalPot, uint256 creatorStake, bool isStakeReturned, address beneficiary, uint256 totalCoupons, address winner, uint256 closingBlock, uint256 winningCoupon)",
-    "function getMinCreatorStake() view returns (uint256)",
-    "function createAction(uint256 _duration, uint8 _actionType, uint256 _charityStake, string calldata _description, uint256 _boosterTokenId)",
-    "function participate(uint256 _actionId, uint256 _bkcAmount, uint256 _boosterTokenId)",
-    "function finalizeAction(uint256 _actionId)",
-    // [CORREÇÃO CRÍTICA]: Adiciona a função de leitura de saldo da piscina única (resolvendo o TypeError no TigerGame.js)
-    "function prizePoolBalance() view returns (uint256)" 
+    // Funções antigas do TigerGame removidas (ex: 'play', 'prizePools(uint256)')
+    "function participate(uint256 _amount)", // Assumindo que a nova função 'participate' só recebe o valor
+    "function oracleFeeInWei() view returns (uint256)",
+    "function gameResults(uint256) view returns (uint256[3] memory)",
+    "event GameRequested(uint256 indexed gameId, address indexed user, uint256 purchaseAmount)",
+    "event GameFulfilled(uint256 indexed gameId, address indexed user, uint256 prizeWon, uint256[3] rolls)",
+    "function prizePoolBalance() view returns (uint256)" // <-- A função chave para o TVL
 ];
 
 export const publicSaleABI = [
@@ -320,16 +303,16 @@ export const publicSaleABI = [
 ];
 
 export const decentralizedNotaryABI = [
-    "event DocumentNotarized(address indexed user, uint256 indexed tokenId, string documentURI, uint256 feePaid)",
+    "event NotarizationEvent(uint256 indexed tokenId, address indexed owner, string indexed documentMetadataHash)", // Evento atualizado
     "function balanceOf(address owner) view returns (uint256)",
     "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
     "function tokenURI(uint256 tokenId) view returns (string)",
-    "function notarizeDocument(string calldata _documentURI, string calldata _userDescription, uint256 _boosterTokenId)",
-    "function setBaseURI(string calldata newBaseURI)"
+    "function notarize(string calldata _documentMetadataURI, uint256 _boosterTokenId)", // Função atualizada
+    // "function setBaseURI(string calldata newBaseURI)" // Removido (não está no contrato)
 ];
 
 export const faucetABI = [
-    "constructor(address _tokenAddress)",
+    // ABI para contrato UUPS (sem construtor)
     "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
     "event TokensClaimed(address indexed recipient, uint256 amount)",
     "function claim()",
@@ -338,7 +321,7 @@ export const faucetABI = [
     "function renounceOwnership()",
     "function token() view returns (address)",
     "function transferOwnership(address newOwner)",
-    "function withdrawETH()",
+    "function withdrawNativeCurrency()", // Nome corrigido
     "function withdrawRemainingTokens()"
 ];
 
@@ -350,7 +333,6 @@ export const ecosystemManagerABI = [
     "function getDelegationManagerAddress() external view returns (address)",
     "function getBKCTokenAddress() external view returns (address)",
     "function getBoosterAddress() external view returns (address)",
-    // --- (REFA) INÍCIO: ABI da Fábrica ---
+    // --- (REFA) Adicionada a getter da Fábrica ---
     "function getNFTLiquidityPoolFactoryAddress() external view returns (address)"
-    // --- (REFA) FIM ---
 ];

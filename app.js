@@ -1,9 +1,8 @@
 // app.js
-// FIXED: Active polling for wallet initialization, cleanup on navigation
 
 import { inject } from 'https://esm.sh/@vercel/analytics';
 
-// Only inject Vercel Analytics if NOT on localhost
+// Inject Vercel Analytics if not on localhost
 if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     inject();
 }
@@ -41,7 +40,7 @@ import { NotaryPage } from './pages/NotaryPage.js';
  */
 function formatAddress(addr) {
     if (!addr || addr.length < 42) return '...';
-    return `${addr.slice(0, 2)}...${addr.slice(-3)}`; 
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`; // Ajuste o formato para ser mais legível
 }
 
 /**
@@ -83,9 +82,10 @@ const routes = {
 };
 
 let activePageId = 'dashboard';
-const ADMIN_WALLET = '0x03aC69873293cD6ddef7625AfC91E3Bd5434562a';
+// O endereço do Admin é usado para controle de acesso ao painel
+const ADMIN_WALLET = '0x03aC69873293cD6ddef7625AfC91E3Bd5434562a'; 
 
-// FIXED: Track active page cleanup function
+// Track active page cleanup function
 let currentPageCleanup = null;
 
 // ============================================================================
@@ -98,6 +98,11 @@ function onWalletStateChange(changes) {
 
     updateUIState();
     
+    // Recarrega dados públicos e do usuário em caso de conexão/desconexão
+    if (isConnected || wasConnected) {
+         // Chamadas de carregamento movidas para updateUIState ou renderização da página
+    }
+
     if (isConnected && isNewConnection) {
         showToast(`Connected: ${formatAddress(address)}`, "success");
     } else if (!isConnected && wasConnected) {
@@ -111,7 +116,6 @@ function onWalletStateChange(changes) {
 
 /**
  * Navigate to a specific page
- * FIXED: Added cleanup for previous page
  */
 function navigateTo(pageId) {
     const pageContainer = document.querySelector('main > div.container');
@@ -122,7 +126,7 @@ function navigateTo(pageId) {
         return;
     }
 
-    // FIXED: Call cleanup function for previous page
+    // Call cleanup function for previous page
     if (currentPageCleanup && typeof currentPageCleanup === 'function') {
         console.log(`Cleaning up previous page: ${activePageId}`);
         currentPageCleanup();
@@ -153,16 +157,19 @@ function navigateTo(pageId) {
         // Mark nav item as active
         const activeNavItem = document.querySelector(`.sidebar-link[data-target="${pageId}"]`);
         if (activeNavItem) {
+            // Remove as classes de cor e adiciona a classe 'active' para usar o estilo do CSS
+            activeNavItem.classList.remove('text-zinc-400', 'hover:text-white', 'hover:bg-zinc-700');
             activeNavItem.classList.add('active');
         }
 
         // Render page and get cleanup function if available
         if (routes[pageId]) {
             if (typeof routes[pageId].render === 'function') {
+                // Passa 'true' para forçar a atualização (se necessário)
                 routes[pageId].render(true);
             }
             
-            // FIXED: Store cleanup function if page provides one
+            // Store cleanup function if page provides one
             if (typeof routes[pageId].cleanup === 'function') {
                 currentPageCleanup = routes[pageId].cleanup;
             }
@@ -190,10 +197,8 @@ function updateUIState() {
     const connectButtonDesktop = document.getElementById('connectButtonDesktop');
     const connectButtonMobile = document.getElementById('connectButtonMobile');
     const mobileAppDisplay = document.getElementById('mobileAppDisplay');
-
-    // Tabs
-    const popMiningTab = document.getElementById('pop-mining-tab');
-    const validatorSectionTab = document.getElementById('validator-section-tab');
+    
+    // Removido popMiningTab e validatorSectionTab - não existem no HTML
 
     // Helper to check elements
     const checkElement = (el, name) => { 
@@ -226,9 +231,7 @@ function updateUIState() {
             });
         }
         
-        if (popMiningTab) popMiningTab.style.display = 'block';
-        if (validatorSectionTab) validatorSectionTab.style.display = 'block';
-        
+        // Exibe o link do Admin se o usuário for o ADMIN_WALLET
         if (adminLinkContainer) { 
             adminLinkContainer.style.display = (State.userAddress.toLowerCase() === ADMIN_WALLET.toLowerCase()) ? 'block' : 'none'; 
         }
@@ -244,9 +247,8 @@ function updateUIState() {
             mobileDisplayEl.classList.add('text-amber-400'); 
             mobileDisplayEl.classList.remove('text-white'); 
         }
-
-        if (popMiningTab) popMiningTab.style.display = 'none';
-        if (validatorSectionTab) validatorSectionTab.style.display = 'none';
+        
+        // Oculta o link do Admin e zera o saldo
         if (adminLinkContainer) adminLinkContainer.style.display = 'none';
         if (statUserBalanceEl) statUserBalanceEl.textContent = '--';
     }
@@ -317,44 +319,9 @@ function setupGlobalListeners() {
         });
     }
 
-    // 5. Global tab switching logic
-    document.body.addEventListener('click', (e) => {
-        const tabButton = e.target.closest('.tab-btn');
-        
-        if (!tabButton) return; 
-        if (tabButton.classList.contains('active')) return; 
-        
-        e.preventDefault();
-        
-        const targetId = tabButton.dataset.target;
-        const targetContent = document.getElementById(targetId);
-        
-        if (!targetContent) {
-            console.warn(`Tab content (targetId: '${targetId}') not found.`);
-            return;
-        }
-
-        const nav = tabButton.closest('nav');
-        if (nav) {
-            nav.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        }
-        
-        tabButton.classList.add('active');
-
-        const contentHost = targetContent.parentElement;
-        if (contentHost) {
-            Array.from(contentHost.children).forEach(child => {
-                if (child.classList.contains('tab-content')) {
-                    child.classList.add('hidden'); 
-                    child.classList.remove('active');
-                }
-            });
-        }
-        
-        targetContent.classList.remove('hidden');
-        targetContent.classList.add('active');
-    });
-
+    // 5. REMOVIDO: Global tab switching logic
+    // A lógica de troca de abas agora é gerenciada dentro das páginas específicas (ex: EarnPage.js)
+    
     console.log("Global listeners attached.");
 }
 
@@ -362,14 +329,11 @@ function setupGlobalListeners() {
 // APPLICATION INITIALIZATION
 // ============================================================================
 
-/**
- * FIXED: Active polling instead of fixed timeout
- */
 window.addEventListener('load', async () => {
     console.log("Window 'load' event fired. Starting initialization...");
 
     try {
-        // Load contract addresses
+        // 1. Load contract addresses
         const addressesLoaded = await loadAddresses(); 
         
         if (!addressesLoaded) {
@@ -389,13 +353,14 @@ window.addEventListener('load', async () => {
     
     setupGlobalListeners();
 
-    // 1. Initialize public provider
+    // 2. Initialize public provider (CRITICAL: Must be awaited before Dashboard renders)
     await initPublicProvider(); 
+    console.log("Public provider initialized and public data loaded.");
 
-    // 2. Subscribe to wallet changes (includes auto-reconnect logic)
+    // 3. Subscribe to wallet changes
     subscribeToWalletChanges(onWalletStateChange);
 
-    // FIXED: Active polling for wallet initialization
+    // Active polling for wallet initialization
     console.log("Waiting for wallet initialization (max 5s)...");
     const maxWaitTime = 5000;
     const startTime = Date.now();
@@ -419,10 +384,10 @@ window.addEventListener('load', async () => {
             balance: State.currentUserBalance?.toString()
         });
         
-        // CRITICAL FIX: Force UI update after initialization
+        // Force UI update after initialization
         updateUIState();
         
-        // EXTRA FIX: Force re-render of dashboard after 500ms to ensure UI catches up
+        // Force re-render of dashboard after 500ms to ensure UI catches up
         setTimeout(() => {
             console.log("🔄 Final UI sync...");
             updateUIState();
@@ -450,10 +415,10 @@ window.addEventListener('load', async () => {
         }
     }
     
-    // 3. Show welcome modal
+    // 4. Show welcome modal
     showWelcomeModal();
 
-    // 4. Navigate to default page
+    // 5. Navigate to default page
     navigateTo(activePageId); 
 
     console.log("Application initialized.");
@@ -462,6 +427,9 @@ window.addEventListener('load', async () => {
 // ============================================================================
 // GLOBAL EXPORTS
 // ============================================================================
+
+// --- ADICIONADO: Atribuição do EarnPage ao escopo global para debug ---
+window.EarnPage = EarnPage; 
 
 window.openConnectModal = openConnectModal;
 window.disconnectWallet = disconnectWallet;

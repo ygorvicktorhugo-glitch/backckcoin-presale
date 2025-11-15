@@ -1,290 +1,155 @@
 // pages/RewardsPage.js
 
+const ethers = window.ethers;
+
 import { DOMElements } from '../dom-elements.js'; 
 import { State } from '../state.js';
-// =================================================================
-// ### CORREÇÃO DE IMPORTAÇÃO (Linha 5) ###
-import { loadMyCertificatesFromAPI, calculateUserTotalRewards, getHighestBoosterBoostFromAPI, safeContractCall } from '../modules/data.js';
-// =================================================================
-import { executeWithdraw, executeUniversalClaim } from '../modules/transactions.js';
-import { formatBigNumber, renderLoading, renderNoData, renderPaginatedList, ipfsGateway } from '../utils.js';
-import { startCountdownTimers, addNftToWallet } from '../ui-feedback.js';
-import { addresses } from '../config.js';
+import { 
+    calculateUserTotalRewards, 
+    calculateClaimDetails,
+    getHighestBoosterBoostFromAPI, 
+    safeContractCall 
+} from '../modules/data.js'; 
+import { executeUniversalClaim } from '../modules/transactions.js'; 
+import { 
+    formatBigNumber, 
+    renderLoading, 
+    renderNoData, 
+    renderError 
+} from '../utils.js';
+import { addresses } from '../config.js'; 
 
 
-// [REMOVIDO]: A VESTING_CERT_BASE_URI não é mais necessária, pois buscamos a URI completa.
+// --- FUNÇÕES DE RENDERIZAÇÃO PRINCIPAL ---
 
-let rewardsCurrentPage = 1;
-const ITEMS_PER_PAGE = 6; 
+/**
+ * Renderiza o painel principal de recompensas e reivindicação.
+ */
+async function renderClaimPanel() {
+    const el = document.getElementById('rewards-details-content');
+    const rewardsPanel = document.getElementById('claimable-rewards-panel');
 
-// =================================================================
-// ### INÍCIO DA CORREÇÃO (getFullCertificateHTML) ###
-// =================================================================
-async function getFullCertificateHTML(certificate) {
-    const { tokenId } = certificate;
+    if (!el || !rewardsPanel) return;
 
-    // Buscar dados da posição de vesting
-    const position = await safeContractCall(State.rewardManagerContract, 'vestingPositions', [tokenId], {totalAmount: 0n, startTime: 0n});
-    const totalAmount = position.totalAmount;
-    const formattedAmount = formatBigNumber(totalAmount); 
-    const startTime = Number(position.startTime);
-
-    if (startTime === 0) {
-         console.warn(`Certificado #${tokenId} encontrado pela API, mas dados on-chain (vestingPositions) não encontrados.`);
-         return ''; // Não renderiza se os dados on-chain não existirem
+    if (!State.isConnected) {
+        rewardsPanel.classList.add('hidden');
+        return;
     }
-
-    const vestingDuration = Number(await safeContractCall(State.rewardManagerContract, 'VESTING_DURATION', [], 5n * 365n * 86400n));
-    const endTime = startTime + vestingDuration;
-    const now = Math.floor(Date.now() / 1000);
-    const elapsedTime = Math.max(0, now - startTime);
-    const progress = Math.min(100, Math.floor((elapsedTime * 100) / vestingDuration));
-
-    // [CORREÇÃO]: Lógica de "tier" (Bronze, Gold, etc.) baseada em valor foi REMOVIDA.
-
-    // [CORREÇÃO]: Buscar a tokenURI real do contrato
-    const tokenURI = await safeContractCall(State.rewardManagerContract, 'tokenURI', [tokenId], "");
-    if (!tokenURI) {
-        console.warn(`Could not get tokenURI for certificate ${tokenId}`);
-        return ''; // Não renderiza se a URI não for encontrada
-    }
-
-    // Definir valores padrão
-    let imageUrl = './assets/bkc_logo_3d.png'; 
-    // [CORREÇÃO]: O nome de exibição é sempre o genérico.
-    let displayName = `Vesting Certificate #${tokenId.toString()}`; 
-    // [CORREÇÃO]: A cor é sempre a padrão.
-    let tierColor = 'text-cyan-400';
+    
+    rewardsPanel.classList.remove('hidden');
+    renderLoading(el);
 
     try {
-        // [CORREÇÃO]: Usar a tokenURI real
-        const response = await fetch(tokenURI.replace("ipfs://", ipfsGateway)); 
-        if (response.ok) {
-            const metadata = await response.json();
-            imageUrl = metadata.image ? metadata.image.replace("ipfs://", ipfsGateway) : imageUrl; 
-            // [CORREÇÃO]: A linha 'displayName = metadata.name || displayName;' foi REMOVIDA
-            // para forçar o nome genérico, mas mantendo a imagem correta.
-        } else {
-            console.warn(`Metadata not found for certificate (${tokenId}): ${response.status}`);
-        }
-    } catch (e) {
-        console.warn(`Could not fetch certificate metadata for ${tokenId}:`, e);
-    }
+        // 1. Calcular Detalhes da Reivindicação (Net/Fee)
+        const claimDetails = await calculateClaimDetails();
+        const { totalRewards, netClaimAmount, feeAmount, discountPercent, basePenaltyPercent } = claimDetails;
 
-    // Calcula valores de retirada (simulação frontend)
-    let amountToOwner = 0n;
-    let penaltyAmount = 0n;
-    const initialPenaltyBips = Number(await safeContractCall(State.rewardManagerContract, 'INITIAL_PENALTY_BIPS', [], 5000n)); 
-    if (now >= endTime) {
-        amountToOwner = totalAmount;
-    } else {
-        penaltyAmount = (totalAmount * BigInt(initialPenaltyBips)) / 10000n;
-        amountToOwner = totalAmount - penaltyAmount;
-    }
-    const endDateFormatted = new Date(endTime * 1000).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' });
+        // 2. Calcular Recompensas Brutas Separadas
+        const totalGrossRewards = await calculateUserTotalRewards();
+        
+        // 3. Obter Detalhes do Desconto (para exibição)
+        const efficiencyData = await getHighestBoosterBoostFromAPI();
+        const baseFeeAmount = (totalRewards * BigInt(Math.round(basePenaltyPercent * 100))) / 10000n;
+        
+        // O valor real economizado
+        const calculatedDiscountAmount = baseFeeAmount > feeAmount 
+            ? baseFeeAmount - feeAmount 
+            : 0n;
 
-    // Renderizar o HTML com os dados
-    return `
-        <div class="bg-sidebar border border-border-color rounded-xl p-6 certificate-card flex flex-col h-full">
-            <div class="flex items-start gap-4 mb-4">
-                 <img src="${imageUrl}" alt="${displayName}" class="w-16 h-16 rounded-lg object-cover border border-zinc-700 nft-clickable-image" data-address="${addresses.rewardManager}" data-tokenid="${tokenId.toString()}">
-                <div>
-                    <h3 class="font-bold text-lg ${tierColor}">${displayName}</h3>
-                    <p class="text-2xl font-bold text-amber-400">${formattedAmount.toFixed(2)} $BKC</p>
-                    <p class="text-xs text-zinc-500">Token ID: ${tokenId.toString()}</p>
+        // Renderiza o painel de recompensas
+        el.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                <div class="bg-main border border-border-color rounded-lg p-4">
+                    <p class="text-zinc-400 text-sm">Staking Rewards (Delegator)</p>
+                    <p class="text-2xl font-bold text-purple-400">${formatBigNumber(totalGrossRewards.stakingRewards).toFixed(4)} $BKC</p>
+                </div>
+                 <div class="bg-main border border-border-color rounded-lg p-4">
+                    <p class="text-zinc-400 text-sm">Validator Rewards (Miner)</p>
+                    <p class="text-2xl font-bold text-blue-400">${formatBigNumber(totalGrossRewards.minerRewards).toFixed(4)} $BKC</p>
                 </div>
             </div>
 
-            <div class="space-y-2 text-sm mb-4 flex-grow">
-                <div class="flex justify-between">
-                    <span class="text-zinc-400">Vesting End:</span>
-                    <span>${endDateFormatted}</span>
+            <div class="space-y-3 p-4 bg-main border border-border-color rounded-lg">
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-zinc-400">Total Claimable (Gross):</span>
+                    <span class="font-bold text-amber-400">${formatBigNumber(totalRewards).toFixed(4)} $BKC</span>
                 </div>
-                <div class="flex justify-between">
-                    <span class="text-zinc-400">Penalty (Pre-Vest):</span>
-                    <span class="text-red-400">${initialPenaltyBips / 100}% (~${formatBigNumber(penaltyAmount).toFixed(2)} $BKC)</span>
+                
+                <div class="flex justify-between items-center text-sm ${discountPercent > 0 ? 'line-through text-red-500/70' : 'text-zinc-400'}">
+                    <span class="text-zinc-400">Base Fee (${basePenaltyPercent.toFixed(2)}%):</span>
+                    <span>-${formatBigNumber(baseFeeAmount).toFixed(4)} $BKC</span>
+                </div>
+                
+                ${discountPercent > 0 ? 
+                    `<div class="flex justify-between font-semibold text-green-400">
+                        <span>Booster Discount (${efficiencyData.highestBoost / 100}%):</span>
+                        <span>+${formatBigNumber(calculatedDiscountAmount).toFixed(4)} $BKC</span>
+                     </div>` : 
+                    `<div class="flex justify-between text-zinc-400">
+                        <span>Booster Discount:</span>
+                        <span>0.00%</span>
+                    </div>`
+                }
+
+                <div class="flex justify-between font-bold text-xl pt-3 border-t border-border-color/50">
+                    <span>Net Amount to Receive:</span>
+                    <span class="${netClaimAmount > 0n ? 'text-white' : 'text-zinc-500'}">${formatBigNumber(netClaimAmount).toFixed(4)} $BKC</span>
                 </div>
             </div>
 
-            <div class="mb-4">
-                <div class="w-full bg-main rounded-full h-2.5 border border-border-color">
-                    <div class="bg-green-500 h-2 rounded-full" style="width: ${progress}%"></div>
-                </div>
-                <p class="text-xs text-center text-zinc-400 mt-1">Vesting Progress: ${progress}%</p>
-            </div>
+            <p class="text-xs text-zinc-500 mt-4">Fees are sent to the Delegator Pool to benefit all pStake holders.</p>
 
-            <button class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-md transition-colors withdraw-btn mt-auto" data-tokenid="${tokenId.toString()}">
-                <i class="fa-solid fa-money-bill-transfer mr-2"></i> Withdraw
+            <button id="claimAllRewardsBtn" class="w-full bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-4 rounded-md text-lg transition-opacity mt-5 ${totalRewards === 0n ? 'btn-disabled' : ''}" ${totalRewards === 0n ? 'disabled' : ''}>
+                 <i class="fa-solid fa-gift mr-2"></i> Claim All Rewards Now
             </button>
-            <p class="text-xs text-center text-zinc-400 mt-2">You will receive ~${formatBigNumber(amountToOwner).toFixed(4)} $BKC</p>
-        </div>
-    `;
-}
-// =================================================================
-// ### FIM DA CORREÇÃO ###
-// =================================================================
+        `;
 
+        // Adicionar listener de Claim
+        document.getElementById('claimAllRewardsBtn')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const { stakingRewards, minerRewards } = totalGrossRewards;
+            const success = await executeUniversalClaim(stakingRewards, minerRewards, btn);
+            if (success) {
+                // Força o re-render após a reivindicação
+                await RewardsPage.render(true);
+            }
+        });
 
-// --- Funções de Renderização da Página (Mantidas) ---
-async function renderPaginatedCertificates(page) {
-    const containerEl = document.getElementById('certificates-list-container'); 
-    if (!containerEl) return;
-
-    if (!State.isConnected || !State.myCertificates || State.myCertificates.length === 0) { 
-        renderNoData(containerEl, "You don't have any Vesting Certificates yet."); 
-        return;
+    } catch (error) {
+        console.error("Error rendering rewards panel:", error);
+        renderError(el, "Failed to load rewards data.");
     }
-
-    renderLoading(containerEl); 
-
-    renderPaginatedList( 
-        State.myCertificates, 
-        containerEl,
-        (cert) => `<div class="loading-placeholder h-64 bg-sidebar border border-border-color rounded-xl flex items-center justify-center"><div class="loader inline-block"></div></div>`, // Placeholder
-        ITEMS_PER_PAGE,
-        page,
-        (newPage) => {
-            rewardsCurrentPage = newPage;
-            renderPaginatedCertificates(rewardsCurrentPage);
-        },
-        'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' // Grid classes
-    );
-
-    // Carrega o HTML completo para os itens da página atual
-    const start = (page - 1) * ITEMS_PER_PAGE;
-    const end = start + ITEMS_PER_PAGE;
-    const pageItems = State.myCertificates.slice(start, end); 
-    const htmlPromises = pageItems.map(getFullCertificateHTML);
-    const itemsHtml = await Promise.all(htmlPromises);
-
-    // Substitui os placeholders pelo HTML real
-    const placeholders = containerEl.querySelectorAll('.loading-placeholder');
-    placeholders.forEach((ph, index) => {
-        if (itemsHtml[index]) {
-            ph.outerHTML = itemsHtml[index];
-        } else {
-            ph.remove(); 
-        }
-    });
-}
-
-
-async function renderClaimableRewards() {
-    const panelEl = document.getElementById('claimable-rewards-panel'); 
-    const contentEl = document.getElementById('rewards-details-content'); 
-    const loaderEl = document.getElementById('rewards-loader'); 
-    if (!panelEl || !contentEl || !loaderEl) return;
-
-    if (!State.isConnected) { 
-        panelEl.classList.add('hidden');
-        return;
-    }
-
-    panelEl.classList.remove('hidden');
-    loaderEl.classList.remove('hidden');
-    contentEl.innerHTML = '';
-
-    // 1. Calcular Recompensas Brutas
-    const { stakingRewards, minerRewards, totalRewards } = await calculateUserTotalRewards(); 
-
-    // 2. Obter Eficiência Atual do Booster
-    const efficiencyData = await getHighestBoosterBoostFromAPI(); 
-    const currentEfficiency = efficiencyData.efficiency; // Ex: 50, 70, 100
-
-    // 3. Calcular Valores de Reivindicação
-    const currentClaimBips = 5000 + efficiencyData.highestBoost;
-    const claimedAmount = (totalRewards * BigInt(currentClaimBips)) / 10000n;
-    const potentialAmount = totalRewards; // 100% efficiency
-    const unclaimedAmount = potentialAmount - claimedAmount;
-
-    loaderEl.classList.add('hidden');
-    contentEl.innerHTML = `
-        <div class="space-y-3 mb-4">
-            <div class="flex justify-between items-center text-lg"><span class="text-zinc-400">Total Rewards Owed:</span><span class="font-semibold text-amber-400">${formatBigNumber(potentialAmount).toFixed(4)} $BKC</span></div>
-            <div class="flex justify-between items-center text-lg py-1 px-2 bg-zinc-700/50 rounded"><span class="text-zinc-200">Current Claim Rate:</span><span class="font-bold text-green-400">${currentEfficiency}%</span></div>
-            <div class="flex justify-between items-center text-lg"><span class="text-zinc-400">Total Claimable NOW:</span><span class="font-bold text-amber-400">${formatBigNumber(claimedAmount).toFixed(4)} $BKC</span></div>
-            <div class="border-t border-border-color my-2"></div>
-            <div class="flex justify-between items-center text-sm font-bold bg-red-800/20 p-2 rounded"><span class="text-red-400">Lost (or deferred) Rewards:</span><span class="text-red-400">${formatBigNumber(unclaimedAmount).toFixed(4)} $BKC</span></div>
-            <p class="text-xs text-zinc-400 pt-1">Acquire a Booster NFT to claim up to 100% of your lost rewards.</p>
-        </div>
-        <button id="claimAllRewardsBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-md transition-colors ${totalRewards === 0n ? 'btn-disabled' : ''}" ${totalRewards === 0n ? 'disabled' : ''}>
-            <i class="fa-solid fa-gift mr-2"></i> Claim All Rewards (${formatBigNumber(claimedAmount).toFixed(4)} $BKC)
-        </button>
-    `; 
 }
 
 
 export const RewardsPage = {
     hasInitializedListeners: false, 
 
-    async render() {
-        // Carrega dados necessários antes de renderizar
-        await getHighestBoosterBoostFromAPI(); 
+    async render(isUpdate = false) {
+        const contentWrapper = document.getElementById('rewards');
+        if (!contentWrapper) return;
         
-        // =================================================================
-        // ### ALTERAÇÃO DE CHAMADA (Linha 287) ###
-        await loadMyCertificatesFromAPI(); // Chamando a nova função
-        // =================================================================
-
-        // Renderiza as seções da página
-        await renderClaimableRewards();
-        await renderPaginatedCertificates(rewardsCurrentPage);
-
-        // Inicializa listeners na primeira renderização
-        if (!this.hasInitializedListeners) {
-            this.initListeners();
-            this.hasInitializedListeners = true;
+        // Remove ou ajusta o bloco de Certificados no HTML
+        const certsSection = document.getElementById('certificates-list-container');
+        const certsTitle = contentWrapper.querySelector('h2:last-of-type'); // Assuming the h2 is the last one
+        
+        if (certsSection && certsTitle && certsTitle.textContent.includes('Vesting Certificates')) {
+            // Remove o conteúdo e mostra a mensagem de descontinuação
+            certsSection.innerHTML = `
+                <div class="p-8 bg-sidebar/50 border border-red-500/50 rounded-xl text-center">
+                    <i class="fa-solid fa-file-excel text-4xl text-red-400 mb-3"></i>
+                    <h3 class="text-xl font-bold">Vesting Certificates Descontinuados</h3>
+                    <p class="text-zinc-400 mt-2">O sistema de Certificados de Vesting foi removido do protocolo.</p>
+                </div>
+            `;
         }
+
+        if (!State.isConnected) {
+            const el = document.getElementById('rewards-details-content');
+            if (el) renderNoData(el, "Connect your wallet to view your rewards and status.");
+            return;
+        }
+
+        await renderClaimPanel();
     },
-
-    initListeners() {
-        const container = DOMElements.rewards; 
-        if (!container) {
-             console.error("Rewards page container not found for listeners.");
-             return;
-        }
-         console.log("Initializing RewardsPage listeners..."); 
-
-        // Listener único no container principal para delegação de eventos
-        container.addEventListener('click', async (e) => {
-            const withdrawBtn = e.target.closest('.withdraw-btn'); 
-            const nftImage = e.target.closest('.nft-clickable-image');
-            const claimAllBtn = e.target.closest('#claimAllRewardsBtn'); 
-
-            if (withdrawBtn && !withdrawBtn.disabled) {
-                const tokenId = withdrawBtn.dataset.tokenid; 
-                console.log(`Withdraw button clicked for token ID: ${tokenId}`);
-                const success = await executeWithdraw(tokenId, withdrawBtn); 
-                if (success) {
-                    rewardsCurrentPage = 1; 
-                    // =================================================================
-                    // ### ALTERAÇÃO DE CHAMADA (Linha 328) ###
-                    State.myCertificates = []; // Limpa o cache para forçar recarga da API
-                    await loadMyCertificatesFromAPI(); // Recarrega certificados da API
-                    // =================================================================
-                    await renderClaimableRewards(); 
-                    await renderPaginatedCertificates(rewardsCurrentPage); 
-                }
-            } else if (nftImage) {
-                 e.preventDefault();
-                 const address = nftImage.dataset.address;
-                 const tokenId = nftImage.dataset.tokenid; 
-                 if (address && tokenId && address.toLowerCase() === addresses.rewardManager.toLowerCase()) { 
-                    addNftToWallet(address, tokenId); 
-                 }
-            } else if (claimAllBtn && !claimAllBtn.disabled) {
-                 console.log("Claim All button clicked via event listener");
-                 try {
-                     const { stakingRewards, minerRewards } = await calculateUserTotalRewards(); 
-                     const success = await executeUniversalClaim(stakingRewards, minerRewards, claimAllBtn); 
-                     if (success) {
-                         await renderClaimableRewards();
-                     }
-                 } catch (error) {
-                      console.error("Error during claim all process:", error);
-                 }
-            }
-        });
-        console.log("RewardsPage listeners attached.");
-    }
 };

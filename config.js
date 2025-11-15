@@ -1,6 +1,5 @@
 // config.js
-// FIXED: Environment-based configuration, better error handling
-// REFA V3: Hardcoded WSS key, Updated ABIs for Factory Architecture
+// FINAL: Configuração da DApp para o Ecossistema Backchain
 
 // ============================================================================
 // ENVIRONMENT DETECTION
@@ -16,7 +15,7 @@ console.log(`Environment: ${isDevelopment ? 'DEVELOPMENT' : 'PRODUCTION'}`);
 export const addresses = {};
 
 /**
- * FIXED: Better error handling and validation
+ * Carrega os endereços do JSON de deploy e mapeia para o objeto addresses.
  */
 export async function loadAddresses() {
     try {
@@ -28,25 +27,24 @@ export async function loadAddresses() {
         
         const jsonAddresses = await response.json();
 
-        // Validate required addresses
-        const requiredAddresses = ['bkcToken', 'delegationManager', 'rewardManager'];
+        // Valida endereços essenciais
+        // O sistema agora se baseia em bkcToken, delegationManager e ecosystemManager
+        const requiredAddresses = ['bkcToken', 'delegationManager', 'ecosystemManager'];
         const missingAddresses = requiredAddresses.filter(key => !jsonAddresses[key]);
         
         if (missingAddresses.length > 0) {
             throw new Error(`Missing required addresses: ${missingAddresses.join(', ')}`);
         }
 
-        // Map addresses from JSON
+        // Mapeia endereços
         addresses.bkcToken = jsonAddresses.bkcToken;
         addresses.delegationManager = jsonAddresses.delegationManager;
-        addresses.rewardManager = jsonAddresses.rewardManager;
         addresses.rewardBoosterNFT = jsonAddresses.rewardBoosterNFT;
         addresses.publicSale = jsonAddresses.publicSale;
         addresses.decentralizedNotary = jsonAddresses.decentralizedNotary;
         addresses.ecosystemManager = jsonAddresses.ecosystemManager; 
         
-        // --- (REFA) INÍCIO: Lógica da Fábrica para Piscinas ---
-        // Carrega os endereços das piscinas individuais (se existirem)
+        // Mapeamento de Piscinas AMM
         addresses.pool_diamond = jsonAddresses.pool_diamond;
         addresses.pool_platinum = jsonAddresses.pool_platinum;
         addresses.pool_gold = jsonAddresses.pool_gold;
@@ -54,19 +52,17 @@ export async function loadAddresses() {
         addresses.pool_bronze = jsonAddresses.pool_bronze;
         addresses.pool_iron = jsonAddresses.pool_iron;
         addresses.pool_crystal = jsonAddresses.pool_crystal;
-        // --- (REFA) FIM ---
 
-        addresses.actionsManager = jsonAddresses.fortunePool; // actionsManager é o novo nome do FortunePool
+        // FortunePool renomeado para actionsManager no frontend
+        addresses.actionsManager = jsonAddresses.fortunePool; 
         
-        // Carrega o link da DEX (PancakeSwap)
+        // Endereços auxiliares
         addresses.bkcDexPoolAddress = jsonAddresses.bkcDexPoolAddress || "#"; 
-        
-        // Mantém o 'mainLPPairAddress' para o TVL
         addresses.mainLPPairAddress = jsonAddresses.mainLPPairAddress || "0x...[PLEASE UPDATE AFTER CREATING LP]..."; 
-
         addresses.miningManager = jsonAddresses.miningManager;
         addresses.oracleWalletAddress = jsonAddresses.oracleWalletAddress;
         addresses.faucet = jsonAddresses.faucet; 
+        // REMOVIDO: addresses.rewardManager
 
         console.log("✅ Contract addresses loaded:", addresses);
         return true;
@@ -99,74 +95,14 @@ export async function loadAddresses() {
 }
 
 // ============================================================================
-// NETWORK CONFIGURATION (AJUSTADO PARA SEGURANÇA MÁXIMA)
+// NETWORK CONFIGURATION (CHAVE WSS HARDCODED)
 // ============================================================================
 
-// ✅ CORREÇÃO: Função para acessar variáveis de ambiente de forma segura
-function getEnv(key) {
-    // Para Vercel/Next.js/React
-    if (typeof process !== 'undefined' && process.env && process.env[key]) {
-        return process.env[key];
-    }
-    // Para Vite
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-        return import.meta.env[key];
-    }
-    return null; 
-}
+// Chave WSS hardcoded diretamente
+const WSS_KEY = "wJwRXHRaYO3THysyZWvHL";
 
-// 1. Tenta carregar a URL WSS COMPLETA da variável de ambiente (para Vercel/Produção)
-let ENV_WSS_URL = getEnv('NEXT_PUBLIC_ALCHEMY_ENDPOINT_WSS');
-
-// ##############################################################
-// ###           💡 INÍCIO DA CORREÇÃO DEFINITIVA 💡           ###
-// ##############################################################
-// Se a variável de ambiente NÃO for encontrada (em dev OU prod estático)...
-if (!ENV_WSS_URL) {
-    console.warn("⚠️ Variável de ambiente não encontrada. Usando fallback hardcoded.");
-    
-    // Use a chave que você confirmou que funciona, no formato WSS
-    ENV_WSS_URL = "wss://eth-sepolia.g.alchemy.com/v2/chSfmmKaeEl_C6O2y17WB";
-}
-// ##############################################################
-// ###            💡 FIM DA CORREÇÃO DEFINITIVA 💡            ###
-// ##############################################################
-
-
-// 🛡️ NOVO BLOCO DE VALIDAÇÃO DE SEGURANÇA
-// (Agora só falha se a variável não for encontrada E não estivermos em 'isDevelopment')
-if (!ENV_WSS_URL) {
-    const errorKey = "NEXT_PUBLIC_ALCHEMY_ENDPOINT_WSS";
-    const errorMessage = `❌ ERRO CRÍTICO: ${errorKey} não está definida. Verifique seu .env local ou as variáveis de ambiente do Vercel/Produção.`;
-    console.error(errorMessage);
-    
-    // Mostra erro em tela cheia se a variável crítica estiver faltando
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); color: white; display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;';
-    errorDiv.innerHTML = `
-        <div style="max-width: 600px; background: #1e1e1e; border: 2px solid #ef4444; border-radius: 8px; padding: 30px;">
-            <h2 style="color: #ef4444; margin-bottom: 15px; font-size: 24px;">⚠️ Erro de Configuração de Rede</h2>
-            <p style="margin-bottom: 10px;">Variável de ambiente crítica faltando.</p>
-            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px;">A dApp não pode se conectar à blockchain sem a chave <code style="background: #333; padding: 2px 6px; border-radius: 3px;">${errorKey}</code>.</p>
-            <details style="margin-bottom: 20px; background: #2a2a2a; padding: 10px; border-radius: 4px;">
-                <summary style="cursor: pointer; font-weight: bold; color: #fbbf24;">Detalhes</summary>
-                <pre style="margin-top: 10px; color: #ef4444; font-size: 12px; overflow-x: auto;">${errorMessage}</pre>
-            </details>
-            <button onclick="location.reload()" style="background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">
-                🔄 Recarregar
-            </button>
-        </div>
-    `;
-    document.body.innerHTML = '';
-    document.body.appendChild(errorDiv);
-    
-    // Lança um erro para interromper a execução do script
-    throw new Error(errorMessage);
-}
-// ------------------------------------------
-
-// 2. Define a URL usando a variável de ambiente carregada
-export const sepoliaWssUrl = ENV_WSS_URL; 
+// 1. Define a URL usando a chave hardcoded
+export const sepoliaWssUrl = `wss://eth-sepolia.g.alchemy.com/v2/${WSS_KEY}`; 
 
 // Converte WSS para HTTP/HTTPS para RPC tradicional
 export const sepoliaRpcUrl = sepoliaWssUrl.replace('wss://', 'https://');
@@ -195,7 +131,7 @@ export const boosterTiers = [
 ];
 
 // ============================================================================
-// CONTRACT ABIs (Mantidos)
+// CONTRACT ABIs (Ajustados)
 // ============================================================================
 
 export const bkcTokenABI = [
@@ -218,6 +154,7 @@ export const delegationManagerABI = [
     "function userTotalPStake(address) view returns (uint256)",
     "function getDelegationsOf(address _user) view returns (tuple(uint256 amount, uint256 unlockTime, uint256 lockDuration, address validator)[])",
     "function pendingDelegatorRewards(address _user) public view returns (uint256)",
+    "function pendingValidatorRewards(address _validator) public view returns (uint256)", // Adicionado para consistência
     "function VALIDATOR_LOCK_DURATION() view returns (uint256)",
     "function hasPaidRegistrationFee(address) view returns (bool)",
     "function MIN_LOCK_DURATION() view returns (uint256)",
@@ -234,23 +171,6 @@ export const delegationManagerABI = [
     "event DelegatorRewardClaimed(address indexed delegator, uint256 amount)"
 ];
 
-export const rewardManagerABI = [
-    "function balanceOf(address owner) view returns (uint256)",
-    "function vestingPositions(uint256) view returns (uint256 totalAmount, uint256 startTime)",
-    "function VESTING_DURATION() view returns (uint256)",
-    "function tokenURI(uint256 _tokenId) view returns (string)",
-    "function minerRewardsOwed(address) view returns (uint256)", 
-    "function INITIAL_PENALTY_BIPS() view returns (uint256)",
-    "function withdraw(uint256 _tokenId, uint256 _boosterTokenId)",
-    "function claimMinerRewards()",
-    "function createVestingCertificate(address _recipient, uint256 _grossAmount)",
-    "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
-    "function getMintRate(uint256 _purchaseAmount) view returns (uint256)", 
-    "event VestingCertificateCreated(uint256 indexed tokenId, address indexed recipient, uint256 netAmount)",
-    "event CertificateWithdrawn(uint256 indexed tokenId, address indexed owner, uint256 amountToOwner, uint256 penaltyAmount)",
-    "event MinerRewardClaimed(address indexed miner, uint256 amount)"
-];
-
 export const rewardBoosterABI = [
     "function balanceOf(address owner) view returns (uint256)",
     "function boostBips(uint256) view returns (uint256)",
@@ -259,31 +179,28 @@ export const rewardBoosterABI = [
     "function approve(address to, uint256 tokenId)",
 ];
 
-// --- (REFA) ABI Renomeada e Atualizada ---
-// ABI para o "Molde" (NFTLiquidityPool.sol)
 export const nftPoolABI = [ 
-    // "function pools(uint256 boostBips) view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)", // Removida (não é mais mapeamento)
-    "function getBuyPrice() view returns (uint256)", // Removido 'boostBips'
-    "function getSellPrice() view returns (uint256)", // Removido 'boostBips'
-    "function buyNFT(uint256 _tokenId, uint256 _boosterTokenId)", // Removido 'boostBips'
-    "function buyNextAvailableNFT(uint256 _boosterTokenId)", // Nova função
+    "function getBuyPrice() view returns (uint256)",
+    "function getSellPrice() view returns (uint256)",
+    "function buyNFT(uint256 _tokenId, uint256 _boosterTokenId)",
+    "function buyNextAvailableNFT(uint256 _boosterTokenId)",
     "function sellNFT(uint256 _tokenId, uint256 _boosterTokenId)",
     "function PSTAKE_SERVICE_KEY() view returns (string)",
-    "function getPoolInfo() view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)", // Removido 'boostBips'
-    "function getAvailableTokenIds() view returns (uint256[] memory)", // Nova função
+    "function getPoolInfo() view returns (uint256 tokenBalance, uint256 nftCount, uint256 k, bool isInitialized)",
+    "function getAvailableTokenIds() view returns (uint256[] memory)",
     "event NFTBought(address indexed buyer, uint256 indexed boostBips, uint256 tokenId, uint256 price)",
     "event NFTSold(address indexed seller, uint256 indexed boostBips, uint256 tokenId, uint256 payout, uint256 taxPaid)"
 ];
 
-// ABI CORRIGIDO/ATUALIZADO (FortunePoolV3/ActionsManager)
+// ABI para o FortunePool (ActionsManager)
 export const actionsManagerABI = [ 
-    // Funções antigas do TigerGame removidas (ex: 'play', 'prizePools(uint256)')
-    "function participate(uint256 _amount)", // Assumindo que a nova função 'participate' só recebe o valor
+    "function participate(uint256 _amount)", 
     "function oracleFeeInWei() view returns (uint256)",
     "function gameResults(uint256) view returns (uint256[3] memory)",
     "event GameRequested(uint256 indexed gameId, address indexed user, uint256 purchaseAmount)",
-    "event GameFulfilled(uint256 indexed gameId, address indexed user, uint2D prizeWon, uint256[3] rolls)",
-    "function prizePoolBalance() view returns (uint256)" // <-- A função chave para o TVL
+    "event GameFulfilled(uint256 indexed gameId, address indexed user, uint256 prizeWon, uint256[3] rolls)",
+    "function prizePoolBalance() view returns (uint256)",
+    "function setOracleAddress(address _oracle)" 
 ];
 
 export const publicSaleABI = [
@@ -302,16 +219,14 @@ export const publicSaleABI = [
 ];
 
 export const decentralizedNotaryABI = [
-    "event NotarizationEvent(uint256 indexed tokenId, address indexed owner, string indexed documentMetadataHash)", // Evento atualizado
+    "event NotarizationEvent(uint256 indexed tokenId, address indexed owner, string indexed documentMetadataHash)",
     "function balanceOf(address owner) view returns (uint256)",
     "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
     "function tokenURI(uint256 tokenId) view returns (string)",
-    "function notarize(string calldata _documentMetadataURI, uint256 _boosterTokenId)", // Função atualizada
-    // "function setBaseURI(string calldata newBaseURI)" // Removido (não está no contrato)
+    "function notarize(string calldata _documentMetadataURI, uint256 _boosterTokenId)",
 ];
 
 export const faucetABI = [
-    // ABI para contrato UUPS (sem construtor)
     "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
     "event TokensClaimed(address indexed recipient, uint256 amount)",
     "function claim()",
@@ -320,7 +235,7 @@ export const faucetABI = [
     "function renounceOwnership()",
     "function token() view returns (address)",
     "function transferOwnership(address newOwner)",
-    "function withdrawNativeCurrency()", // Nome corrigido
+    "function withdrawNativeCurrency()",
     "function withdrawRemainingTokens()"
 ];
 
@@ -332,6 +247,5 @@ export const ecosystemManagerABI = [
     "function getDelegationManagerAddress() external view returns (address)",
     "function getBKCTokenAddress() external view returns (address)",
     "function getBoosterAddress() external view returns (address)",
-    // --- (REFA) Adicionada a getter da Fábrica ---
     "function getNFTLiquidityPoolFactoryAddress() external view returns (address)"
 ];

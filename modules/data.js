@@ -1,6 +1,7 @@
 // data.js
 // ARQUIVO ATUALIZADO: Substituído API_BASE_URL por API_ENDPOINTS e ajustado CORS.
 // ARQUIVO CORRIGIDO: Corrigidos bugs críticos em loadPublicData e calculateUserTotalRewards.
+// CORREÇÃO: Removido 'loadMyCertificatesFromAPI' e referências a 'rewardManager'.
 
 const ethers = window.ethers;
 
@@ -18,7 +19,7 @@ export const API_ENDPOINTS = {
     // 1. APIs do Projeto Principal: backchain-backand (NOVAS URLs Cloud Run)
     getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
-    getCertificates: 'https://getcertificates-4wvdcuoouq-uc.a.run.app',
+    // REMOVIDO: getCertificates: 'https://getcertificates-4wvdcuoouq-uc.a.run.app',
     getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
 
     // 2. API Pinata/Upload (Função 'uploadFileToIPFS' - NOVA URL Cloud Run)
@@ -312,53 +313,7 @@ export async function getHighestBoosterBoostFromAPI() {
     }
 }
 
-export async function loadMyCertificatesFromAPI() {
-    if (State.myCertificates && State.myCertificates.length > 0) {
-        return State.myCertificates;
-    }
-    
-    State.myCertificates = []; 
-
-    if (!State.signer || !State.rewardManagerContract || !State.userAddress) return [];
-
-    try {
-        console.log("Loading user certificates from API...");
-        const userAddress = State.userAddress;
-
-        // !!! CORREÇÃO: Usa o endpoint COMPLETO !!!
-        const response = await fetch(`${API_ENDPOINTS.getCertificates}/${userAddress}`);
-        
-        if (!response.ok) {
-            throw new Error(`API (getCertificates) Error: ${response.statusText} (${response.status})`);
-        }
-        
-        const ownedCertsAPI = await response.json(); 
-        
-        if (ownedCertsAPI.length === 0) {
-            console.log("No certificates found via API.");
-            State.myCertificates = [];
-            return [];
-        }
-
-        const certificateDetails = ownedCertsAPI.map(certData => {
-            return {
-                tokenId: BigInt(certData.tokenId),
-                txHash: null 
-            };
-        });
-
-        certificateDetails.sort((a, b) => (b.tokenId > a.tokenId ? 1 : -1));
-
-        State.myCertificates = certificateDetails;
-        console.log(`Found ${certificateDetails.length} certificates for user via API.`);
-        return certificateDetails;
-
-    } catch (e) {
-        console.error("CRITICAL Error loading My Certificates from API:", e);
-        State.myCertificates = [];
-        return []; 
-    }
-}
+// REMOVIDO: export async function loadMyCertificatesFromAPI() {...}
 
 export async function loadMyBoostersFromAPI() {
     if (State.myBoosters && State.myBoosters.length > 0) {

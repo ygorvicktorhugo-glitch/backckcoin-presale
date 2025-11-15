@@ -8,7 +8,7 @@ import path from "path";
 // ###               CONFIGURAÇÃO DE FUNDOS DO FAUCET                 ###
 // ######################################################################
 // Quantidade total de BKC a ser enviada ao Faucet.
-// Certifique-se de que o deployer (sua carteira) tem saldo suficiente.
+// Certifique-se de que o deployer (sua carteira) tem saldo suficiente (do TGE).
 const FAUCET_TOTAL_SUPPLY_AMOUNT = ethers.parseEther("1000000"); // Exemplo: 1,000,000 BKC
 // ######################################################################
 
@@ -31,7 +31,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     throw new Error("❌ Erro: 'deployment-addresses.json' não encontrado. Execute o '1_deploy_core.ts' primeiro.");
   }
   
-  // Lê o conteúdo do JSON para modificação
   const addresses: { [key: string]: string } = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
 
   const faucetAddress = addresses.faucet;
@@ -54,7 +53,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     // 4. Enviar Fundos para o Faucet (Transferência do TGE)
     console.log(`\n4. Retirando do saldo TGE do deployer e transferindo ${ethers.formatEther(FAUCET_TOTAL_SUPPLY_AMOUNT)} BKC para o Faucet (${faucetAddress})...`);
     
-    // ESTA É A TRANSFERÊNCIA PADRÃO DE ERC20, USANDO O SALDO EXISTENTE DO DEPLOYER.
     const tx = await bkcToken.transfer(faucetAddress, FAUCET_TOTAL_SUPPLY_AMOUNT);
     await tx.wait();
     
@@ -71,23 +69,14 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         console.error("❌ AVISO: O saldo final do Faucet é menor que o esperado.");
     }
     
-    // =================================================================
-    // ### NOVO BLOCO: SALVANDO O SALDO INICIAL NO JSON ###
-    // =================================================================
-    
     // Salva o valor exato (em Wei) do suprimento inicial injetado
     addresses.faucetInitialSupplyWei = FAUCET_TOTAL_SUPPLY_AMOUNT.toString(); 
-    
-    // Opcional: Salva o saldo final atual (pode ser útil para scripts de auditoria)
-    addresses.faucetCurrentBalanceWei = finalFaucetBalance.toString();
     
     fs.writeFileSync(
       addressesFilePath,
       JSON.stringify(addresses, null, 2)
     );
     console.log(`   ✅ Informação de saldo inicial do Faucet salva em 'deployment-addresses.json'.`);
-    
-    // =================================================================
     
     console.log("O Faucet está pronto para distribuir tokens para testes.");
 

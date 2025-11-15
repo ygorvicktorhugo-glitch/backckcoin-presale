@@ -2,21 +2,16 @@
 // Gerencia a página principal (Dashboard), exibindo estatísticas
 // da rede, TVL, e um resumo da posição do usuário (pStake, recompensas, etc.).
 
-// --- IMPORTAÇÕES E CONFIGURAÇÕES ---
-// Importa bibliotecas, estado global, elementos do DOM,
-// funções de dados, transações, utils e configuração.
 const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { DOMElements } from '../dom-elements.js';
 import {
     loadUserData, 
-    loadMyCertificatesFromAPI, 
     calculateUserTotalRewards,
     getHighestBoosterBoostFromAPI, 
     loadPublicData, 
     safeContractCall, 
-    loadMyBoostersFromAPI, 
     calculateClaimDetails,
     API_ENDPOINTS 
 } from '../modules/data.js';
@@ -29,19 +24,15 @@ import { startCountdownTimers, openModal, showToast, addNftToWallet, closeModal 
 import { addresses, boosterTiers } from '../config.js';
 
 // --- ESTADO LOCAL E CONSTANTES ---
-// Variáveis de estado para paginação e URLs.
 let activityCurrentPage = 1;
 const EXPLORER_BASE_URL = "https://sepolia.etherscan.io/tx/";
 
-// Estado para carregamento 'lazy' das abas (Delegations, Certificates)
+// Estado para carregamento 'lazy' das abas (Delegations apenas)
 let tabsState = {
     delegationsLoaded: false,
-    certificatesLoaded: false,
 };
 
 // --- ANIMAÇÃO DE RECOMPENSAS ---
-// Funções para animar o contador de recompensas do usuário
-// de forma suave (de X para Y) em vez de uma mudança abrupta.
 let animationFrameId = null;
 let targetRewardValue = 0n;
 let displayedRewardValue = 0n;
@@ -55,8 +46,6 @@ function animateClaimableRewards() {
         return;
     }
     const now = performance.now();
-    const deltaTime = lastUpdateTime ? (now - lastUpdateTime) / 1000 : 0;
-    lastUpdateTime = now;
     const difference = targetRewardValue - displayedRewardValue;
     if (difference > -10n && difference < 10n && displayedRewardValue !== targetRewardValue) {
         displayedRewardValue = targetRewardValue;
@@ -80,13 +69,10 @@ function startRewardAnimation(initialTargetValue) {
 }
 
 // --- LÓGICA DE MODAIS ---
-// Funções para abrir e gerenciar modais interativos,
-// como o modal de delegação.
 async function openDelegateModal(validatorAddress) {
     if (!State.isConnected) return showToast("Please connect your wallet first.", "error");
     if (!State.ecosystemManagerContract) return showToast("EcosystemManager not loaded.", "error");
 
-    const delegationFeeBips = 0n; 
     const balanceNum = formatBigNumber(State.currentUserBalance || 0n);
     const balanceLocaleString = balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const feePercentage = "0.00"; 
@@ -211,9 +197,6 @@ async function openDelegateModal(validatorAddress) {
 }
 
 // --- SETUP DE LISTENERS ---
-// Funções que anexam os event listeners na página.
-// Usam delegação de eventos para eficiência.
-
 function setupActivityTabListeners() {
     const tabsContainer = document.getElementById('user-activity-tabs');
     if (!tabsContainer || tabsContainer._listenersAttached) return;
@@ -227,12 +210,13 @@ function setupActivityTabListeners() {
         button.classList.add('active');
 
         document.querySelectorAll('#user-activity-content .tab-content').forEach(content => {
-            content.classList.remove('active'); content.classList.add('hidden');
+            content.classList.remove('hidden'); 
+            content.classList.remove('active');
         });
 
         const targetContent = document.getElementById(targetId);
         if (targetContent) {
-            targetContent.classList.remove('hidden');
+            targetContent.classList.remove('hidden'); 
             void targetContent.offsetWidth; 
             targetContent.classList.add('active');
         } else { return; }
@@ -240,14 +224,20 @@ function setupActivityTabListeners() {
         // Carrega o conteúdo da aba sob demanda
         try {
             if (targetId === 'tab-delegations' && !tabsState.delegationsLoaded) {
-                await renderMyDelegations(); tabsState.delegationsLoaded = true;
-            } else if (targetId === 'tab-certificates' && !tabsState.certificatesLoaded) {
-                await renderMyCertificatesDashboard(); tabsState.certificatesLoaded = true;
-            }
+                await renderMyDelegations(); 
+                tabsState.delegationsLoaded = true;
+            } 
         } catch (error) {
             console.error(`Error loading tab content ${targetId}:`, error);
             if(targetContent) renderError(targetContent, `Failed to load ${targetId.split('-')[1]}.`);
         }
+        
+        // Esconde as outras abas APÓS o carregamento (para evitar tela branca)
+        document.querySelectorAll('#user-activity-content .tab-content').forEach(content => {
+            if (content.id !== targetId) {
+                content.classList.add('hidden');
+            }
+        });
     });
     tabsContainer._listenersAttached = true;
 }
@@ -275,16 +265,13 @@ function setupLazyLinkListeners() {
         showToast("Finding transaction hash... This may take a moment.", "info");
 
         // A lógica de busca de hash (findTxHashForItem) foi removida
-        // das importações, então simulamos uma falha.
         const txHash = null; 
 
         if (txHash) {
-            // (Este bloco não será executado com txHash = null)
             showToast("Transaction found! Opening explorer.", "success");
             window.open(`${EXPLORER_BASE_URL}${txHash}`, '_blank');
             const newLink = document.createElement('a');
             newLink.href = `${EXPLORER_BASE_URL}${txHash}`;
-            // ... (criação do link)
             linkButton.parentNode.replaceChild(newLink, linkButton);
 
         } else {
@@ -351,7 +338,6 @@ function setupDashboardActionListeners() {
                 if (validatorAddr) await openDelegateModal(validatorAddr);
             // Atalho "Go to Store"
             } else if (target.classList.contains('go-to-store')) {
-                // AJUSTE CRÍTICO: Usa uma função global de navegação (seu roteador deve definir isso)
                 if (typeof window.navigateToPage === 'function') {
                     window.navigateToPage('store');
                 } else {
@@ -364,7 +350,6 @@ function setupDashboardActionListeners() {
                 if (address && tokenId) addNftToWallet(address, tokenId);
             // Atalho "Go to Rewards"
             } else if (target.classList.contains('go-to-rewards')) {
-                // AJUSTE CRÍTICO: Usa uma função global de navegação (seu roteador deve definir isso)
                 if (typeof window.navigateToPage === 'function') {
                     window.navigateToPage('rewards');
                 } else {
@@ -381,8 +366,6 @@ function setupDashboardActionListeners() {
 
 
 // --- FUNÇÕES DE RENDERIZAÇÃO DE COMPONENTES ---
-// Funções que constroem e injetam o HTML para
-// componentes específicos do Dashboard.
 
 /**
  * Renderiza o painel de eficiência de recompensas (Booster NFT).
@@ -441,13 +424,9 @@ function renderValidatorsList() {
     if (!listEl) return;
 
     // Se conectado, mas com saldo baixo, mostra o card "Buy $BKC"
-    // --- (REFA) INÍCIO: Lógica de Saldo Baixo Aprimorada ---
-    // (Verifica se o saldo é menor que, por ex, 10 BKC, em vez de apenas === 0)
     const minBalanceToShowBuy = ethers.parseEther("10"); 
     if (State.isConnected && State.currentUserBalance < minBalanceToShowBuy) {
-    // --- (REFA) FIM ---
         
-        // AJUSTE: Usar addresses.bkcDexPoolAddress (o novo campo com a URL)
         const buyBkcLink = addresses.bkcDexPoolAddress || '#'; 
         
         listEl.innerHTML = `
@@ -462,7 +441,7 @@ function renderValidatorsList() {
                 </div>
             </div>
         `;
-        return; // Para a execução
+        return; 
     }
     
     // Se os dados dos validadores ainda não carregaram
@@ -474,7 +453,6 @@ function renderValidatorsList() {
     const sortedData = [...State.allValidatorsData].sort((a, b) => Number(b.pStake - a.pStake));
 
     const generateValidatorHtml = (validator) => {
-         // Corrigido para usar 'totalDelegatedAmount' para consistência
          const { addr, pStake, selfStake, totalDelegatedAmount } = validator;
         return `
             <div class="bg-main border border-border-color rounded-xl p-5 flex flex-col h-full hover:shadow-lg transition-shadow">
@@ -600,110 +578,6 @@ async function renderMyDelegations() {
     }
 }
 
-/**
- * Renderiza a lista de certificados de vesting do usuário (na aba "Certificates").
- */
-async function renderMyCertificatesDashboard() {
-    const listEl = document.getElementById('my-certificates-list');
-    if (!listEl) return;
-    if (!State.isConnected) { renderNoData(listEl, "Connect your wallet to view certificates."); return; }
-
-    renderLoading(listEl);
-    try {
-        await loadMyCertificatesFromAPI(); // Usa a função da API
-        const certificates = State.myCertificates;
-
-        if (!certificates || certificates.length === 0) { renderNoData(listEl, "No vesting certificates found."); return; }
-        
-        const rewardManagerAddress = State.rewardManagerContract.target || addresses.rewardManager;
-        const vestingDuration = Number(await safeContractCall(State.rewardManagerContract, 'VESTING_DURATION', [], 5n * 365n * 86400n));
-
-
-        const certificatePromises = certificates.map(async ({ tokenId }) => { 
-            const position = await safeContractCall(State.rewardManagerContract, 'vestingPositions', [tokenId], {totalAmount: 0n, startTime: 0n});
-            if (position.startTime === 0n) return '';
-
-            const tokenURI = await safeContractCall(State.rewardManagerContract, 'tokenURI', [tokenId], "");
-            if (!tokenURI) {
-                console.warn(`Could not get tokenURI for certificate ${tokenId}`);
-                return ''; // Pula este certificado
-            }
-            
-            const totalAmount = position.totalAmount;
-            const startTime = Number(position.startTime);
-            const endTime = startTime + vestingDuration;
-            const now = Math.floor(Date.now() / 1000);
-            const formattedAmount = formatBigNumber(totalAmount);
-            const startDate = new Date(startTime * 1000).toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' });
-            const startTimeStr = new Date(startTime * 1000).toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' });
-            const endDateFormatted = new Date(endTime * 1000).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' });
-            
-            const isVested = now >= endTime;
-            const progress = Math.min(100, Math.floor(((now - startTime) * 100) / vestingDuration));
-
-            let imageUrl = './assets/bkc_logo_3d.png'; // Fallback
-            let displayName = `Vesting Certificate #${tokenId.toString()}`;
-            let tierColor = 'text-cyan-400'; // Cor padrão
-
-            try {
-                const response = await fetch(tokenURI.replace("ipfs://", ipfsGateway));
-                if (response.ok) {
-                    const metadata = await response.json();
-                    imageUrl = metadata.image ? metadata.image.replace("ipfs://", ipfsGateway) : imageUrl;
-                    displayName = metadata.name || displayName;
-                }
-            } catch (e) { console.warn(`Could not fetch certificate metadata (${tokenId}) from ${tokenURI}:`, e); }
-            
-            const initialPenaltyBips = Number(await safeContractCall(State.rewardManagerContract, 'INITIAL_PENALTY_BIPS', [], 5000n));
-            let penaltyAmount = 0n;
-            if (!isVested) {
-                penaltyAmount = (totalAmount * BigInt(initialPenaltyBips)) / 10000n;
-            }
-            const amountToOwner = totalAmount - penaltyAmount;
-
-            return `
-                <div class="p-4 bg-sidebar/50 border border-border-color rounded-xl flex flex-col h-full">
-                    <div class="flex items-start gap-4 mb-3">
-                         <img src="${imageUrl}" alt="${displayName}" class="w-12 h-12 rounded-md object-cover nft-clickable-image" data-address="${rewardManagerAddress}" data-tokenid="${tokenId.toString()}">
-                         <div class="flex-1 min-w-0">
-                            <p class="font-bold ${tierColor} truncate text-lg">${displayName}</p>
-                            <p class="text-xl font-bold text-amber-400 mt-1">${formattedAmount.toFixed(2)} $BKC</p>
-                        </div>
-                    </div>
-                    
-                    <div class="space-y-1 text-sm mb-4">
-                        <div class="flex justify-between">
-                            <span class="text-zinc-400">Status:</span>
-                            <span class="${isVested ? 'text-green-400 font-bold' : 'text-zinc-300'}">${isVested ? 'Fully Vested' : 'Vesting until ' + endDateFormatted}</span>
-                        </div>
-                         <div class="w-full bg-main rounded-full h-2.5 border border-border-color mt-2">
-                             <div class="bg-green-500 h-2 rounded-full" style="width: ${progress}%"></div>
-                         </div>
-                         <p class="text-xs text-right text-zinc-400 mt-1">Progress: ${progress}%</p>
-                    </div>
-
-                    <div class="flex-1 mt-auto">
-                        <div class="p-2 bg-main rounded-lg text-xs space-y-1 border border-border-color">
-                             <div class="flex justify-between"><span class="text-zinc-400">Withdrawal Amount:</span><span class="font-semibold">${formatBigNumber(amountToOwner).toFixed(4)} $BKC</span></div>
-                             ${!isVested ? `<div class="flex justify-between"><span class="text-zinc-400">Early Penalty:</span><span class="text-red-400">${(initialPenaltyBips / 100).toFixed(2)}% (~${formatBigNumber(penaltyAmount).toFixed(4)} $BKC)</span></div>` : ''}
-                        </div>
-                        <a href="#" data-target="rewards" class="ml-auto text-sm text-amber-500 hover:text-amber-400 go-to-rewards block text-center mt-3">View Details & Withdraw</a>
-                    </div>
-                </div>`;
-        });
-        listEl.innerHTML = (await Promise.all(certificatePromises)).join('');
-
-        listEl.querySelectorAll('.go-to-rewards').forEach(link => {
-            if (!link._listenerAttached) {
-                 link.addEventListener('click', (e) => { e.preventDefault(); document.querySelector('.sidebar-link[data-target="rewards"]')?.click(); });
-                 link._listenerAttached = true;
-            }
-        });
-    } catch (error) {
-        console.error("Error rendering certificates:", error);
-        renderError(listEl, "Failed to load certificates.");
-    }
-}
 
 /**
  * Renderiza um item individual do histórico de atividades.
@@ -743,7 +617,6 @@ function renderActivityItem(item) {
     // Mapeia tipos de eventos da API para strings amigáveis
     switch(item.type) {
         case 'Delegation': title = `Delegation`; icon = 'fa-shield-halved'; color = 'text-purple-400'; details = `Delegated ${formattedAmount} to ${formatAddress(itemDetails.validator)}`; itemId = itemDetails.index; break;
-        case 'VestingCertReceived': title = `Certificate Received`; icon = 'fa-id-card-clip'; color = 'text-cyan-400'; details = `Vesting ${formattedAmount} (#${itemDetails.tokenId})`; itemId = itemDetails.tokenId; break;
         case 'BoosterNFT': title = `Booster Acquired`; icon = 'fa-gem'; color = 'text-green-400'; details = `Tier: ${itemDetails.tierName}`; itemId = itemDetails.tokenId; break;
         case 'Unstake': 
             title = `Unstake`; icon = 'fa-unlock'; color = 'text-green-400'; 
@@ -758,11 +631,6 @@ function renderActivityItem(item) {
             title = `Rewards Claimed`; icon = 'fa-gift'; color = 'text-amber-400'; 
             details = `Claimed ${formattedAmount} $BKC from staking`; 
             itemId = null; break;
-        case 'CertificateWithdrawn': 
-            title = `Certificate Withdrawn`; icon = 'fa-money-bill-transfer'; color = 'text-cyan-400'; 
-            details = `Withdrew ${formattedAmount} $BKC (#${itemDetails.tokenId})`;
-            if(itemDetails.penaltyAmount && BigInt(itemDetails.penaltyAmount) > 0n) { details += ` (Penalty: ${formatBigNumber(BigInt(itemDetails.penaltyAmount)).toFixed(2)})`; }
-            itemId = itemDetails.tokenId; break;
         case 'MinerRewardClaimed': 
             title = `Miner Rewards Claimed`; icon = 'fa-pickaxe'; color = 'text-blue-400'; 
             details = `Claimed ${formattedAmount} $BKC from mining`; 
@@ -814,7 +682,7 @@ function renderActivityItem(item) {
     // Lógica para exibir link do Etherscan ou botão "Find Tx"
     const txHash = item.txHash;
     let Tag, tagAttributes, hoverClass, cursorClass, actionIndicator = '';
-    const supportsLazySearch = ['Delegation', 'VestingCertReceived', 'Unstake', 'ForceUnstake', 'CertificateWithdrawn', 'NFTBuy', 'NFTSell', 'PublicSaleBuy', 'NotaryRegister'].includes(item.type);
+    const supportsLazySearch = ['Delegation', 'Unstake', 'ForceUnstake', 'NFTBuy', 'NFTSell', 'PublicSaleBuy', 'NotaryRegister'].includes(item.type);
     
     if (txHash) {
         Tag = 'a'; tagAttributes = `href="${EXPLORER_BASE_URL}${txHash}" target="_blank" rel="noopener noreferrer" title="View Transaction on Explorer"`; hoverClass = 'hover:bg-main/70 group'; cursorClass = 'cursor-pointer';
@@ -880,15 +748,11 @@ async function renderActivityHistory() {
 
 
 // --- FUNÇÕES DE DADOS PÚBLICOS ---
-// Funções que buscam e renderizam dados que
-// não dependem de um usuário conectado (TVL, Stats da Rede).
 
 /**
  * Carrega e renderiza o TVL (Total Value Locked) do protocolo.
- * (AJUSTADO PARA INCLUIR PISCINA DEX)
  */
 async function loadAndRenderProtocolTVL() {
-    const tvlPanelEl = document.getElementById('protocol-tvl-panel'); 
     const tvlValueEl = document.getElementById('protocol-tvl-value'); 
     const tvlPercEl = document.getElementById('protocol-tvl-percentage'); 
     const statLockedPercentageEl = document.getElementById('statLockedPercentage');
@@ -897,13 +761,11 @@ async function loadAndRenderProtocolTVL() {
     const tvlVestingEl = document.getElementById('tvl-detail-vesting');
     const tvlGameEl = document.getElementById('tvl-detail-game');
     const tvlPoolEl = document.getElementById('tvl-detail-nftpool');
-    const tvlDexEl = document.getElementById('tvl-detail-dex'); // <-- NOVO ELEMENTO
+    const tvlDexEl = document.getElementById('tvl-detail-dex'); 
 
-    if (!tvlValueEl) { 
-        console.warn("TVL panel elements not found. Skipping TVL load.");
-        return;
-    }
+    if (!tvlValueEl) return;
     
+    // Mostra loaders
     tvlValueEl.innerHTML = '<div class="loader !w-5 !h-5 inline-block"></div>';
     tvlPercEl.textContent = 'Calculating...';
     if(statLockedPercentageEl) statLockedPercentageEl.innerHTML = '<div class="loader !w-5 !h-5 inline-block"></div>';
@@ -911,10 +773,10 @@ async function loadAndRenderProtocolTVL() {
 
     try {
         let totalLocked = 0n;
-        let stakingLocked = 0n, vestingLocked = 0n, gameLocked = 0n, poolLocked = 0n, dexLocked = 0n; // <-- NOVO
+        let stakingLocked = 0n, vestingLocked = 0n, gameLocked = 0n, poolLocked = 0n, dexLocked = 0n; 
 
-        if (!State.bkcTokenContractPublic || !State.delegationManagerContractPublic || !State.rewardManagerContractPublic) {
-            throw new Error("Contratos públicos essenciais (bkcTokenContractPublic, etc.) não estão carregados no State.");
+        if (!State.bkcTokenContractPublic || !State.delegationManagerContractPublic) {
+            throw new Error("Essential public contracts (bkcTokenContractPublic, etc.) are not loaded in State.");
         }
         
         const tokenContract = State.bkcTokenContractPublic;
@@ -925,25 +787,21 @@ async function loadAndRenderProtocolTVL() {
             totalLocked += stakingLocked;
         }
         
-        // 2. Saldo do Reward Manager (Vesting)
+        // 2. Saldo do Reward Manager (Vesting - mantido para cálculo de TVL)
         if (addresses.rewardManager) {
             vestingLocked = await safeContractCall(tokenContract, 'balanceOf', [addresses.rewardManager], 0n);
             totalLocked += vestingLocked;
         }
 
-        // 3. Saldo das Pools de Jogo (Fortune Pool / Actions Manager)
+        // 3. Saldo das Pools de Jogo (Actions Manager)
         if (State.actionsManagerContractPublic) {
              gameLocked = await safeContractCall(State.actionsManagerContractPublic, 'prizePoolBalance', [], 0n);
              totalLocked += gameLocked;
-        } else {
-             console.warn("Dashboard: State.actionsManagerContractPublic not found, skipping game pools.");
-        }
+        } 
 
-        // 4. Saldo das Pools de NFT (NFT Pool / Bonding Curve)
+        // 4. Saldo das Pools de NFT (AMM Pools)
         if (boosterTiers) {
             const poolKeys = Object.keys(addresses).filter(k => k.startsWith('pool_'));
-            // console.log(`Found ${poolKeys.length} AMM pools to check for TVL.`); // Removido para diminuir o spam
-            
             for (const key of poolKeys) {
                 const poolAddress = addresses[key];
                 if (poolAddress && poolAddress.startsWith('0x')) {
@@ -952,22 +810,14 @@ async function loadAndRenderProtocolTVL() {
                 }
             }
             totalLocked += poolLocked;
-        } else {
-            console.warn("Dashboard: boosterTiers (config.js) not found, skipping NFT pools TVL.");
-        }
+        } 
 
-        // --- (REFA) INÍCIO: Lógica para TVL da DEX ---
-        // 5. Saldo da Piscina DEX (PancakeSwap)
+        // 5. Saldo da Piscina DEX 
         const dexPoolAddress = addresses.mainLPPairAddress;
         if (dexPoolAddress && dexPoolAddress.startsWith('0x') && !dexPoolAddress.includes('...')) {
-            // console.log(`Checking TVL for external DEX pool: ${dexPoolAddress}`); // Removido para diminuir o spam
             dexLocked = await safeContractCall(tokenContract, 'balanceOf', [dexPoolAddress], 0n);
             totalLocked += dexLocked;
-        } else {
-            console.warn("Dashboard: mainLPPairAddress not set or is placeholder, skipping DEX TVL.");
-        }
-        // --- (REFA) FIM: Lógica para TVL da DEX ---
-
+        } 
 
         const totalSupply = await safeContractCall(tokenContract, 'totalSupply', [], 0n);
         const lockedPercentage = (totalSupply > 0n) ? (Number(totalLocked * 10000n / totalSupply) / 100).toFixed(2) : 0;
@@ -986,7 +836,7 @@ async function loadAndRenderProtocolTVL() {
         if(tvlVestingEl) tvlVestingEl.textContent = `${formatBigNumber(vestingLocked).toFixed(0)} $BKC`;
         if(tvlGameEl) tvlGameEl.textContent = `${formatBigNumber(gameLocked).toFixed(0)} $BKC`;
         if(tvlPoolEl) tvlPoolEl.textContent = `${formatBigNumber(poolLocked).toFixed(0)} $BKC`;
-        if(tvlDexEl) tvlDexEl.textContent = `${formatBigNumber(dexLocked).toFixed(0)} $BKC`; // <-- NOVO
+        if(tvlDexEl) tvlDexEl.textContent = `${formatBigNumber(dexLocked).toFixed(0)} $BKC`; 
 
     } catch (err) {
         console.error("Failed to load protocol TVL:", err);
@@ -999,7 +849,6 @@ async function loadAndRenderProtocolTVL() {
 
 /**
  * Carrega e renderiza as estatísticas públicas do cabeçalho
- * (Validadores, pStake, Scarcity).
  */
 async function loadAndRenderPublicHeaderStats() {
     const statValidatorsEl = document.getElementById('statValidators');
@@ -1008,7 +857,7 @@ async function loadAndRenderPublicHeaderStats() {
 
     try {
         if (!State.delegationManagerContractPublic || !State.bkcTokenContractPublic) {
-             throw new Error("Contratos públicos (DM ou BKC) não inicializados.");
+             throw new Error("Public contracts (DM or BKC) not initialized.");
         }
 
         // 1. Contagem de Validadores
@@ -1016,8 +865,6 @@ async function loadAndRenderPublicHeaderStats() {
             try {
                 if (!State.allValidatorsData) {
                     const validatorsArray = await safeContractCall(State.delegationManagerContractPublic, 'getAllValidators', [], []);
-                    // Inicializa a estrutura de dados (será populada por loadPublicData)
-                    // Corrigido para 'totalDelegatedAmount'
                     State.allValidatorsData = validatorsArray.map(addr => ({ addr, pStake: 0n, selfStake: 0n, totalDelegatedAmount: 0n }));
                 }
                 statValidatorsEl.textContent = State.allValidatorsData.length.toString();
@@ -1030,7 +877,7 @@ async function loadAndRenderPublicHeaderStats() {
         // 2. Total pStake da Rede
         if (statTotalPStakeEl) {
             const totalPStake = await safeContractCall(State.delegationManagerContractPublic, 'totalNetworkPStake', [], 0n);
-            State.totalNetworkPStake = totalPStake; // Salva no state
+            State.totalNetworkPStake = totalPStake; 
             statTotalPStakeEl.textContent = formatPStake(totalPStake);
         }
         
@@ -1069,9 +916,6 @@ async function loadAndRenderPublicHeaderStats() {
 
 
 // --- RENDERIZADOR PRINCIPAL DA PÁGINA ---
-// O objeto 'DashboardPage' exportado, contendo a
-// função principal 'render' que orquestra
-// a renderização de todos os componentes da página.
 
 export const DashboardPage = {
     hasRenderedOnce: false,
@@ -1087,22 +931,38 @@ export const DashboardPage = {
         // Reseta o estado das abas se for uma navegação nova ou desconexão
         if (!isUpdate || !State.isConnected) {
             console.log("Resetting tabs state and UI.");
-            tabsState = { delegationsLoaded: false, certificatesLoaded: false };
+            tabsState = { delegationsLoaded: false }; 
             const tabsContainer = document.getElementById('user-activity-tabs');
             const contentContainer = document.getElementById('user-activity-content');
+            
+            // --- INÍCIO DA CORREÇÃO DE UI (REMOÇÃO DE CERTIFICATES) ---
             if (tabsContainer && contentContainer) {
+                 // Remova a aba 'Certificates' se ainda estiver no DOM (via JavaScript)
+                 const certsTab = tabsContainer.querySelector('.tab-btn[data-target="tab-certificates"]');
+                 if(certsTab) certsTab.remove();
+                 
+                 // Remove o conteúdo da aba 'Certificates'
+                 const certsContent = document.getElementById('tab-certificates');
+                 if(certsContent) certsContent.remove();
+                 
+                 // Reativa a aba Overview (se o usuário não estiver conectado)
                  tabsContainer.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
                  tabsContainer.querySelector('.tab-btn[data-target="tab-overview"]')?.classList.add('active');
-                 contentContainer.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+                 
+                 contentContainer.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.add('hidden');
+                    content.classList.remove('active');
+                 });
                  const overviewTab = document.getElementById('tab-overview');
                  if (overviewTab) { overviewTab.classList.remove('hidden'); overviewTab.classList.add('active'); }
             }
+            // --- FIM DA CORREÇÃO DE UI ---
+
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
         }
         
         // --- Renderiza Dados PÚBLICOS ---
-        // (Sempre renderiza, independente da conexão)
         loadAndRenderProtocolTVL();
         loadAndRenderPublicHeaderStats();
         renderValidatorsList();
@@ -1120,9 +980,7 @@ export const DashboardPage = {
             if(claimPanelEl) claimPanelEl.innerHTML = '<p class="text-center text-zinc-400 p-4">Connect wallet to view rewards.</p>';
             if(efficiencyPanel) efficiencyPanel.innerHTML = '<p class="text-center text-zinc-400 p-4">Connect your wallet to view your status.</p>';
             const delegationList = document.getElementById('my-delegations-list');
-            const certList = document.getElementById('my-certificates-list');
             if(delegationList) renderNoData(delegationList, "Connect your wallet.");
-            if(certList) renderNoData(certList, "Connect your wallet.");
             if(historyListContainer) renderNoData(historyListContainer, "Connect your wallet.");
             
             const statUserBalanceEl = document.getElementById('statUserBalance');
@@ -1206,7 +1064,7 @@ export const DashboardPage = {
                 myPositionPStakeEl.textContent = formatPStake(State.userTotalPStake || 0n);
             }
             
-            startRewardAnimation(totalRewards); // Inicia a animação do contador
+            startRewardAnimation(totalRewards); 
             
             // Renderiza painel de Booster
             console.log("Rendering reward efficiency...");
@@ -1243,10 +1101,6 @@ export const DashboardPage = {
                     tabsState.delegationsLoaded = false;
                     await renderMyDelegations();
                     tabsState.delegationsLoaded = true;
-                } else if (activeTabId === 'tab-certificates') {
-                     tabsState.certificatesLoaded = false;
-                     await renderMyCertificatesDashboard();
-                     tabsState.certificatesLoaded = true;
                 }
             }
         }

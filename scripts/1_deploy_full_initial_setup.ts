@@ -2,8 +2,7 @@
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
-
-// ATENÇÃO: Importações diretas de ethers/upgrades removidas para evitar erro 2305
+import { BigNumberish } from "ethers";
 
 // Helper function for delays
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,6 +30,22 @@ const TIERS_TO_SETUP = [
 
 // ######################################################################
 
+const addressesFilePath = path.join(
+    __dirname,
+    "../deployment-addresses.json"
+);
+
+// Função para deletar o arquivo de endereços em caso de erro
+function deleteAddressesFileOnError() {
+    if (fs.existsSync(addressesFilePath)) {
+        fs.unlinkSync(addressesFilePath);
+        console.log("\n==========================================================");
+        console.log("🗑️ ARQUIVO 'deployment-addresses.json' DELETADO AUTOMATICAMENTE.");
+        console.log("⚠️ Você pode rodar o script novamente.");
+        console.log("==========================================================");
+    }
+}
+
 export async function runScript(hre: HardhatRuntimeEnvironment) {
   // ✅ CORREÇÃO: Acessando ethers e upgrades via hre
   const { ethers, upgrades } = hre; 
@@ -48,16 +63,20 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   }
 
   const addresses: { [key: string]: string } = {};
-  const addressesFilePath = path.join(
-    __dirname,
-    "../deployment-addresses.json"
-  );
-  // Garante que o arquivo de endereços é iniciado ou limpo
+  
+  // Garante que o arquivo de endereços é iniciado ou limpo antes do deploy
+  if (fs.existsSync(addressesFilePath)) {
+       fs.unlinkSync(addressesFilePath);
+       console.log(`(Limpeza: 'deployment-addresses.json' anterior deletado)`);
+  }
   fs.writeFileSync(addressesFilePath, JSON.stringify({}, null, 2));
+
 
   let boosterNFT: any;
   let saleContract: any;
   let bkcTokenInstance: any;
+  // Variável 'tx' declarada com 'let' para permitir reatribuição
+  let tx; 
 
   try {
     // =================================================================
@@ -74,6 +93,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     );
     await ecosystemManager.waitForDeployment();
     addresses.ecosystemManager = await ecosystemManager.getAddress();
+    fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2)); // Salva após cada deploy
     console.log(`   ✅ EcosystemManager (Proxy) implantado em: ${addresses.ecosystemManager}`);
     await sleep(DEPLOY_DELAY_MS);
 
@@ -87,6 +107,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     );
     await boosterNFT.waitForDeployment();
     addresses.rewardBoosterNFT = await boosterNFT.getAddress();
+    fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2));
     console.log(`   ✅ RewardBoosterNFT (Proxy) implantado em: ${addresses.rewardBoosterNFT}`);
     await sleep(DEPLOY_DELAY_MS);
 
@@ -104,6 +125,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     );
     await saleContract.waitForDeployment();
     addresses.publicSale = await saleContract.getAddress();
+    fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2));
     console.log(`   ✅ PublicSale (Proxy) implantado em: ${addresses.publicSale}`);
     await sleep(DEPLOY_DELAY_MS);
 
@@ -112,7 +134,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     // =================================================================
 
     // 2.1. BKCToken (Necessário para a Faucet) - Usando Proxy para consistência
-    // O PROPRIETÁRIO INICIAL É O DEPLOYER, MAS SERÁ TRANSFERIDO NO PASSO 3
     console.log("\n2.1. Implantando BKCToken (Proxy) (Necessário para a Faucet)...");
     const BKCToken = await ethers.getContractFactory("BKCToken");
     bkcTokenInstance = await upgrades.deployProxy(
@@ -122,16 +143,11 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     );
     await bkcTokenInstance.waitForDeployment();
     addresses.bkcToken = await bkcTokenInstance.getAddress();
+    fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2));
     console.log(`   ✅ BKCToken (Proxy) implantado em: ${addresses.bkcToken}`);
     await sleep(DEPLOY_DELAY_MS);
     
     // 2.2. SimpleBKCFaucet
-    // ##############################################################
-    // ###               💡 INÍCIO DA CORREÇÃO 💡                 ###
-    // ##############################################################
-    // O contrato SimpleBKCFaucet.sol é UUPS (tem 'initialize'),
-    // então DEVE ser implantado com deployProxy, não com deploy().
-    
     console.log("\n2.2. Implantando SimpleBKCFaucet (Utility/Core) como Proxy...");
     const SimpleBKCFaucet = await ethers.getContractFactory("SimpleBKCFaucet");
 
@@ -143,11 +159,9 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
 
     await simpleBKCFaucet.waitForDeployment();
     addresses.faucet = await simpleBKCFaucet.getAddress();
+    fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2));
     console.log(`   ✅ SimpleBKCFaucet (Proxy) implantado em: ${addresses.faucet}`);
     await sleep(DEPLOY_DELAY_MS);
-    // ##############################################################
-    // ###                💡 FIM DA CORREÇÃO 💡                  ###
-    // ##############################################################
 
 
     // =================================================================
@@ -177,13 +191,22 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     const hub = await ethers.getContractAt("EcosystemManager", addresses.ecosystemManager, deployer);
     
     // 4.1. Configurações do Hub
-    let tx = await hub.setTreasuryAddress(deployer.address);
+    console.log("4.1. Configurando Hub usando a função de lote `setAddresses` (Solução Robusta)...");
+
+    // Usa a função única setAddresses para configurar os endereços principais.
+    tx = await hub.setAddresses(
+        addresses.bkcToken,             // _bkcToken
+        deployer.address,               // _treasuryWallet (usando deployer temporariamente)
+        ethers.ZeroAddress,             // _delegationManager (Endereço não implantado na FASE 1)
+        addresses.rewardBoosterNFT,     // _rewardBooster
+        ethers.ZeroAddress,             // _miningManager (Endereço não implantado na FASE 1)
+        ethers.ZeroAddress,             // _decentralizedNotary (Endereço não implantado na FASE 1)
+        ethers.ZeroAddress,             // _fortunePool (Endereço não implantado na FASE 1)
+        ethers.ZeroAddress              // _nftLiquidityPoolFactory (Endereço não implantado na FASE 1)
+    );
     await tx.wait();
-    tx = await hub.setRewardBoosterAddress(addresses.rewardBoosterNFT);
-    await tx.wait();
-    tx = await hub.setBKCTokenAddress(addresses.bkcToken);
-    await tx.wait();
-    console.log(`   ✅ Hub configurado (Treasury, NFT Booster e BKCToken).`);
+    
+    console.log(`   ✅ Hub configurado (BKCToken, RewardBooster e Treasury).`);
     await sleep(DEPLOY_DELAY_MS);
 
     // 4.2. Autorização e URI do NFT
@@ -223,15 +246,8 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   } catch (error: any) {
     console.error("\n❌ Falha grave no script de Setup Inicial:", error.message);
     
-    // AVISO DE CONFIRMAÇÃO DE DELEÇÃO DO JSON
-    if (fs.existsSync(addressesFilePath) && !/Missing deployment-addresses.json/.test(error.message)) {
-      console.log("\n==========================================================");
-      console.log("⚠️ AVISO CRÍTICO DE REINICIALIZAÇÃO APÓS FALHA!");
-      console.log("O deploy foi interrompido (provavelmente por Timeout ou falha de rede).");
-      console.log(`Para tentar novamente com sucesso, você deve OBRIGATORIAMENTE deletar o arquivo 'deployment-addresses.json'.`);
-      console.log("Este arquivo contém endereços parciais que causarão erros de 'already initialized' ou 'address not found' na próxima execução.");
-      console.log("==========================================================");
-    }
+    // Chama a função de limpeza em caso de erro
+    deleteAddressesFileOnError();
     
     process.exit(1);
   }

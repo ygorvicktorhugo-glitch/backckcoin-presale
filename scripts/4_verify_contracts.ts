@@ -1,4 +1,4 @@
-// scripts/3_verify_contracts.ts
+// scripts/4_verify_contracts.ts
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
 import path from "path";
@@ -57,76 +57,83 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   const addresses: { [key: string]: string } = JSON.parse(
     fs.readFileSync(addressesFilePath, "utf8")
   );
-
-  // --- 2. Verificar Contratos UUPS (Proxies) ---
-  // ✅ CORREÇÃO: Os argumentos do construtor (constructorArguments) para
-  // contratos UUPS/Initializable são '[]' (vazios), pois eles usam
-  // a função 'initialize' em vez de um 'constructor' para definir o estado.
   
+  const constructorArgs: any[] = []; // Argumentos de construtor vazios para Proxies
+
   console.log("=== Verificando Contratos UUPS (Proxies) ===");
 
   await attemptVerification(
     hre, "EcosystemManager", addresses.ecosystemManager, 
-    [], // <-- CORRIGIDO
+    constructorArgs,
     "contracts/EcosystemManager.sol:EcosystemManager"
   );
   await attemptVerification(
     hre, "MiningManager", addresses.miningManager, 
-    [], // <-- CORRIGIDO
+    constructorArgs,
     "contracts/MiningManager.sol:MiningManager"
   );
   await attemptVerification(
     hre, "DelegationManager", addresses.delegationManager, 
-    [], // <-- CORRIGIDO
+    constructorArgs,
     "contracts/DelegationManager.sol:DelegationManager"
   );
-  await attemptVerification(
-    hre, "RewardManager", addresses.rewardManager, 
-    [], // <-- CORRIGIDO
-    "contracts/RewardManager.sol:RewardManager"
-  );
+  // ✅ REMOVIDO: A verificação do RewardManager foi excluída.
   await attemptVerification(
     hre, "DecentralizedNotary", addresses.decentralizedNotary, 
-    [], // <-- CORRIGIDO
+    constructorArgs,
     "contracts/DecentralizedNotary.sol:DecentralizedNotary"
   );
   
-  // ✅ CORREÇÃO: Caminho do contrato atualizado para FortunePoolV3
+  // ✅ CORRIGIDO O NOME DO CONTRATO
   await attemptVerification(
-    hre, "FortunePoolV3", addresses.fortunePool, 
-    [], // <-- CORRIGIDO
-    "contracts/FortunePoolV3.sol:FortunePoolV3" // <-- CORRIGIDO
+    hre, "FortunePool", addresses.fortunePool, 
+    constructorArgs,
+    "contracts/FortunePool.sol:FortunePool"
   );
   
+  // Verifica a Implementação do Pool (Molde da Fábrica)
+  if (addresses.nftLiquidityPool_Implementation) {
+    await attemptVerification(
+      hre, "NFTLiquidityPool_Implementation", addresses.nftLiquidityPool_Implementation, 
+      [], // Molde não tem construtor, mas não é proxy.
+      "contracts/NFTLiquidityPool.sol:NFTLiquidityPool"
+    );
+  }
+
+  // Verifica a Fábrica do Pool
   await attemptVerification(
-    hre, "NFTLiquidityPool", addresses.nftLiquidityPool, 
-    [], // <-- CORRIGIDO
-    "contracts/NFTLiquidityPool.sol:NFTLiquidityPool"
+    hre, "NFTLiquidityPoolFactory", addresses.nftLiquidityPoolFactory, 
+    constructorArgs,
+    "contracts/NFTLiquidityPoolFactory.sol:NFTLiquidityPoolFactory"
   );
+
 
   // --- 3. Verificar Contratos Normais (Standard) ---
   
   console.log("\n=== Verificando Contratos Normais (Standard) ===");
 
-  // BKCToken
   await attemptVerification(
     hre, "BKCToken", addresses.bkcToken,
-    [], // <-- CORRIGIDO
+    constructorArgs,
     "contracts/BKCToken.sol:BKCToken"
   );
 
-  // RewardBoosterNFT
   await attemptVerification(
     hre, "RewardBoosterNFT", addresses.rewardBoosterNFT,
-    [], // <-- CORRIGIDO
+    constructorArgs,
     "contracts/RewardBoosterNFT.sol:RewardBoosterNFT"
   );
 
-  // PublicSale
   await attemptVerification(
     hre, "PublicSale", addresses.publicSale,
-    [], // <-- CORRIGIDO
+    constructorArgs,
     "contracts/PublicSale.sol:PublicSale"
+  );
+
+  await attemptVerification(
+    hre, "SimpleBKCFaucet", addresses.faucet,
+    constructorArgs,
+    "contracts/SimpleBKCFaucet.sol:SimpleBKCFaucet"
   );
 
   console.log("\n🎉🎉🎉 VERIFICAÇÃO DE CONTRATOS CONCLUÍDA! 🎉🎉🎉");

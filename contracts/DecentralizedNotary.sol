@@ -1,8 +1,6 @@
-// contracts/DecentralizedNotary.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-// Imports
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -20,40 +18,28 @@ contract DecentralizedNotary is
     ReentrancyGuardUpgradeable
 {
     using CountersUpgradeable for CountersUpgradeable.Counter;
-
-    // --- Core Contracts ---
     IEcosystemManager public ecosystemManager;
     IDelegationManager public delegationManager;
     BKCToken public bkcToken;
     address public miningManagerAddress;
 
-    // --- State ---
     CountersUpgradeable.Counter private _tokenIdCounter;
     mapping(uint256 => string) public documentMetadataURI;
-
     string public constant SERVICE_KEY = "NOTARY_SERVICE";
 
-    // --- Events ---
     event NotarizationEvent(
         uint256 indexed tokenId,
         address indexed owner,
         string indexed documentMetadataHash 
     );
+    
+    // CONSTRUTOR REMOVIDO PARA EVITAR ERRO DE UPGRADE DE SEGURANÇA
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    /**
-     * @notice Initializes the contract and sets core addresses.
-     */
     function initialize(
         address _initialOwner,
         address _ecosystemManagerAddress
     ) public initializer {
-        // ✅ CORREÇÃO (Aviso): Ordem dos inicializadores corrigida
-        __Ownable_init(); 
+        __Ownable_init();
         __UUPSUpgradeable_init();
         __ERC721_init("Notary Certificate", "NOTARY");
         __ERC721Enumerable_init();
@@ -79,19 +65,13 @@ contract DecentralizedNotary is
                 _miningManagerAddr != address(0),
             "Notary: Core contracts not set in Brain"
         );
-
         bkcToken = BKCToken(_bkcTokenAddress);
         delegationManager = IDelegationManager(_dmAddress);
         miningManagerAddress = _miningManagerAddr;
     }
 
-    // --- Core Functionality ---
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    /**
-     * @notice Notarizes a document by saving its metadata URI.
-     * @param _documentMetadataURI The IPFS URI of the metadata JSON file.
-     * @param _boosterTokenId The booster NFT used for a discount.
-     */
     function notarize(
         string calldata _documentMetadataURI, 
         uint256 _boosterTokenId
@@ -101,50 +81,81 @@ contract DecentralizedNotary is
             "Notary: Hash cannot be empty"
         );
         
-        uint256 feeToPay = ecosystemManager.authorizeService(
-            SERVICE_KEY,
-            msg.sender,
-            _boosterTokenId
-        );
+        // 1. Get Base Fee and pStake Minimum from Hub
+        (uint256 baseFee, uint256 minPStake) = ecosystemManager.getServiceRequirements(SERVICE_KEY);
+        // 2. Check pStake Minimum
+        if (minPStake > 0) {
+            uint256 userPStake = IDelegationManager(ecosystemManager.getDelegationManagerAddress()).userTotalPStake(msg.sender);
+            require(userPStake >= minPStake, "Notary: Insufficient pStake");
+        }
+        
+        // 3. Apply Booster Discount (Manual Check)
+        uint256 feeToPay = baseFee;
+        if (feeToPay > 0 && _boosterTokenId > 0) {
+            address boosterAddress = ecosystemManager.getBoosterAddress();
+            if (boosterAddress != address(0)) {
+                IRewardBoosterNFT booster = IRewardBoosterNFT(boosterAddress);
+                try booster.ownerOf(_boosterTokenId) returns (address owner) {
+                    if (owner == msg.sender) {
+                        uint256 boostBips = booster.boostBips(_boosterTokenId);
+                        uint256 discountBips = ecosystemManager.getBoosterDiscount(boostBips);
+                        
+                        if (discountBips > 0) {
+                            uint256 discountAmount = (baseFee * discountBips) / 10000;
+                            feeToPay = (baseFee > discountAmount) ? baseFee - discountAmount : 0;
+                        }
+                    }
+                } catch { 
+                    // Ignore if NFT is invalid 
+                }
+            }
+       
+        }
+        
         require(feeToPay > 0, "Notary: Fee cannot be zero");
+        // 50/50 Fee Split
+        uint256 treasuryFee = feeToPay / 2;
+        uint256 delegatorFee = feeToPay - treasuryFee;
 
-        // 1. Puxa a taxa de $BKC
+        // 4. Pull Fee from User
         bkcToken.transferFrom(msg.sender, address(this), feeToPay);
-
-        // 2. Aprova e chama o PoP Mining
-        bkcToken.approve(miningManagerAddress, feeToPay);
+        // 5. CRITICAL FIX: Transfer Fee to MiningManager (PoP Trigger)
+        require(
+            bkcToken.transfer(miningManagerAddress, feeToPay),
+            "Notary: Transfer to MiningManager failed"
+        );
+        // 6. Call MiningManager to Mint Tokens (This token will be distributed by MM to pools)
         uint256 bonusReward = IMiningManager(miningManagerAddress)
             .performPurchaseMining(
                 SERVICE_KEY,
-                feeToPay
+                feeToPay // The fee is the POP purchase amount
             );
-            
-        // 3. Deposita a taxa (pós-bônus) no pool de delegação
-        bkcToken.approve(address(delegationManager), feeToPay);
-        delegationManager.depositRewards(0, feeToPay);
+        // 7. Redistribute the original Fee tokens (50/50)
+        address treasury = ecosystemManager.getTreasuryAddress();
+        if (treasuryFee > 0) {
+            bkcToken.transfer(treasury, treasuryFee);
+        }
         
-        // 4. Devolve o bônus de mineração ao usuário
+        if (delegatorFee > 0) {
+            bkcToken.approve(address(delegationManager), delegatorFee);
+            delegationManager.depositRewards(0, delegatorFee);
+        }
+        
+        // 8. Devolve the Mining Bonus to the user (if any)
         if (bonusReward > 0) {
             bkcToken.transfer(msg.sender, bonusReward);
         }
 
-        // 5. Minta o NFT
+        // 9. Mint the Notary NFT
         _tokenIdCounter.increment();
         tokenId = _tokenIdCounter.current();
         _safeMint(msg.sender, tokenId);
 
-        // 6. Salva a URI dos metadados
         documentMetadataURI[tokenId] = _documentMetadataURI;
-
         emit NotarizationEvent(tokenId, msg.sender, _documentMetadataURI);
         return tokenId;
     }
 
-    // --- View Functions (ERC721 Overrides) ---
-
-    /**
-     * @notice Returns the metadata URI for a given token ID.
-     */
     function tokenURI(uint256 tokenId)
         public
         view
@@ -155,12 +166,9 @@ contract DecentralizedNotary is
             _exists(tokenId),
             "ERC721: URI query for nonexistent token"
          );
-        
-        // Retorna a URI única salva durante o 'notarize'
         return documentMetadataURI[tokenId];
     }
 
-    // --- Required Overrides for ERC721Enumerable ---
     function supportsInterface(bytes4 interfaceId)
         public
         view
@@ -169,11 +177,4 @@ contract DecentralizedNotary is
     {
         return super.supportsInterface(interfaceId);
     }
-
-    // --- UUPS Upgrade Function ---
-    function _authorizeUpgrade(address newImplementation)
-        internal
-        override
-        onlyOwner
-    {}
 }

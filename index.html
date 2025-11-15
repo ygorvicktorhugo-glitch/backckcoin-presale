@@ -191,9 +191,6 @@
                     
                     <a data-target="airdrop" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700"><i class="fa-solid fa-parachute-box w-5 text-center"></i><span>Airdrop</span></a>
                     
-                    <!-- ### INÍCIO DA REORDENAÇÃO ### -->
-
-                    <!-- Cartório (Notary) movido para cima -->
                     <a data-target="notary" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-700">
                         <i class="fa-solid fa-stamp w-5 text-center"></i><span>Decentralized Notary</span>
                     </a>
@@ -202,7 +199,14 @@
                         <i class="fa-solid fa-chart-line w-5 text-center"></i><span>Tokenomics</span>
                     </a>
 
-                    <!-- Itens "Soon" movidos para o final da lista principal -->
+                    <a title="Coming Soon" class="sidebar-link flex items-center justify-between gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 opacity-50 cursor-not-allowed">
+                        <div class="flex items-center gap-4">
+                            <i class="fa-solid fa-shuffle w-5 text-center"></i>
+                            <span>DEX Swap</span>
+                        </div>
+                        <span class="text-xs bg-zinc-700 text-zinc-300 font-semibold px-2 py-0.5 rounded-full">Soon</span>
+                    </a>
+                    
                     <a title="Coming Soon" class="sidebar-link flex items-center justify-between gap-4 py-2.5 px-4 rounded-lg transition-colors text-zinc-400 opacity-50 cursor-not-allowed">
                         <div class="flex items-center gap-4">
                             <i class="fa-solid fa-landmark w-5 text-center"></i>
@@ -219,8 +223,6 @@
                         <span class="text-xs bg-zinc-700 text-zinc-300 font-semibold px-2 py-0.5 rounded-full">Soon</span>
                     </a>
                     
-                    <!-- ### FIM DA REORDENAÇÃO ### -->
-
                     </div>
                 <div id="admin-link-container" class="mt-4 pt-4 border-t border-zinc-700" style="display: none;"><a data-target="admin" id="admin-link" class="sidebar-link flex items-center gap-4 py-2.5 px-4 rounded-lg transition-colors text-red-400 hover:text-white hover:bg-red-500/50"><i class="fa-solid fa-user-shield w-5 text-center"></i><span>Admin Panel</span></a></div>
 
@@ -310,7 +312,12 @@
                                 <div class="bg-sidebar border border-border-color rounded-xl p-6 flex flex-col">
                                     <h2 class="text-xl font-bold mb-4">My Position</h2>
                                     <div id="user-activity-container">
-                                        <div class="border-b border-border-color mb-5"><nav id="user-activity-tabs" class="-mb-px flex gap-4 overflow-x-auto whitespace-nowrap"><button class="tab-btn active" data-target="tab-overview">Overview</button><button class="tab-btn" data-target="tab-delegations">Delegations</button><button class="tab-btn" data-target="tab-certificates">Certificates</button></nav></div>
+                                        <div class="border-b border-border-color mb-5">
+                                            <nav id="user-activity-tabs" class="-mb-px flex gap-4 overflow-x-auto whitespace-nowrap">
+                                                <button class="tab-btn active" data-target="tab-overview">Overview</button>
+                                                <button class="tab-btn" data-target="tab-delegations">Delegations</button>
+                                            </nav>
+                                        </div>
                                         <div id="user-activity-content">
                                             <div id="tab-overview" class="tab-content active space-y-6">
                                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -328,7 +335,6 @@
                                                 <div class="mt-8 pt-6 border-t border-border-color"><h3 class="text-lg font-bold mb-4">Recent Activity</h3><div id="activity-history-list-container"></div></div>
                                             </div>
                                             <div id="tab-delegations" class="tab-content hidden"><h3 class="text-lg font-bold mb-3">Active Delegations</h3 ><div id="my-delegations-list" class="space-y-4"></div></div>
-                                            <div id="tab-certificates" class="tab-content hidden"><h3 class="text-lg font-bold mb-3">My Certificates</h3><div id="my-certificates-list" class="space-y-3"></div></div>
                                         </div>
                                     </div>
                                 </div>
@@ -344,18 +350,14 @@
                                     <p id="protocol-tvl-value" class="text-3xl font-bold text-white">--</p>
                                     <p id="protocol-tvl-percentage" class="text-sm text-zinc-500">--% Locked</p>
                                     
-                                    <!-- ### INÍCIO DA MODIFICAÇÃO (TVL) ### -->
                                     <div class="mt-4 pt-4 border-t border-border-color/50 text-xs space-y-1">
                                         <div class="flex justify-between"><span class="text-zinc-400">Staking:</span> <span id="tvl-detail-staking" class="font-mono text-zinc-300">-- $BKC</span></div>
                                         <div class="flex justify-between"><span class="text-zinc-400">Vesting:</span> <span id="tvl-detail-vesting" class="font-mono text-zinc-300">-- $BKC</span></div>
                                         <div class="flex justify-between"><span class="text-zinc-400">Game Pools:</span> <span id="tvl-detail-game" class="font-mono text-zinc-300">-- $BKC</span></div>
                                         <div class="flex justify-between"><span class="text-zinc-400">NFT Pools:</span> <span id="tvl-detail-nftpool" class="font-mono text-zinc-300">-- $BKC</span></div>
-                                        <!-- Nova linha para a Piscina DEX -->
                                         <div class="flex justify-between"><span class="text-zinc-400">DEX Pool:</span> <span id="tvl-detail-dex" class="font-mono text-zinc-300">-- $BKC</span></div>
                                     </div>
-                                    <!-- ### FIM DA MODIFICAÇÃO (TVL) ### -->
-
-                                </div>
+                                    </div>
                                 <div id="top-validators-dashboard" class="bg-sidebar border border-border-color rounded-xl p-6"><div class="flex justify-between items-center mb-4"><h3 classs="text-xl font-bold">Network Validators</h3><p class="text-sm text-zinc-400">Sorted by highest pStake</p></div><div id="top-validators-list" class="space-y-3"></div></div>
                             </div>
                         </div>
@@ -368,27 +370,30 @@
                         
                         <div class="border-b border-border-color mb-6">
                             <nav id="earn-tabs" class="-mb-px flex gap-6">
-                                <button class="tab-btn active" data-target="delegate-tab">Delegate (pStake)</button>
-                                <button class="tab-btn" data-target="distribute-tab" id="pop-mining-tab" style="display: none;">PoP Mining</button>
-                                <button class="tab-btn" data-target="validator-tab" id="validator-section-tab" style="display: none;">Become a Validator</button>
+                                <button class="tab-btn active" data-tab="delegate">Delegate (pStake)</button>
+                                <button class="tab-btn" data-tab="validator">Become a Validator</button>
                             </nav>
                         </div>
                         
-                        <div id="delegate-tab" class="tab-content active">
-                            <div id="validatorsList" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div id="delegate-content" class="tab-content active">
+                            <p class="text-zinc-400 max-w-2xl mb-6">Select an active validator to delegate (stake) your $BKC. This increases your pStake, making you eligible for ecosystem rewards and services.</p>
+                            <div id="validatorsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                  </div>
                         </div>
-                        <div id="distribute-tab" class="tab-content hidden">
-                            <div id="pop-mining-content" class="bg-sidebar border border-border-color rounded-xl max-w-3xl mx-auto overflow-hidden">
-                                 </div>
-                        </div>
-                        <div id="validator-tab" class="tab-content hidden">
-                            <div id="validator-content-wrapper" class="max-w-3xl mx-auto">
-                                 </div>
-                        </div>
+                        <div id="validator-content" class="tab-content hidden">
+                            </div>
                     </section>
                     <section id="store" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">NFT Trading Pool</h1><p class="text-zinc-400 max-w-3xl mb-8">Increase your reward claim efficiency from a 50% base up to 100% by purchasing a Booster NFT. Prices are dynamic and increase as NFTs are sold.</p><div id="store-content-wrapper"><h2 class="text-xl font-bold mb-4">Booster Pools</h2><div id="store-items-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div></div></section>
-                    <section id="rewards" class="hidden"><h1 class="text-2xl md:text-3xl font-bold mb-6">My Rewards & Certificates</h1><div id="claimable-rewards-panel" class="mb-8 p-6 bg-sidebar border border-border-color rounded-xl max-w-2xl mx-auto"><h2 class="text-xl font-bold mb-4">Claimable Rewards</h2><div id="rewards-loader" class="text-center hidden"><div class="loader inline-block"></div></div><div id="rewards-details-content"></div></div><h2 class="text-xl font-bold mb-4">My Vesting Certificates</h2><div id="certificates-list-container"></div></section>
+                    <section id="rewards" class="hidden">
+                        <h1 class="text-2xl md:text-3xl font-bold mb-6">My Rewards</h1>
+                        <div id="claimable-rewards-panel" class="mb-8 p-6 bg-sidebar border border-border-color rounded-xl max-w-2xl mx-auto">
+                            <h2 class="text-xl font-bold mb-4">Claimable Rewards</h2>
+                            <div id="rewards-loader" class="text-center hidden"><div class="loader inline-block"></div></div>
+                            <div id="rewards-details-content"></div>
+                        </div>
+                        <h2 class="text-xl font-bold mb-4">Vesting Certificates (Deprecated)</h2>
+                        <div id="certificates-list-container"></div>
+                    </section>
                     
                     <section id="actions" class="hidden">
                         </section>

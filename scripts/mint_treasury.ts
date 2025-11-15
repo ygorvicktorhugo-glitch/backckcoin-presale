@@ -87,7 +87,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         const remaining = tier.amount - totalMinted;
         const amountToMint = remaining < CHUNK_SIZE ? remaining : CHUNK_SIZE;
 
-        // ✅ CORREÇÃO AQUI: Convertido amountToMint e tier.boostBips para BigInt
         const tx = await boosterNFT.ownerMintBatch(
           treasuryWallet,
           BigInt(amountToMint),

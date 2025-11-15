@@ -1,4 +1,4 @@
-// scripts/1_1_update_presale_prices.ts
+// scripts/2_update_presale_prices.ts
 import { ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import fs from "fs";
@@ -80,7 +80,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
 
       console.log(`\n   -> Processando Tier ID ${tierId}...`);
       
-      // ✅ CORREÇÃO AQUI: Convertido tierId para BigInt
       const currentTier = await saleContract.tiers(BigInt(tierId));
       if (!currentTier.isConfigured) {
           console.log(`      ⚠️ AVISO: Tier ${tierId} não está configurado. Pulando.`);
@@ -91,7 +90,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
       console.log(`      Preço Novo:   ${newPriceETH} ETH/BNB (${newPriceInWei} Wei)`);
       console.log(`      Contagem de Vendas (MintedCount): ${currentTier.mintedCount} (NÃO SERÁ RESETADO)`);
 
-      // ✅ CORREÇÃO AQUI: Convertido tierId para BigInt
       const tx = await saleContract.updateTierPrice(
         BigInt(tierId),
         newPriceInWei
@@ -103,7 +101,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
 
     console.log("\n----------------------------------------------------");
     console.log("🎉🎉🎉 ATUALIZAÇÃO DE PREÇOS DA FASE 2 CONCLUÍDA! 🎉🎉🎉");
-    console.log("A contagem de vendas ('mintedCount') foi preservada.");
 
   } catch (error: any) {
     console.error(

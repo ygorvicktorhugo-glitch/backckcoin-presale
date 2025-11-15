@@ -3,6 +3,7 @@
 // REFA: Removed single nftBondingCurve logic, changed ABI import
 // REFA V2: Fixed incorrect ABI for actionsManager
 // REFA V3: Added 'https://' prefix to ESM imports
+// CORREÇÃO: Removido rewardManagerABI e referências ao contrato RewardManager
 
 import { ethers } from 'https://esm.sh/ethers@6.11.1';
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
@@ -11,9 +12,9 @@ import { State } from '../state.js';
 import { showToast } from '../ui-feedback.js';
 import {
     addresses, sepoliaRpcUrl, sepoliaChainId,
-    bkcTokenABI, delegationManagerABI, rewardManagerABI,
-    rewardBoosterABI, nftPoolABI, // <-- Corrigido (de nftBondingCurveABI)
-    actionsManagerABI, // <-- CORRIGIDO (de fortuneTigerABI)
+    bkcTokenABI, delegationManagerABI, 
+    rewardBoosterABI, nftPoolABI, 
+    actionsManagerABI, 
     publicSaleABI,
     faucetABI,
     ecosystemManagerABI,
@@ -108,8 +109,7 @@ function instantiateContracts(signerOrProvider) {
             State.bkcTokenContract = new ethers.Contract(addresses.bkcToken, bkcTokenABI, signerOrProvider);
         if (addresses.delegationManager)
             State.delegationManagerContract = new ethers.Contract(addresses.delegationManager, delegationManagerABI, signerOrProvider);
-        if (addresses.rewardManager)
-            State.rewardManagerContract = new ethers.Contract(addresses.rewardManager, rewardManagerABI, signerOrProvider);
+        // REMOVIDO: State.rewardManagerContract
         if (addresses.actionsManager)
             // --- CORRIGIDO AQUI (usando actionsManagerABI) ---
             State.actionsManagerContract = new ethers.Contract(addresses.actionsManager, actionsManagerABI, signerOrProvider);
@@ -251,8 +251,7 @@ export async function initPublicProvider() {
             State.bkcTokenContractPublic = new ethers.Contract(addresses.bkcToken, bkcTokenABI, State.publicProvider);
         if (addresses.delegationManager)
             State.delegationManagerContractPublic = new ethers.Contract(addresses.delegationManager, delegationManagerABI, State.publicProvider);
-        if (addresses.rewardManager)
-            State.rewardManagerContractPublic = new ethers.Contract(addresses.rewardManager, rewardManagerABI, State.publicProvider);
+        // REMOVIDO: State.rewardManagerContractPublic
         if (addresses.actionsManager)
             // --- CORRIGIDO AQUI (usando actionsManagerABI) ---
             State.actionsManagerContractPublic = new ethers.Contract(addresses.actionsManager, actionsManagerABI, State.publicProvider);
@@ -373,7 +372,7 @@ export async function subscribeToWalletChanges(callback) {
             State.currentUserBalance = 0n;
             State.userDelegations = [];
             State.activityHistory = [];
-            State.myCertificates = [];
+            // REMOVIDO: State.myCertificates = [];
             State.myBoosters = [];
             State.userTotalPStake = 0n;
             window.walletInitialized = false;

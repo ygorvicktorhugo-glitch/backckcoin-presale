@@ -1,30 +1,31 @@
 {
   "serviceFees": {
-    "COMMENT": "Taxas de Serviço: O custo em $BKC para USAR um serviço. O valor é em 'ether' (ex: '100' = 100 $BKC). O script converte para Wei.",
+    "COMMENT": "Taxas de Serviço (em BKC/Ether) 💰: Define o custo, em tokens BKC, para o usuário realizar uma ação específica no ecossistema (ex: criar um documento notarial). O valor é inserido em formato decimal (ex: '100' para 100 BKC).",
     "NOTARY_SERVICE": "100",
     "FORTUNE_POOL_SERVICE": "1",
     "NFT_POOL_ACCESS": "0"
   },
   "pStakeMinimums": {
-    "COMMENT": "pStake Mínimo: A quantidade de 'pStake' que um usuário deve ter para ter PERMISSÃO de usar um serviço. Valor numérico simples (ex: '10000').",
-    "NOTARY_SERVICE": "10000",
-    "FORTUNE_POOL_SERVICE": "10000",
-    "NFT_POOL_ACCESS": "10000"
+    "COMMENT": "Mínimo de pStake (Valor Bruto) 🔒: É a quantidade MÍNIMA de 'poder de staking' (pStake) que um usuário precisa ter delegado para ser autorizado a usar um determinado serviço. Se o valor for '0', não há restrição.",
+    "NOTARY_SERVICE": "10000000000000000000",
+    "FORTUNE_POOL_SERVICE": "10000000000000000000",
+    "NFT_POOL_ACCESS": "10000000000000000000"
   },
   "stakingFees": {
-    "COMMENT": "Taxas de Staking (em BIPS): 1 BIPS = 0.01%. (ex: '100' BIPS = 1%).",
-    "UNSTAKE_FEE_BIPS": "1000",
-    "FORCE_UNSTAKE_PENALTY_BIPS": "5000",
-    "CLAIM_REWARD_FEE_BIPS": "1000"
+    "COMMENT": "Taxas de Staking e Penalidades (em BIPS) 📉: Define as penalidades e taxas para retirar ou reivindicar recompensas do pool de staking. 100 BIPS = 1%. (Exemplo: Se a taxa é 1000 BIPS, o usuário perde 10% do valor).",
+    "UNSTAKE_FEE_BIPS": "100",
+    "FORCE_UNSTAKE_PENALTY_BIPS": "1000",
+    "CLAIM_REWARD_FEE_BIPS": "50"
   },
   "ammTaxFees": {
-    "COMMENT": "Impostos do AMM (em BIPS): Taxas cobradas quando um usuário VENDE um NFT para o pool.",
+    "COMMENT": "Impostos de Venda de NFT (em BIPS) 💸: Define a taxa total cobrada quando um usuário VENDE um NFT de volta para o pool de liquidez, e como essa taxa total é distribuída (para Tesouraria, Delegadores e de volta ao Pool de Liquidez). A soma das três 'shares' deve ser igual à taxa total ('NFT_POOL_TAX_BIPS').",
     "NFT_POOL_TAX_BIPS": "1000",
-    "NFT_POOL_TAX_TREASURY_SHARE_BIPS": "4000",
-    "NFT_POOL_TAX_DELEGATOR_SHARE_BIPS": "4000"
+    "NFT_POOL_TAX_TREASURY_SHARE_BIPS": "400",
+    "NFT_POOL_TAX_DELEGATOR_SHARE_BIPS": "300",
+    "NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS": "300"
   },
   "boosterDiscounts": {
-    "COMMENT": "Descontos de Booster (em BIPS): Define o desconto que cada tier de NFT concede. 'Chave' = Poder do NFT, 'Valor' = Desconto. (ex: '5000' BIPS (50%) dá '5000' BIPS (50%) de desconto).",
+    "COMMENT": "Descontos de NFT Booster (em BIPS) ⭐: Define o desconto que cada Nível de NFT Booster concede nas taxas/penalidades do sistema (Staking ou AMM). O 'Nome do Campo' (Chave) é o poder do NFT, e o 'Valor' é o desconto concedido (em BIPS).",
     "5000": "5000",
     "4000": "4000",
     "3000": "3000",
@@ -34,14 +35,14 @@
     "100": "100"
   },
   "miningDistribution": {
-    "COMMENT": "Distribuição de Mineração (em BIPS): Como 100% dos tokens recém-criados (pelo PoP Mining) são divididos. A SOMA dos 3 valores DEVE ser 10000.",
+    "COMMENT": "Distribuição da Mineração PoP (em BIPS) ⛏️: Controla como os tokens BKC recém-criados pelo sistema (Mineração Proof-of-Purchase) são divididos entre os pools de recompensa. A SOMA de todas as categorias **DEVE** ser exatamente 10000 BIPS (100%).",
     "TREASURY": "1500",
     "VALIDATOR_POOL": "1500",
     "DELEGATOR_POOL": "7000"
   },
   "miningBonuses": {
-    "COMMENT": "Bônus de Mineração (em BIPS): O 'cashback' em $BKC que um usuário recebe de volta ao gastar em um serviço (ex: criar um Vesting).",
-    "VESTING_SERVICE": "500",
+    "COMMENT": "Bônus de Mineração (em BIPS) 🎁: É o 'cashback' que o usuário ganha instantaneamente por usar o serviço. O valor é aplicado sobre a 'sobra' do token minerado (após a distribuição para os pools).",
+    "NOTARY_SERVICE": "5000",
     "FORTUNE_POOL_SERVICE": "0"
   }
 }

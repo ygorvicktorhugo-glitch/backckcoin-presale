@@ -1,4 +1,3 @@
-// contracts/BKCToken.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
@@ -6,21 +5,16 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-/**
- * @title BKCToken (Upgradeable)
- * @author Gemini AI (Based on original contract)
- * @dev Main token contract, implemented with the Upgradeable pattern.
- * @notice TGE supply minting is moved to the launch script (3_launch_and_liquidate_ecosystem.ts).
- */
+
 contract BKCToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
     // --- Token Constants (Fundamental) ---
-    uint256 public constant MAX_SUPPLY = 200_000_000 * 10**18;
-    uint256 public constant TGE_SUPPLY = 40_000_000 * 10**18; // 40 million for liquidity/TGE
+    uint256 public constant MAX_SUPPLY = 200000000 * 10**18;
+    uint256 public constant TGE_SUPPLY = 40000000 * 10**18; // 40 million for liquidity/TGE
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
+    // REMOVIDO O CONSTRUCTOR QUE CAUSA O ERRO DE SEGURANÇA.
+    // constructor() {
+    //     _disableInitializers();
+    // }
 
     /**
      * @notice Initializer for the Upgradeable contract.
@@ -36,11 +30,8 @@ contract BKCToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
             _initialOwner != address(0),
             "BKC: Owner address cannot be zero address"
         );
-        
         // Transfers ownership to the _initialOwner (the Deployer in Step 1)
         _transferOwnership(_initialOwner);
-        
-        // !!! REMOVED: TGE_SUPPLY minting moved to script 3 for security !!!
     }
 
     // --- Mint Function (For the MiningManager) ---

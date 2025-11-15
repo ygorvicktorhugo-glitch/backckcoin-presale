@@ -1,5 +1,4 @@
 // scripts/3_launch_and_liquidate_ecosystem.ts (Lançamento do Ecossistema e Liquidez Pós-Venda)
-// REVISÃO: Agora usa a arquitetura NFTLiquidityPoolFactory
 
 import { ethers, upgrades } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
@@ -18,69 +17,43 @@ const CHUNK_SIZE_BIGINT = BigInt(CHUNK_SIZE);
 
 // --- SIMULAÇÃO DE CUNHAGEM MANUAL PARA LIQUIDEZ (TESTE) ---
 const MANUAL_LIQUIDITY_MINT_COUNT = [
-    10n, // Tier 0 (Diamond) - 10 NFTs para Liquidez
-    20n, // Tier 1 (Platinum) - 20 NFTs para Liquidez
-    30n, // Tier 2 (Gold) - 30 NFTs para Liquidez
-    40n, // Tier 3 (Silver) - 40 NFTs para Liquidez
-    50n, // Tier 4 (Bronze) - 50 NFTs para Liquidez
-    60n, // Tier 5 (Iron) - 60 NFTs para Liquidez
-    70n  // Tier 6 (Crystal) - 70 NFTs para Liquidez
+    10n, // Tier 0 (Diamond) - 10 NFTs
+    20n, // Tier 1 (Platinum) - 20 NFTs
+    30n, // Tier 2 (Gold) - 30 NFTs
+    40n, // Tier 3 (Silver) - 40 NFTs
+    50n, // Tier 4 (Bronze) - 50 NFTs
+    60n, // Tier 5 (Iron) - 60 NFTs
+    70n  // Tier 6 (Crystal) - 70 NFTs
 ];
 // -------------------------------------------------------------------
 
 
-// --- 1. Configuração de URIs ---
-const IPFS_BASE_URI_VESTING =
-  "ipfs://bafybeiebqaxpruffltuzptttlebu24w4prwfebebeevprmm7sudaxpzmg57a/"; 
-
-// --- 2. Taxa do Oráculo ---
+// --- 1. Taxa do Oráculo ---
 const FORTUNE_POOL_ORACLE_FEE_ETH = "0.001"; 
 
-// --- 3. CONFIGURAÇÃO DE LIQUIDEZ DO FORTUNE POOL ---
+// --- 2. CONFIGURAÇÃO DE LIQUIDEZ DO FORTUNE POOL ---
 const FORTUNE_POOL_LIQUIDITY_TOTAL = ethers.parseEther("1000000"); // 1,000,000 BKC
 
-const LIQUIDITY_CONFIG = [
+// ✅ AJUSTADO PARA A NOVA LÓGICA DE JOGO (1x, 10x, 100x com chances 1/3, 1/10, 1/100)
+const FORTUNE_POOL_TIERS = [
     { 
         poolId: 1, 
         multiplierBips: 10000n, // 1x
-        chanceDenominator: 2, // 50%
-        bipsContribution: 9000n, 
-        amount: ethers.parseEther("900000") // 90%
+        chanceDenominator: 3n, // 1/3 chance
     },
     { 
         poolId: 2, 
-        multiplierBips: 50000n, // 5x
-        chanceDenominator: 20, // 5%
-        bipsContribution: 700n, 
-        amount: ethers.parseEther("70000") // 7%
+        multiplierBips: 100000n, // 10x
+        chanceDenominator: 10n, // 1/10 chance
     },
     { 
         poolId: 3, 
         multiplierBips: 1000000n, // 100x
-        chanceDenominator: 1000, // 0.1%
-        bipsContribution: 300n, 
-        amount: ethers.parseEther("30000") // 3%
+        chanceDenominator: 100n, // 1/100 chance
     }
 ];
-const TOTAL_FORTUNE_LIQUIDITY = LIQUIDITY_CONFIG.reduce((sum, pool) => sum + pool.amount, 0n);
 
-// --- 4. CONFIGURAÇÃO DE TAXAS E REGRAS ---
-const SERVICE_SETTINGS = {
-  NOTARY_FEE: ethers.parseUnits("100", 18), 
-  NOTARY_SERVICE_PSTAKE: BigInt(10000), 
-  TIGER_GAME_SERVICE_FEE: BigInt(0), 
-  TIGER_GAME_SERVICE_PSTAKE: BigInt(10000), 
-  UNSTAKE_FEE_BIPS: BigInt(100), 
-  FORCE_UNSTAKE_PENALTY_BIPS: BigInt(5000), 
-  CLAIM_REWARD_FEE_BIPS: BigInt(2000), 
-  NFT_POOL_ACCESS_PSTAKE: BigInt(10000), 
-  NFT_POOL_TAX_BIPS: BigInt(1000), 
-  NFT_POOL_TAX_TREASURY_SHARE_BIPS: BigInt(4000), 
-  NFT_POOL_TAX_DELEGATOR_SHARE_BIPS: BigInt(4000), 
-  NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS: BigInt(2000), 
-};
-
-// --- 5. AMM LIQUIDEZ CONFIG ---
+// --- 3. AMM LIQUIDEZ CONFIG ---
 const LIQUIDITY_BKC_AMOUNT_PER_POOL = ethers.parseEther("2000000"); // 2,000,000 BKC por Tier NFT
 const AIRDROP_AMOUNT = ethers.parseEther("25000000"); // 25,000,000 BKC para airdrop/vendas
 
@@ -98,7 +71,7 @@ const TGE_SUPPLY_AMOUNT = 40_000_000n * 10n**18n;
 // ######################################################################
 
 
-// --- Funções Auxiliares (Wrappers e Helpers) ---
+// --- Funções Auxiliares (MANTIDAS) ---
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function sendTransactionWithRetries(txFunction: () => Promise<any>, retries = 3): Promise<ContractTransactionReceipt> {
@@ -121,26 +94,41 @@ async function sendTransactionWithRetries(txFunction: () => Promise<any>, retrie
   throw new Error("Transação falhou após múltiplas tentativas.");
 }
 
-async function setFee(manager: any, key: string, value: number | bigint) {
-    const { ethers } = require("hardhat"); 
-    await sendTransactionWithRetries(() => manager.getFunction("setFee")(key, value));
-    console.log(`   -> Taxa definida: ${key} = ${value.toString()}`);
+// Funções auxiliares para configuração (CORRIGIDAS)
+async function setServiceFee(manager: any, key: string, value: number | bigint) {
+    // setServiceFee é usado para taxas em BKC (Wei) ou BIPS de staking/AMM
+    await sendTransactionWithRetries(() => manager.setServiceFee(key, value));
+    console.log(`   -> Taxa de Serviço/Staking definida: ${key} = ${value.toString()}`);
     await sleep(CONFIG_DELAY_MS / 2); 
 }
 
+// Esta função define o mínimo de pStake (em BigInt)
 async function setPStake(manager: any, key: string, value: number | bigint) {
-    await sendTransactionWithRetries(() => manager.getFunction("setPStakeMinimum")(key, value));
-    console.log(`   -> pStake definido: ${key} = ${value}`);
+    await sendTransactionWithRetries(() => manager.setPStakeMinimum(key, value));
+    console.log(`   -> pStake Mínimo definido: ${key} = ${value}`);
     await sleep(CONFIG_DELAY_MS / 2);
 }
 
+// Esta função encapsula a configuração de taxa e pStake mínimo para um serviço
 async function setService(manager: any, serviceKey: string, feeValue: number | bigint, pStakeValue: number | bigint) {
     console.log(`\nConfigurando Serviço: ${serviceKey}...`);
-    await setFee(manager, serviceKey, feeValue);
+    await setServiceFee(manager, serviceKey, feeValue); // Usa a função corrigida setServiceFee
     await setPStake(manager, serviceKey, pStakeValue);
 }
 
-// ====================================================================
+// Funções para Mineração (Valor em BIPS)
+async function setMiningDistributionBips(manager: any, key: string, value: number | bigint) {
+    await sendTransactionWithRetries(() => manager.setMiningDistributionBips(key, value));
+    console.log(`   -> Distribuição de Mineração definida: ${key} = ${value.toString()} BIPS`);
+    await sleep(CONFIG_DELAY_MS / 2); 
+}
+
+async function setMiningBonusBips(manager: any, key: string, value: number | bigint) {
+    await sendTransactionWithRetries(() => manager.setMiningBonusBips(key, value));
+    console.log(`   -> Bônus de Mineração definido: ${key} = ${value.toString()} BIPS`);
+    await sleep(CONFIG_DELAY_MS / 2); 
+}
+
 
 /**
  * Funções auxiliares para carregamento/deploy de Spokes
@@ -150,7 +138,8 @@ async function getOrCreateSpoke(
     addresses: { [key: string]: string },
     key: keyof typeof addresses,
     contractName: string,
-    artifactPath: string,
+    contractPath: string,
+    initializerArgs: any[], // <--- Argumentos para a função initialize
 ) {
     const { ethers, upgrades } = hre;
     const [deployer] = await ethers.getSigners();
@@ -164,17 +153,18 @@ async function getOrCreateSpoke(
         return instance;
     } else {
         // Implantar e salvar
-        const ContractFactory = await ethers.getContractFactory(artifactPath);
-        const instance = await upgrades.deployProxy(ContractFactory, [], { 
-            initializer: false, 
+        const ContractFactory = await ethers.getContractFactory(contractPath);
+        
+        // Passando initializerArgs para satisfazer a assinatura de initialize()
+        const instance = await upgrades.deployProxy(ContractFactory, initializerArgs, { 
             kind: "uups" 
         });
         await instance.waitForDeployment();
         addresses[key] = await instance.getAddress();
         fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2));
-        console.log(`   ✅ ${contractName} (Proxy) implantado em: ${addresses[key]}`);
+        console.log(`   ✅ ${contractName} (Proxy) implantado e inicializado em: ${addresses[key]}`);
         
-        // RETORNAMOS A INSTÂNCIA PARA SER INICIALIZADA NA ETAPA 2.2
+        // RETORNAMOS A INSTÂNCIA
         return instance;
     }
 }
@@ -211,11 +201,9 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   let bkcTokenInstance: any;
   let miningManagerInstance: any;
   let delegationManagerInstance: any;
-  let rewardManagerInstance: any;
   let notaryInstance: any;
   let fortunePoolInstance: any;
-  // let nftLiquidityPoolInstance: any; // REMOVIDO - Agora é uma Fábrica
-
+  
   try {
     // ##############################################################
     // ### PARTE 1: IMPLANTAR NOVOS SPOKES (Recarrega Contratos) ###
@@ -226,17 +214,61 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     bkcTokenInstance = await ethers.getContractAt("BKCToken", addresses.bkcToken, deployer);
     console.log(`\n1.1. BKCToken (Proxy) carregado em: ${addresses.bkcToken}`);
 
-    // Carregar/Implantar os demais Spokes usando a lógica de Retomada
-    miningManagerInstance = await getOrCreateSpoke(hre, addresses, 'miningManager', 'MiningManager', 'MiningManager');
-    delegationManagerInstance = await getOrCreateSpoke(hre, addresses, 'delegationManager', 'DelegationManager', 'contracts/DelegationManager.sol:DelegationManager');
-    rewardManagerInstance = await getOrCreateSpoke(hre, addresses, 'rewardManager', 'RewardManager', 'contracts/RewardManager.sol:RewardManager');
-    notaryInstance = await getOrCreateSpoke(hre, addresses, 'decentralizedNotary', 'DecentralizedNotary', 'contracts/DecentralizedNotary.sol:DecentralizedNotary');
-    fortunePoolInstance = await getOrCreateSpoke(hre, addresses, 'fortunePool', 'FortunePoolV3', 'contracts/FortunePoolV3.sol:FortunePoolV3');
+    // Implantação dos contratos CORE (MM e DM) que serão referenciados pelo Notary
+    // MM e DM
+    miningManagerInstance = await getOrCreateSpoke(hre, addresses, 'miningManager', 'MiningManager', 'MiningManager', 
+        [addresses.ecosystemManager] // Args: _ecosystemManagerAddress
+    ); 
+    
+    // ✅ AJUSTE CRÍTICO: DelegaionManager precisa ser inicializado com o Owner/Deployer
+    delegationManagerInstance = await getOrCreateSpoke(hre, addresses, 'delegationManager', 'DelegationManager', 'contracts/DelegationManager.sol:DelegationManager',
+        [deployer.address, addresses.ecosystemManager] // Args: _initialOwner, _ecosystemManagerAddress
+    );
+    
+    // 1.2. ATUALIZAÇÃO CRÍTICA DO HUB (CORREÇÃO para o erro "Notary: Core contracts not set")
+    // Obtemos endereços da Fase 1, que o Hub já tem.
+    const currentTreasury = await hub.getTreasuryAddress(); // Endereço temporário do deployer
+    const currentBooster = await hub.getBoosterAddress();
+    const currentBKC = await hub.getBKCTokenAddress();
+
+    // ✅ AJUSTE: Garante que o Treasury Wallet é persistido no JSON para evitar reverso.
+    addresses.treasuryWallet = currentTreasury;
+    fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2));
+
+
+    console.log("\n1.2. Atualização CRÍTICA do Hub (MM e DM) para permitir inicialização dos Spokes...");
+    
+    // Usamos setAddresses, preenchendo os 8 campos.
+    await sendTransactionWithRetries(() => hub.setAddresses(
+        currentBKC,                               // _bkcToken (Mantido)
+        currentTreasury,                          // _treasuryWallet (Mantido)
+        addresses.delegationManager,              // _delegationManager (NOVO)
+        currentBooster,                           // _rewardBooster (Mantido)
+        addresses.miningManager,                  // _miningManager (NOVO)
+        addresses.decentralizedNotary || ethers.ZeroAddress, // Placeholder seguro
+        addresses.fortunePool || ethers.ZeroAddress, // Placeholder seguro
+        addresses.nftLiquidityPoolFactory || ethers.ZeroAddress // Placeholder seguro
+    ));
+    console.log(`   ✅ Hub atualizado com DM e MM.`);
+    await sleep(DEPLOY_DELAY_MS);
+    
+    // 1.3. Implantação de Notary e FortunePool (Que agora podem ler DM/MM do Hub)
+    console.log("\n1.3. Implantando Spokes que dependem dos Core Contracts no Hub...");
+    
+    // DecentralizedNotary
+    notaryInstance = await getOrCreateSpoke(hre, addresses, 'decentralizedNotary', 'DecentralizedNotary', 'contracts/DecentralizedNotary.sol:DecentralizedNotary',
+        [deployer.address, addresses.ecosystemManager] // Args: _initialOwner, _ecosystemManagerAddress
+    );
+
+    // FortunePool
+    fortunePoolInstance = await getOrCreateSpoke(hre, addresses, 'fortunePool', 'FortunePool', 'FortunePool', 
+        [deployer.address, addresses.ecosystemManager] // Args: _initialOwner, _ecosystemManagerAddress
+    );
     
     // --- (REFA) INÍCIO: Implantação da Fábrica de Piscinas NFT ---
     
-    // 1.2. Implantar a Implementação (Molde) do NFTLiquidityPool
-    console.log("\n1.2. Implantando Implementação (Molde) do NFTLiquidityPool...");
+    // 1.4. Implantar a Implementação (Molde) do NFTLiquidityPool
+    console.log("\n1.4. Implantando Implementação (Molde) do NFTLiquidityPool...");
     let nftPoolImplementationAddress = addresses.nftLiquidityPool_Implementation;
     
     if (!nftPoolImplementationAddress || !nftPoolImplementationAddress.startsWith("0x")) {
@@ -251,8 +283,8 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         console.log(`   ⚠️ Implementação (Molde) já implantada em: ${nftPoolImplementationAddress}`);
     }
     
-    // 1.3. Implantar a FÁBRICA (Proxy UUPS)
-    console.log("\n1.3. Implantando NFTLiquidityPoolFactory (Proxy)...");
+    // 1.5. Implantar a FÁBRICA (Proxy UUPS)
+    console.log("\n1.5. Implantando NFTLiquidityPoolFactory (Proxy)...");
     let factoryInstance: BaseContract;
     const factoryAddress = addresses.nftLiquidityPoolFactory;
 
@@ -278,6 +310,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     // --- (REFA) FIM: Implantação da Fábrica de Piscinas NFT ---
     
     console.log(`\n✅ Todos os Spokes implantados/carregados e endereços salvos.`);
+    console.log(`   (Contratos inicializados durante o deploy, exceto Hub e BKCToken.)`);
     await sleep(DEPLOY_DELAY_MS);
 
 
@@ -289,75 +322,34 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     await sleep(20000); // Pausa
     console.log("   (Pausa de 20s concluída. Retomando configuração...)");
 
-    // 2.1. Conexões do Hub (EcosystemManager)
-    console.log("\n2.1. Atualizando o Hub com todos os endereços...");
-    await sendTransactionWithRetries(() => hub.setBKCTokenAddress(addresses.bkcToken)); 
-    await sendTransactionWithRetries(() => hub.setDelegationManagerAddress(addresses.delegationManager)); 
-    await sendTransactionWithRetries(() => hub.setMiningManagerAddress(addresses.miningManager)); 
-    await sendTransactionWithRetries(() => hub.setRewardManagerAddress(addresses.rewardManager)); 
-    await sendTransactionWithRetries(() => hub.setDecentralizedNotaryAddress(addresses.decentralizedNotary)); 
-    await sendTransactionWithRetries(() => hub.setFortunePoolAddress(addresses.fortunePool)); 
+    // Declara 'tx' como 'let'
+    let tx;
     
-    // --- (REFA) Atualiza o Cérebro com o endereço da FÁBRICA ---
-    await sendTransactionWithRetries(() => hub.setNFTLiquidityPoolFactoryAddress(addresses.nftLiquidityPoolFactory)); 
+    // 2.1. Conexões do Hub (EcosystemManager) - ATUALIZAÇÃO FINAL
+    console.log("\n2.1. Atualizando o Hub com todos os endereços restantes (MM, DM, Notary, FortunePool, Factory)...");
     
-    await sendTransactionWithRetries(() => hub.setRewardBoosterAddress(addresses.rewardBoosterNFT));
-    console.log(`   ✅ Cérebro atualizado.`);
+    // ✅ AJUSTE CRÍTICO: Obtendo o Treasury Wallet do JSON (garante que ele seja o mesmo da Parte 1.2)
+    const finalTreasury = addresses.treasuryWallet; 
 
-    // 2.2. Inicializar Spokes
-    console.log("\n2.2. Inicializando todos os Spokes (DEFININDO O PROPRIETÁRIO)...");
-    
-    // (A lógica de inicialização para MiningManager, DelegationManager, RewardManager, Notary, FortunePool permanece a mesma)
-    try {
-        await sendTransactionWithRetries(() => miningManagerInstance.initialize(deployer.address, addresses.ecosystemManager));
-        console.log(`   ✅ MiningManager inicializado.`);
-    } catch (e: any) {
-        if (e.message.includes("already initialized")) { console.log("   ⚠️ MiningManager já inicializado."); }
-        else { throw e; }
-    }
+    // Usamos setAddresses, preenchendo todos os 8 campos com os valores finais.
+    await sendTransactionWithRetries(() => hub.setAddresses(
+        addresses.bkcToken,
+        finalTreasury,                            // Treasury (Endereço do Deployer)
+        addresses.delegationManager,
+        addresses.rewardBoosterNFT,
+        addresses.miningManager,
+        addresses.decentralizedNotary,            // Endereço Final
+        addresses.fortunePool,                    // Endereço Final
+        addresses.nftLiquidityPoolFactory         // Endereço Final
+    ));
+    console.log(`   ✅ Cérebro atualizado com todos os 8 endereços.`);
 
-    try {
-        await sendTransactionWithRetries(() => delegationManagerInstance.initialize(deployer.address, addresses.ecosystemManager));
-        console.log(`   ✅ DelegationManager inicializado.`);
-    } catch (e: any) {
-        if (e.message.includes("already initialized")) { console.log("   ⚠️ DelegationManager já inicializado."); }
-        else { throw e; }
-    }
-
-    try {
-        await sendTransactionWithRetries(() => rewardManagerInstance.initialize(deployer.address, addresses.ecosystemManager));
-        console.log(`   ✅ RewardManager inicializado.`);
-    } catch (e: any) {
-        if (e.message.includes("already initialized")) { console.log("   ⚠️ RewardManager já inicializado."); }
-        else { throw e; }
-    }
-    
-    try {
-        await sendTransactionWithRetries(() => notaryInstance.initialize(deployer.address, addresses.ecosystemManager));
-        console.log(`   ✅ DecentralizedNotary inicializado.`);
-    } catch (e: any) {
-        if (e.message.includes("already initialized")) { console.log("   ⚠️ DecentralizedNotary já inicializado."); }
-        else { throw e; }
-    }
-    
-    try {
-        await sendTransactionWithRetries(() => fortunePoolInstance.initialize(deployer.address, addresses.ecosystemManager));
-        console.log(`   ✅ FortunePoolV3 inicializado.`);
-    } catch (e: any) {
-        if (e.message.includes("already initialized")) { console.log("   ⚠️ FortunePoolV3 já inicializado."); }
-        else { throw e; }
-    }
-    
-    // --- (REFA) REMOVIDA a inicialização do nftLiquidityPoolInstance ---
-
-    console.log(`   ✅ Spokes inicializados.`);
+    // 2.2. Inicializar Spokes (NADA A FAZER AQUI - FEITO NA PARTE 1)
+    console.log("\n2.2. Verificação de Inicialização: Ignorando inicializações duplicadas.");
 
 
     // 2.3. Autorizando Miners no Guardião (MiningManager)
-    // (Esta seção permanece 100% inalterada)
     console.log("\n2.3. Autorizando Spokes no Guardião (MiningManager)...");
-    console.log(`   -> Autorizando VESTING_SERVICE...`);
-    await sendTransactionWithRetries(() => miningManagerInstance.setAuthorizedMiner("VESTING_SERVICE", addresses.rewardManager)); 
     console.log(`   -> Autorizando TIGER_GAME_SERVICE...`);
     await sendTransactionWithRetries(() => miningManagerInstance.setAuthorizedMiner("TIGER_GAME_SERVICE", addresses.fortunePool)); 
     console.log(`   -> Autorizando NOTARY_SERVICE...`);
@@ -365,7 +357,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     console.log(`   ✅ Spokes autorizados.`);
 
     // 2.4. Transfer BKCToken Ownership to MiningManager
-    // (Esta seção permanece 100% inalterada)
     console.log("\n2.4. (PASSO CRÍTICO) Transferindo posse do BKCToken para o MiningManager...");
     const currentOwner = await bkcTokenInstance.owner(); 
     if (currentOwner.toLowerCase() === deployer.address.toLowerCase()) {
@@ -378,7 +369,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     }
     
     // 2.5. Mint TGE Supply
-    // (Esta seção permanece 100% inalterada)
     console.log(`\n2.5. Cunhando TGE Supply (${ethers.formatEther(TGE_SUPPLY_AMOUNT)} BKC) para o MiningManager...`);
     try {
         await sendTransactionWithRetries(() => 
@@ -391,9 +381,8 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     }
     
     // 2.6. Distribuir TGE Supply do MiningManager
-    // (Esta seção permanece 100% inalterada)
     console.log(`\n2.6. Distribuindo TGE Supply do Guardião (${ethers.formatEther(TGE_SUPPLY_AMOUNT)} BKC)...`);
-    const totalLiquidityForDeployer = TOTAL_FORTUNE_LIQUIDITY + (LIQUIDITY_BKC_AMOUNT_PER_POOL * BigInt(ALL_TIERS.length));
+    const totalLiquidityForDeployer = FORTUNE_POOL_LIQUIDITY_TOTAL + (LIQUIDITY_BKC_AMOUNT_PER_POOL * BigInt(ALL_TIERS.length));
     const airdropWallet = deployer.address; 
     
     if (TGE_SUPPLY_AMOUNT < totalLiquidityForDeployer) {
@@ -409,7 +398,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         console.log(`   ✅ Deployer financiado.`);
     } catch (e: any) {
         if (e.message.includes("transfer amount exceeds balance")) {
-             console.warn(`   ⚠️  Guardian não tem saldo TGE. A cunhagem (2.5) pode ter sido pulada.`);
+             console.warn(`   ⚠️  Guardian não tem saldo BKC. A cunhagem (2.5) pode ter sido pulada.`);
         } else {
              console.warn(`   ⚠️  Falha ao transferir para Deployer (talvez já feito): ${e.message}`);
         }
@@ -428,8 +417,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     }
     
     // 2.7. Configurar Oráculo
-    console.log("\n2.7. Autorizando Oráculo no FortunePoolV3 e definindo taxa...");
-    // *** ESTA SEÇÃO FOI RESTAURADA *** (Estava comentada no seu arquivo original)
+    console.log("\n2.7. Autorizando Oráculo no FortunePool e definindo taxa...");
     try {
         await sendTransactionWithRetries(() => fortunePoolInstance.setOracleAddress(addresses.oracleWalletAddress));
         await sendTransactionWithRetries(() => fortunePoolInstance.setOracleFee(ethers.parseEther(FORTUNE_POOL_ORACLE_FEE_ETH)));
@@ -442,36 +430,51 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     // ##############################################################
     console.log("\n=== PARTE 3: CONFIGURAÇÃO DE TAXAS E REGRAS INICIAIS ===");
 
-    // 3.1. Configuração do Tiger Game
+    // 3.1. Configuração do FortunePool
     console.log("\n3.1. Configurando as 3 piscinas de prêmios (Lógica 'Highest Prize Wins')...");
-    // *** ESTA SEÇÃO FOI RESTAURADA *** (Estava comentada no seu arquivo original)
     try {
-        const sortedConfig = LIQUIDITY_CONFIG.sort((a, b) => Number(a.poolId) - Number(b.poolId));
-        for (const pool of sortedConfig) {
-            await sendTransactionWithRetries(() => fortunePoolInstance.setPrizeTier(pool.poolId, pool.chanceDenominator, pool.multiplierBips));
-            console.log(`   -> Tier ${pool.poolId} (Mult: ${Number(pool.multiplierBips)/10000}x) configurado.`);
+        for (const tier of FORTUNE_POOL_TIERS) {
+            await sendTransactionWithRetries(() => fortunePoolInstance.setPrizeTier(tier.poolId, tier.chanceDenominator, tier.multiplierBips));
+            console.log(`   -> Tier ${tier.poolId} (Mult: ${Number(tier.multiplierBips)/10000}x, Chance: 1/${tier.chanceDenominator.toString()}) configurado.`);
         }
     } catch (e: any) { console.warn(`   ⚠️ Falha ao configurar Tiers (talvez já feito): ${e.message}`); }
 
 
     // 3.2. Configurando todas as taxas e pStake no Hub
-    console.log("\n3.2. Configurando Taxas e Mínimos de pStake (Hub)...");
-    // *** ESTA SEÇÃO FOI RESTAURADA *** (Estava comentada no seu arquivo original)
+    console.log("\n3.2. Configurando Taxas e Mínimos de pStake (Hub) com base no rules-config.json...");
+    // A lógica de configuração de regras foi movida para 4_manage_rules.ts
+    // Mas as regras iniciais devem ser setadas aqui.
+
+    const RULES_TO_APPLY = JSON.parse(fs.readFileSync(path.join(__dirname, "../rules-config.json"), "utf8"));
+    
     try {
-        await setService(hub, "NOTARY_SERVICE", SERVICE_SETTINGS.NOTARY_FEE, SERVICE_SETTINGS.NOTARY_SERVICE_PSTAKE);
-        await setService(hub, "TIGER_GAME_SERVICE", SERVICE_SETTINGS.TIGER_GAME_SERVICE_FEE, SERVICE_SETTINGS.TIGER_GAME_SERVICE_PSTAKE);
-        await setService(hub, "NFT_POOL_ACCESS", 0, SERVICE_SETTINGS.NFT_POOL_ACCESS_PSTAKE);
-        console.log("\nConfigurando Taxas de Staking...");
-        await setFee(hub, "UNSTAKE_FEE_BIPS", SERVICE_SETTINGS.UNSTAKE_FEE_BIPS);
-        await setFee(hub, "FORCE_UNSTAKE_PENALTY_BIPS", SERVICE_SETTINGS.FORCE_UNSTAKE_PENALTY_BIPS);
-        await setFee(hub, "CLAIM_REWARD_FEE_BIPS", SERVICE_SETTINGS.CLAIM_REWARD_FEE_BIPS);
-        console.log("\nConfigurando Taxas do AMM NFT...");
-        await setFee(hub, "NFT_POOL_TAX_BIPS", SERVICE_SETTINGS.NFT_POOL_TAX_BIPS);
-        await setFee(hub, "NFT_POOL_TAX_TREASURY_SHARE_BIPS", SERVICE_SETTINGS.NFT_POOL_TAX_TREASURY_SHARE_BIPS);
-        await setFee(hub, "NFT_POOL_TAX_DELEGATOR_SHARE_BIPS", SERVICE_SETTINGS.NFT_POOL_TAX_DELEGATOR_SHARE_BIPS);
-        await setFee(hub, "NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS", SERVICE_SETTINGS.NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS);
-        console.log(`   ✅ Todas as ${Object.keys(SERVICE_SETTINGS).length} regras e taxas foram definidas no Cérebro.`);
-    } catch (e: any) { console.warn(`   ⚠️ Falha ao configurar Taxas (talvez já feito): ${e.message}`); }
+        // Serviços (Taxa em Wei + pStake Mínimo)
+        await setService(hub, "NOTARY_SERVICE", ethers.parseEther(RULES_TO_APPLY.serviceFees.NOTARY_SERVICE), BigInt(RULES_TO_APPLY.pStakeMinimums.NOTARY_SERVICE));
+        await setService(hub, "FORTUNE_POOL_SERVICE", ethers.parseEther(RULES_TO_APPLY.serviceFees.FORTUNE_POOL_SERVICE), BigInt(RULES_TO_APPLY.pStakeMinimums.FORTUNE_POOL_SERVICE));
+        await setService(hub, "NFT_POOL_ACCESS", ethers.parseEther(RULES_TO_APPLY.serviceFees.NFT_POOL_ACCESS), BigInt(RULES_TO_APPLY.pStakeMinimums.NFT_POOL_ACCESS));
+        
+        // Taxas de Staking (BIPS)
+        await setServiceFee(hub, "UNSTAKE_FEE_BIPS", BigInt(RULES_TO_APPLY.stakingFees.UNSTAKE_FEE_BIPS));
+        await setServiceFee(hub, "FORCE_UNSTAKE_PENALTY_BIPS", BigInt(RULES_TO_APPLY.stakingFees.FORCE_UNSTAKE_PENALTY_BIPS));
+        await setServiceFee(hub, "CLAIM_REWARD_FEE_BIPS", BigInt(RULES_TO_APPLY.stakingFees.CLAIM_REWARD_FEE_BIPS));
+
+        // Impostos AMM NFT (BIPS)
+        await setServiceFee(hub, "NFT_POOL_TAX_BIPS", BigInt(RULES_TO_APPLY.ammTaxFees.NFT_POOL_TAX_BIPS));
+        await setServiceFee(hub, "NFT_POOL_TAX_TREASURY_SHARE_BIPS", BigInt(RULES_TO_APPLY.ammTaxFees.NFT_POOL_TAX_TREASURY_SHARE_BIPS));
+        await setServiceFee(hub, "NFT_POOL_TAX_DELEGATOR_SHARE_BIPS", BigInt(RULES_TO_APPLY.ammTaxFees.NFT_POOL_TAX_DELEGATOR_SHARE_BIPS));
+        await setServiceFee(hub, "NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS", BigInt(RULES_TO_APPLY.ammTaxFees.NFT_POOL_TAX_LIQUIDITY_SHARE_BIPS));
+
+        // Distribuição de Mineração (BIPS)
+        await setMiningDistributionBips(hub, "TREASURY", BigInt(RULES_TO_APPLY.miningDistribution.TREASURY));
+        await setMiningDistributionBips(hub, "VALIDATOR_POOL", BigInt(RULES_TO_APPLY.miningDistribution.VALIDATOR_POOL));
+        await setMiningDistributionBips(hub, "DELEGATOR_POOL", BigInt(RULES_TO_APPLY.miningDistribution.DELEGATOR_POOL));
+
+        // Bônus de Mineração (BIPS)
+        await setMiningBonusBips(hub, "FORTUNE_POOL_SERVICE", BigInt(RULES_TO_APPLY.miningBonuses.FORTUNE_POOL_SERVICE));
+        await setMiningBonusBips(hub, "NOTARY_SERVICE", BigInt(RULES_TO_APPLY.miningBonuses.NOTARY_SERVICE));
+
+        console.log(`   ✅ Todas as regras e taxas iniciais foram definidas no Cérebro.`);
+    } catch (e: any) { console.warn(`   ⚠️ Falha ao configurar Taxas/Regras: ${e.message}`); }
 
 
     // ##############################################################
@@ -480,17 +483,16 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     console.log("\n=== PARTE 4: ABASTECENDO O ECOSSISTEMA (LIQUIDEZ) ===");
 
     // 4.1. Liquidez do Fortune Pool
-    console.log(`\n4.1. Abastecendo o FortunePool com ${ethers.formatEther(TOTAL_FORTUNE_LIQUIDITY)} $BKC...`);
-    // (Esta seção permanece 100% inalterada)
+    console.log(`\n4.1. Abastecendo o FortunePool com ${ethers.formatEther(FORTUNE_POOL_LIQUIDITY_TOTAL)} $BKC...`);
     
     try {
         await sendTransactionWithRetries(() => 
-            bkcTokenInstance.approve(addresses.fortunePool, TOTAL_FORTUNE_LIQUIDITY)
+            bkcTokenInstance.approve(addresses.fortunePool, FORTUNE_POOL_LIQUIDITY_TOTAL)
         );
         console.log(`   ✅ Aprovação do Deployer para FortunePool concluída.`);
 
-        await sendTransactionWithRetries(() => fortunePoolInstance.topUpPool(TOTAL_FORTUNE_LIQUIDITY));
-        console.log(`   ✅ Saldo de ${ethers.formatEther(TOTAL_FORTUNE_LIQUIDITY)} BKC injetado na PrizePool.`);
+        await sendTransactionWithRetries(() => fortunePoolInstance.topUpPool(FORTUNE_POOL_LIQUIDITY_TOTAL));
+        console.log(`   ✅ Saldo de ${ethers.formatEther(FORTUNE_POOL_LIQUIDITY_TOTAL)} BKC injetado na PrizePool.`); // CORRIGIDO AQUI
     } catch (e: any) {
         if (e.message.includes("transfer amount exceeds balance")) {
             console.warn(`   ⚠️  Deployer não tem saldo BKC. A distribuição (2.6) pode ter sido pulada.`);
@@ -504,11 +506,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     console.log("\n4.2. Cunhagem de NFTs e Abastecimento das Piscinas AMM (Modo Fábrica)...");
 
     const rewardBoosterNFT = await ethers.getContractAt("RewardBoosterNFT", addresses.rewardBoosterNFT, deployer);
-    // Carrega a FÁBRICA
     const factoryInstanceLoaded = await ethers.getContractAt("NFTLiquidityPoolFactory", addresses.nftLiquidityPoolFactory, deployer);
-
-    // --- (REFA) REMOVIDAS aprovações globais ---
-    // A aprovação agora é feita DENTRO do loop para cada pool clone
 
     // Loop de Cunhagem e Adição de Liquidez (USANDO A LISTA MANUAL PARA TESTE)
     for (let i = 0; i < ALL_TIERS.length; i++) {
@@ -522,15 +520,13 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
             continue; 
         }
 
-        // --- (REFA) INÍCIO: Lógica da Fábrica ---
         console.log(`      -> Verificando/Implantando Pool Clone para ${tier.boostBips} bips...`);
         let poolAddress = await factoryInstanceLoaded.getPoolAddress(tier.boostBips);
         
         if (poolAddress === ethers.ZeroAddress) {
             console.log(`         ... Piscina não encontrada. Implantando via Fábrica...`);
-            const tx = await sendTransactionWithRetries(() => factoryInstanceLoaded.deployPool(tier.boostBips));
+            tx = await sendTransactionWithRetries(() => factoryInstanceLoaded.deployPool(tier.boostBips));
             
-            // Encontra o endereço do novo clone a partir do evento
             const logs = (tx.logs as Log[])
                 .map((log: Log) => { try { return factoryInstanceLoaded.interface.parseLog(log as any); } catch { return null; } })
                 .filter((log: LogDescription | null): log is LogDescription => log !== null && log.name === "PoolDeployed");
@@ -545,22 +541,13 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
             console.log(`         ... Piscina já existe em: ${poolAddress}`);
         }
 
-        // Salva o endereço do pool individual no JSON
         const poolKey = `pool_${tier.name.toLowerCase()}`;
         addresses[poolKey] = poolAddress;
         fs.writeFileSync(addressesFilePath, JSON.stringify(addresses, null, 2));
         
-        // Obtém a instância do NOVO POOL CLONE
         const poolInstance = await ethers.getContractAt("NFTLiquidityPool", poolAddress, deployer);
+        const poolInfo = await poolInstance.getPoolInfo(); 
         
-        // --- (REFA) FIM: Lógica da Fábrica ---
-
-        // Verificação de Pool (agora no poolInstance)
-        const poolInfo = await poolInstance.getPoolInfo(); // Não precisa de 'boostBips'
-        
-        // --- (REFA) REMOVIDA a chamada 'createPool' ---
-        // A fábrica já faz isso
-
         if (poolInfo.nftCount > 0) { 
             console.warn(`   ⚠️ Pool em ${poolAddress} já tem liquidez. Pulando adição de AMM.`); 
             continue; 
@@ -568,7 +555,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         
         console.log(`   NFTs para Cunhar (Teste Manual): ${initialMintAmount}`);
 
-        // Cunhagem dos NFTs (Em lote) - Lógica inalterada
+        // Cunhagem dos NFTs (Em lote)
         const allPoolTokenIds: string[] = [];
         for (let j = 0n; j < initialMintAmount; j += CHUNK_SIZE_BIGINT) {
             const remaining = initialMintAmount - j;
@@ -588,33 +575,28 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         // Adição de Liquidez
         console.log(`      -> Adicionando ${allPoolTokenIds.length} NFTs e ${ethers.formatEther(LIQUIDITY_BKC_AMOUNT_PER_POOL)} BKC ao POOL CLONE em ${poolAddress}...`);
         
-        // --- (REFA) INÍCIO: Aprovações por Pool ---
         console.log(`         ... Aprovando BKC para ${poolAddress}`);
         await sendTransactionWithRetries(() => bkcTokenInstance.approve(poolAddress, LIQUIDITY_BKC_AMOUNT_PER_POOL));
         console.log(`         ... Aprovando NFTs para ${poolAddress}`);
         await sendTransactionWithRetries(() => rewardBoosterNFT.setApprovalForAll(poolAddress, true));
-        // --- (REFA) FIM: Aprovações por Pool ---
 
         let isFirstChunk = true;
         for (let k = 0; k < allPoolTokenIds.length; k += CHUNK_SIZE) {
             const chunk = allPoolTokenIds.slice(k, k + CHUNK_SIZE);
             if (isFirstChunk) {
-                // O AMM (poolInstance) puxará BKC do saldo aprovado do Deployer.
                 await sendTransactionWithRetries(() => 
-                    poolInstance.addInitialLiquidity(chunk, LIQUIDITY_BKC_AMOUNT_PER_POOL) // Sem 'boostBips'
+                    poolInstance.addInitialLiquidity(chunk, LIQUIDITY_BKC_AMOUNT_PER_POOL)
                 );
                 isFirstChunk = false;
             } else {
-                await sendTransactionWithRetries(() => poolInstance.addMoreNFTsToPool(chunk)); // Sem 'boostBips'
+                await sendTransactionWithRetries(() => poolInstance.addMoreNFTsToPool(chunk));
             }
         }
         
-        // --- (REFA) Revoga a aprovação deste pool específico
+        // Revoga a aprovação deste pool específico
         await sendTransactionWithRetries(() => rewardBoosterNFT.setApprovalForAll(poolAddress, false));
         console.log(`   ✅ Liquidez para ${tier.name} adicionada e aprovação revogada.`);
     }
-    
-    // --- (REFA) REMOVIDA a revogação global no final ---
 
   } catch (error: any) {
     console.error("\n❌ Falha grave no Lançamento/Liquidação:", error.message);

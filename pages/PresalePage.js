@@ -1,8 +1,10 @@
 // pages/PresalePage.js
-// ARQUIVO CORRIGIDO
-// - CORREÇÃO: Preços no PRESALE_CONFIG revertidos para "BNB"
-//   conforme a solicitação do usuário.
-// - O loader do botão (fa-spinner) foi mantido.
+// ✅ ARQUIVO TOTALMENTE AJUSTADO
+// 1. Preços lidos dinamicamente do contrato (priceInWei)
+// 2. Lógica de Escassez Contínua (Lotes de 10 a 70) implementada (mintedCount)
+// 3. Countdown ajustado para 1º de Dezembro (início da Fase 2)
+// 4. Preços da Fase 2 (do script 2_update_presale_prices.ts) exibidos
+// 5. UX Móvel: Vantagens em <details> (accordion) e grade vira carrossel
 
 const ethers = window.ethers;
 import { DOMElements } from '../dom-elements.js';
@@ -11,17 +13,20 @@ import { showToast } from '../ui-feedback.js';
 import { addresses, publicSaleABI } from '../config.js';
 
 // =================================================================
-// ### INÍCIO DA CORREÇÃO (Preços de BNB) ###
+// ### INÍCIO DAS NOVAS CONFIGURAÇÕES ###
 // =================================================================
 const PRESALE_CONFIG = {
-    countdownDate: "2025-11-20T23:59:59",
+    // Nova data do Countdown: 1º de Dezembro de 2025 (meia-noite, início do dia)
+    countdownDate: "2025-12-01T00:00:00Z", // Fim da Fase 1
+    
+    // Configurações estáticas dos Tiers (Vantagens, Imagens, Lotes)
     nftTiers: [
         { 
             id: 0, 
             name: "Diamond", 
             boost: "+50%", 
-            price: "7.20 BNB", // Revertido para BNB
-            discountedPrice: "3.60 BNB", // Revertido para BNB
+            batchSize: 10, // Lote de 10
+            phase2Price: "5.40 BNB", // Preço da Fase 2 (do seu script)
             img: "ipfs://bafybeign2k73pq5pdicg2v2jdgumavw6kjmc4nremdenzvq27ngtcusv5i", 
             color: "text-cyan-400", 
             advantages: [
@@ -36,8 +41,8 @@ const PRESALE_CONFIG = {
             id: 1, 
             name: "Platinum", 
             boost: "40%", 
-            price: "2.88 BNB", // Revertido para BNB
-            discountedPrice: "1.44 BNB", // Revertido para BNB
+            batchSize: 20, // Lote de 20
+            phase2Price: "2.16 BNB", // Preço da Fase 2
             img: "ipfs://bafybeiag32gp4wssbjbpxjwxewer64fecrtjryhmnhhevgec74p4ltzrau", 
             color: "text-gray-300", 
             advantages: [
@@ -52,8 +57,8 @@ const PRESALE_CONFIG = {
             id: 2, 
             name: "Gold", 
             boost: "30%", 
-            price: "1.08 BNB", // Revertido para BNB
-            discountedPrice: "0.54 BNB", // Revertido para BNB
+            batchSize: 30, // Lote de 30
+            phase2Price: "0.81 BNB", // Preço da Fase 2
             img: "ipfs://bafybeido6ah36xn4rpzkvl5avicjzf225ndborvx726sjzpzbpvoogntem", 
             color: "text-amber-400", 
             advantages: [
@@ -68,8 +73,8 @@ const PRESALE_CONFIG = {
             id: 3, 
             name: "Silver", 
             boost: "20%", 
-            price: "0.54 BNB", // Revertido para BNB
-            discountedPrice: "0.27 BNB", // Revertido para BNB
+            batchSize: 40, // Lote de 40
+            phase2Price: "0.405 BNB", // Preço da Fase 2
             img: "ipfs://bafybeiaktaw4op7zrvsiyx2sghphrgm6sej6xw362mxgu326ahljjyu3gu", 
             color: "text-gray-400", 
             advantages: [
@@ -83,8 +88,8 @@ const PRESALE_CONFIG = {
             id: 4, 
             name: "Bronze", 
             boost: "10%", 
-            price: "0.288 BNB", // Revertido para BNB
-            discountedPrice: "0.144 BNB", // Revertido para BNB
+            batchSize: 50, // Lote de 50
+            phase2Price: "0.216 BNB", // Preço da Fase 2
             img: "ipfs://bafybeifkke3zepb4hjutntcv6vor7t2e4k5oseaur54v5zsectcepgseye", 
             color: "text-yellow-600", 
             advantages: [
@@ -97,8 +102,8 @@ const PRESALE_CONFIG = {
             id: 5, 
             name: "Iron", 
             boost: "5%", 
-            price: "0.14 BNB", // Revertido para BNB
-            discountedPrice: "0.07 BNB", // Revertido para BNB
+            batchSize: 60, // Lote de 60
+            phase2Price: "0.105 BNB", // Preço da Fase 2
             img: "ipfs://bafybeidta4mytpfqtnnrspzij63m4lcnkp6l42m7hnhyjxioci5jhcf3vm", 
             color: "text-slate-500", 
             advantages: [
@@ -110,21 +115,51 @@ const PRESALE_CONFIG = {
             id: 6, 
             name: "Crystal", 
             boost: "1%", 
-            price: "0.02 BNB", // Revertido para BNB
-            discountedPrice: "0.01 BNB", // Revertido para BNB
+            batchSize: 70, // Lote de 70
+            phase2Price: "0.015 BNB", // Preço da Fase 2
             img: "ipfs://bafybeiela7zrsnyva47pymhmnr6dj2aurrkwxhpwo7eaasx3t24y6n3aay", 
             color: "text-indigo-300", 
             advantages: [
                 "1% Minimal Reward Boost for Staking and PoP Mining."
             ] 
         }
-    ],
+    ].map(tier => ({
+        ...tier,
+        // Placeholders para dados dinâmicos
+        priceInWei: 0n, // Será preenchido pelo contrato
+        mintedCount: 0, // Será preenchido pelo contrato
+        isSoldOut: false // Será calculado
+    })),
+    
+    // Traduções (ajustadas para a nova realidade)
     translations: {
         en: {
+            // ... (mensagens de erro mantidas) ...
             insufficientFunds: "Insufficient funds...", userRejected: "Transaction rejected...",
-            soldOut: "Sale Error. Please try again later.", 
+            soldOut: "This tier is sold out.", 
             txPending: "Awaiting confirmation...", txSuccess: "Purchase successful!", txError: "Transaction Error:", buyAlert: "Please connect your wallet first.", saleContractNotConfigured: "Sale contract address not configured.", invalidQuantity: "Please select a valid quantity (1 or more).", txRejected: "Transaction rejected.",
             
+            // Textos da UI atualizados
+            saleTag: "BATCH 1: 50% DISCOUNT",
+            saleTitle: "Choose Your Power",
+            saleTimerTitle: "Time Remaining Until Phase 2 Price Increase (1-Dec-2025):", // Nova data
+            countdownDays: "D", countdownHours: "H", countdownMinutes: "M", countdownSeconds: "S",
+            
+            cardPricePhase2: "Phase 2 Price:", // Novo
+            cardPricePhase1: "Phase 1 (50% OFF):", // Novo
+            cardQuantityLabel: "Quantity:", 
+            
+            cardAdvTitle: "Booster Advantages:",
+            cardAdvToggle: "View Advantages", // Novo (para accordion)
+            
+            cardBtnConnect: "Connect Wallet to Buy",
+            cardBtnBuy: "Acquire Now",
+            cardBtnSoldOut: "Sold Out", // Novo
+            cardProgressLabel: "Batch Progress:", // Novo
+            
+            loadingText: "Loading Prices from Blockchain...", // Novo
+            
+            // ... (outros textos de hero/key benefits mantidos) ...
             heroTitle1: "Secure Your Utility.",
             heroTitle2: `50% OFF Booster Sale.`, 
             heroSubtitle: `The Booster NFT is a one-time item that guarantees permanent utility within the Backchain ecosystem. Acquire yours at a 50% discount during Batch 1.`,
@@ -142,24 +177,12 @@ const PRESALE_CONFIG = {
             keyBenefit3Desc: "Reduce service fees across the entire ecosystem, including the decentralized notary and campaigns. *Tiers Silver and above*",
             keyBenefit4Title: "Value Appreciation",
             keyBenefit4Desc: "A portion of every NFT trade constantly raises the NFT's intrinsic floor value in the liquidity pool, benefiting all holders. *Tiers Bronze and above*",
-            
-            saleTag: "BATCH 1: 50% DISCOUNT",
-            saleTitle: "Choose Your Power",
-            saleTimerTitle: "Time Remaining Until Batch 2 Price (50% Increase):", 
-            countdownDays: "D", countdownHours: "H", countdownMinutes: "M", countdownSeconds: "S",
-            cardPriceBatch2: "Batch 2 Price:",
-            cardPriceBatch1: "Batch 1 (50% OFF):",
-            cardQuantityLabel: "Quantity:", 
-            
-            cardAdvTitle: "Booster Advantages:",
-            cardBtnConnect: "Connect Wallet to Buy",
-            cardBtnBuy: "Acquire Now",
             anchorBtn: "Secure Your NFT",
         }
     }
 };
 // =================================================================
-// ### FIM DA CORREÇÃO ###
+// ### FIM DAS NOVAS CONFIGURAÇÕES ###
 // =================================================================
 
 
@@ -186,12 +209,23 @@ function setLanguage(lang = 'en') {
     updateBuyButtonsState(State.isConnected);
 }
 
+// --- Funções de UI Atualizadas ---
+
 function updateBuyButtonsState(isConnected) {
     const translation = PRESALE_CONFIG.translations.en;
     document.querySelectorAll('#presale .buy-button').forEach(button => {
         const card = button.closest('.nft-card');
         if (!card) return;
         
+        const tierId = button.dataset.tierId;
+        const tier = PRESALE_CONFIG.nftTiers.find(t => t.id == tierId);
+        
+        if (tier && tier.isSoldOut) {
+            button.disabled = true;
+            button.innerHTML = `<i class='fa-solid fa-ban mr-2'></i> ${translation.cardBtnSoldOut}`;
+            return;
+        }
+
         button.disabled = !isConnected;
         
         if (!isConnected) {
@@ -210,7 +244,11 @@ function updateTotalPrice(card) {
     
     if (!State.isConnected) return; 
 
-    const priceString = buyButton.dataset.price;
+    const tierId = buyButton.dataset.tierId;
+    const tier = PRESALE_CONFIG.nftTiers.find(t => t.id == tierId);
+    
+    if (!tier || tier.isSoldOut) return; // Não faz nada se estiver esgotado
+
     const quantity = parseInt(quantityInput.value, 10);
     const translation = PRESALE_CONFIG.translations.en;
 
@@ -223,21 +261,18 @@ function updateTotalPrice(card) {
         buyButton.disabled = false;
     }
 
-    const pricePerItem = parseFloat(priceString.split(" ")[0]);
-    const totalPrice = (pricePerItem * quantity);
+    // Calcula o preço total baseado no priceInWei (BigInt)
+    const pricePerItem = tier.priceInWei; // Este já é um BigInt
+    const totalPrice = pricePerItem * BigInt(quantity);
     
-    // Formatação mais robusta para números pequenos
-    let formattedTotalPrice;
-    if (totalPrice < 0.0001) {
-        formattedTotalPrice = totalPrice.toExponential(2); 
-    } else {
-        formattedTotalPrice = parseFloat(totalPrice.toFixed(4)).toString(); // Revertido para 4 casas decimais para BNB
-    }
+    const formattedTotalPrice = ethers.formatUnits(totalPrice, 18);
+    
+    // Formata para exibição (remove zeros desnecessários)
+    const displayPrice = parseFloat(formattedTotalPrice).toString(); 
 
     const buyText = translation.cardBtnBuy || "Acquire Now";
-    const currency = priceString.split(" ")[1] || "BNB"; // Pega a moeda (BNB)
     
-    buyButton.innerHTML = `<i class='fa-solid fa-cart-shopping mr-2'></i>${buyText} (${formattedTotalPrice} ${currency})`;
+    buyButton.innerHTML = `<i class='fa-solid fa-cart-shopping mr-2'></i>${buyText} (${displayPrice} BNB)`;
     buyButton.dataset.dynamicContent = "true";
 }
 
@@ -253,48 +288,59 @@ async function handleBuyNFT(button) {
     if (isNaN(quantity) || quantity <= 0) { return showToast(translations.invalidQuantity, 'error'); }
     
     const tierId = button.dataset.tierId;
-    const priceString = button.dataset.price; 
+    const tier = PRESALE_CONFIG.nftTiers.find(t => t.id == tierId);
     
+    if (!tier || tier.priceInWei === 0n) {
+        return showToast(translations.txError + " Price not loaded.", 'error');
+    }
+
     try {
         button.disabled = true;
-        
-        // (Loader spinner mantido)
         button.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> ${translations.txPending}`;
         
-        const discountedPriceString = PRESALE_CONFIG.nftTiers.find(t => t.id == tierId)?.discountedPrice || priceString;
-        
-        const pricePerItem = ethers.parseUnits(discountedPriceString.split(" ")[0], 18);
+        // Pega o priceInWei DINÂMICO
+        const pricePerItem = tier.priceInWei;
         const totalPrice = pricePerItem * BigInt(quantity);
         
         const saleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, State.signer);
 
+        // Chama a função correta
         const tx = await saleContract.buyMultipleNFTs(tierId, quantity, { value: totalPrice });
         showToast(translations.txPending, 'info');
         
         const receipt = await tx.wait();
         showToast(translations.txSuccess, 'success', receipt.hash);
         
+        // Atualiza a contagem de mintados na UI
+        fetchTierData(tierId); // Recarrega os dados apenas deste tier
+        
     } catch (error) {
         console.error("Presale Buy Error:", error);
         let errorMessage;
         if (error.code === 'INSUFFICIENT_FUNDS') { errorMessage = translations.insufficientFunds; }
         else if (error.code === 4001 || error.code === 'ACTION_REJECTED') { errorMessage = translations.userRejected; }
-        else if (error.reason) {
-             // [CORREÇÃO]: Mensagem de erro revertida para "BNB"
-             if (error.reason.includes("Valor BNB incorreto")) { errorMessage = "Incorrect BNB value sent."; } 
-             else { errorMessage = error.reason; }
-        } else if (error.data?.message) { errorMessage = error.data.message; }
+        // Verifica a mensagem de "Sold out" do contrato
+        else if (error.reason && error.reason.includes("Sale: Sold out")) { errorMessage = translations.soldOut; }
+        // Verifica a mensagem de "Incorrect native value"
+        else if (error.reason && error.reason.includes("Sale: Incorrect native value")) { errorMessage = "Incorrect BNB value sent. Price may have changed."; }
+        else if (error.reason) { errorMessage = error.reason; }
+        else if (error.data?.message) { errorMessage = error.data.message; }
         else { errorMessage = error.message || translations.txRejected; }
         showToast(`${translations.txError} ${errorMessage}`, 'error');
     } finally {
-        button.disabled = false;
+        // Não reativa o botão se estiver esgotado
+        if (!tier.isSoldOut) {
+             button.disabled = false;
+        }
         updateBuyButtonsState(State.isConnected); 
     }
 }
 
 function setupCountdown() {
     if (countdownInterval) clearInterval(countdownInterval);
+    // Usa a nova data do config
     const countdownDate = new Date(PRESALE_CONFIG.countdownDate).getTime();
+    
     const daysEl = document.getElementById('days');
     const hoursEl = document.getElementById('hours');
     const minutesEl = document.getElementById('minutes');
@@ -309,7 +355,7 @@ function setupCountdown() {
         if (distance < 0) {
             clearInterval(countdownInterval);
             const container = document.getElementById('countdown-container');
-            if(container) container.innerHTML = `<p class="text-3xl font-bold text-red-500">SALE ENDED!</p>`;
+            if(container) container.innerHTML = `<p class="text-3xl font-bold text-red-500">PHASE 2 IS LIVE!</p>`;
             return;
         }
         
@@ -327,27 +373,137 @@ function setupCountdown() {
     countdownInterval = setInterval(update, 1000);
 }
 
-function setupScrollAnimations() {
-    document.querySelectorAll('#presale .fade-in-section').forEach(section => { 
-        section.classList.add('is-visible'); 
-    });
-}
+// =================================================================
+// ### INÍCIO DAS NOVAS FUNÇÕES (Leitura e Escassez) ###
+// =================================================================
 
-
-function renderMarketplace() {
+/**
+ * Busca os dados de TODOS os tiers (preço, vendidos) do contrato.
+ */
+async function fetchAllTierData() {
     const grid = document.getElementById('marketplace-grid');
     if (!grid) return;
-
-    const getHttpUrl = (ipfsUri) => {
-        if (!ipfsUri || typeof ipfsUri !== 'string') return '';
-        if (ipfsUri.startsWith('ipfs://')) {
-            return `https://ipfs.io/ipfs/${ipfsUri.substring(7)}`;
+    
+    try {
+        if (!State.provider) {
+            console.warn("Provider not available for fetching tier data.");
+            return;
         }
-        return ipfsUri;
-    };
+        if (!addresses.publicSale || addresses.publicSale === "0x...") {
+             throw new Error("PublicSale address not configured.");
+        }
+        
+        const saleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, State.provider);
+        
+        const tierIds = PRESALE_CONFIG.nftTiers.map(t => t.id);
+        
+        // Busca todos os tiers em paralelo
+        const tierDataPromises = tierIds.map(id => saleContract.tiers(id));
+        const tierResults = await Promise.all(tierDataPromises);
 
-    grid.innerHTML = PRESALE_CONFIG.nftTiers.map(tier => `
-        <div class="bg-presale-bg-card border border-presale-border-color rounded-xl flex flex-col nft-card group overflow-hidden shadow-xl hover:shadow-amber-500/30 transition-shadow duration-300" data-tier-id="${tier.id}">
+        // Atualiza o CONFIG principal
+        tierResults.forEach((data, index) => {
+            const tierId = tierIds[index];
+            const tierConfig = PRESALE_CONFIG.nftTiers.find(t => t.id === tierId);
+            
+            if (tierConfig) {
+                tierConfig.priceInWei = data.priceInWei;
+                tierConfig.mintedCount = Number(data.mintedCount);
+                // O contrato não tem 'maxSupply' infinito, mas o JS tratará como 'esgotado'
+                // se o contrato reverter. Aqui verificamos o preço.
+                if (data.priceInWei === 0n) {
+                    tierConfig.isSoldOut = true; // Se o preço é 0, o tier não está à venda
+                }
+            }
+        });
+
+        // Agora que os dados estão no CONFIG, renderiza os cards
+        renderMarketplace();
+        
+    } catch (error) {
+        console.error("Failed to fetch tier data:", error);
+        grid.innerHTML = `<p class="text-red-500 text-center col-span-full">${error.message}</p>`;
+    }
+}
+
+/**
+ * Busca dados de um ÚNICO tier (usado após a compra)
+ */
+async function fetchTierData(tierId) {
+     try {
+        if (!State.provider) return;
+        const saleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, State.provider);
+        const data = await saleContract.tiers(tierId);
+        
+        const tierConfig = PRESALE_CONFIG.nftTiers.find(t => t.id == tierId);
+        if (tierConfig) {
+            tierConfig.priceInWei = data.priceInWei;
+            tierConfig.mintedCount = Number(data.mintedCount);
+            if (data.priceInWei === 0n) { // Assume que preço 0 = não configurado/esgotado
+                 tierConfig.isSoldOut = true;
+            }
+            
+            // Re-renderiza apenas este card
+            const cardElement = document.querySelector(`.nft-card[data-tier-id="${tierId}"]`);
+            if (cardElement) {
+                const newCardHTML = createCardHTML(tierConfig);
+                cardElement.outerHTML = newCardHTML;
+                // Re-aplica o estado do botão
+                const newCard = document.querySelector(`.nft-card[data-tier-id="${tierId}"]`);
+                updateBuyButtonsState(State.isConnected);
+            }
+        }
+    } catch (error) {
+        console.error(`Failed to update tier ${tierId}:`, error);
+    }
+}
+
+/**
+ * Lógica de Lote Alvo (Escassez Contínua)
+ * Retorna o "teto" do lote atual.
+ */
+function getBatchTarget(mintedCount, batchSize) {
+    if (mintedCount === 0) return batchSize;
+    // Ex: (8, 10) -> Math.ceil(8 / 10) * 10 = 1 * 10 = 10
+    // Ex: (10, 10) -> Math.ceil(10 / 10) * 10 = 1 * 10 = 10 (Errado)
+    
+    // Lógica correta:
+    // Ex: (8, 10) -> Math.floor(8 / 10) * 10 + 10 = 0 + 10 = 10. (Alvo é 10)
+    // Ex: (10, 10) -> Math.floor(10 / 10) * 10 + 10 = 10 + 10 = 20. (Alvo é 20)
+    // Ex: (19, 10) -> Math.floor(19 / 10) * 10 + 10 = 10 + 10 = 20. (Alvo é 20)
+    // Ex: (20, 10) -> Math.floor(20 / 10) * 10 + 10 = 20 + 10 = 30. (Alvo é 30)
+    return Math.floor(mintedCount / batchSize) * batchSize + batchSize;
+}
+
+/**
+ * Helper para pegar URL IPFS (mantido)
+ */
+const getHttpUrl = (ipfsUri) => {
+    if (!ipfsUri || typeof ipfsUri !== 'string') return '';
+    if (ipfsUri.startsWith('ipfs://')) {
+        return `https://ipfs.io/ipfs/${ipfsUri.substring(7)}`;
+    }
+    return ipfsUri;
+};
+
+/**
+ * Cria o HTML de um único card (reutilizável)
+ */
+function createCardHTML(tier) {
+    const translations = PRESALE_CONFIG.translations.en;
+    
+    // --- Lógica de Escassez ---
+    const minted = tier.mintedCount;
+    const batchTarget = getBatchTarget(minted, tier.batchSize);
+    const progressPercent = Math.max(0, Math.min(100, (minted / batchTarget) * 100));
+
+    // --- Lógica de Preço ---
+    const isConfigured = tier.priceInWei > 0n;
+    const currentPriceFormatted = isConfigured ? parseFloat(ethers.formatUnits(tier.priceInWei, 18)).toString() : "N/A";
+    const phase2PriceFormatted = tier.phase2Price || "N/A";
+
+    return `
+        <div class="bg-presale-bg-card border border-presale-border-color rounded-xl flex flex-col nft-card group overflow-hidden shadow-xl hover:shadow-amber-500/30 transition-shadow duration-300 snap-center flex-shrink-0 w-11/12 sm:w-full" data-tier-id="${tier.id}">
             
             <div class="w-full h-48 overflow-hidden bg-presale-bg-darker relative">
                 <img src="${getHttpUrl(tier.img)}" alt="${tier.name}" class="w-full h-full object-cover nft-card-image transition-transform duration-500 group-hover:scale-105"/>
@@ -359,10 +515,12 @@ function renderMarketplace() {
             <div class="p-4 flex flex-col flex-1">
                 <p class="text-4xl font-extrabold text-green-400 mb-4">${tier.boost}</p>
                 
-                <div class="w-full text-left bg-zinc-800 p-3 rounded-lg my-2 flex-1">
-                    <p class="text-sm font-bold text-amber-400 mb-2 uppercase" data-translate="cardAdvTitle"></p>
-                    
-                    <ul class="space-y-1.5 text-sm list-none list-inside text-text-primary">
+                <details class="w-full text-left bg-zinc-800 p-3 rounded-lg my-2 flex-1 group/details">
+                    <summary class="text-sm font-bold text-amber-400 uppercase cursor-pointer list-none flex justify-between items-center">
+                        <span data-translate="cardAdvToggle"></span>
+                        <i class="fa-solid fa-chevron-down text-xs transition-transform duration-200 group-open/details:rotate-180"></i>
+                    </summary>
+                    <ul class="space-y-1.5 text-sm list-none list-inside text-text-primary mt-3 pt-3 border-t border-zinc-700">
                         ${tier.advantages.map(adv => `
                             <li class="flex items-start gap-2">
                                 <i class="fa-solid fa-check-circle text-xs text-green-500 mt-1 flex-shrink-0"></i>
@@ -370,32 +528,70 @@ function renderMarketplace() {
                             </li>
                         `).join('')}
                     </ul>
-                </div>
+                </details>
                 
+                <div class="w-full text-left my-3">
+                    <div class="flex justify-between text-xs font-bold text-text-secondary mb-1">
+                        <span data-translate="cardProgressLabel"></span>
+                        <span class="text-amber-400">${minted} / ${batchTarget}</span>
+                    </div>
+                    <div class="w-full bg-zinc-800 rounded-full h-2.5 overflow-hidden">
+                        <div class="bg-amber-500 h-2.5 rounded-full" style="width: ${progressPercent}%"></div>
+                    </div>
+                </div>
+
                 <div class="w-full bg-presale-bg-main p-3 rounded-lg text-center my-3">
                     <p class="text-sm text-text-secondary line-through">
-                        <span data-translate="cardPriceBatch2"></span> ${tier.price}
+                        <span data-translate="cardPricePhase2"></span> ${phase2PriceFormatted}
                     </p>
-                    <p class="font-bold text-3xl text-red-500">${tier.discountedPrice}</p>
-                    <p class="text-xs font-bold text-amber-400 mt-1" data-translate="cardPriceBatch1"></p>
+                    <p class="font-bold text-3xl text-red-500">${currentPriceFormatted} BNB</p>
+                    <p class="text-xs font-bold text-amber-400 mt-1" data-translate="cardPricePhase1"></p>
                 </div>
 
                 <div class="my-3 w-full">
                     <label class="block text-center text-sm font-medium text-text-secondary mb-1" data-translate="cardQuantityLabel"></label>
                     <div class="quantity-selector">
                         <button class="quantity-btn quantity-minus">-</button>
-                        <input type="number" class="quantity-input" value="1" min="1">
+                        <input type="number" class="quantity-input" value="1" min="1" ${tier.isSoldOut ? 'disabled' : ''}>
                         <button class="quantity-btn quantity-plus">+</button>
                     </div>
                 </div>
 
-                <button class="w-full btn-primary font-bold py-3 px-4 rounded-lg buy-button mt-auto shadow-md" disabled data-translate="cardBtnConnect" data-tier-id="${tier.id}" data-price="${tier.discountedPrice}">
-                    Connect Wallet to Buy
+                <button class="w-full btn-primary font-bold py-3 px-4 rounded-lg buy-button mt-auto shadow-md" ${tier.isSoldOut ? 'disabled' : 'data-translate="cardBtnConnect"'} data-tier-id="${tier.id}">
+                    ${tier.isSoldOut ? translations.cardBtnSoldOut : translations.cardBtnConnect}
                 </button>
             </div>
         </div>
-    `).join('');
+    `;
 }
+
+/**
+ * Renderiza os placeholders e inicia a busca de dados
+ */
+function renderMarketplace() {
+    const grid = document.getElementById('marketplace-grid');
+    if (!grid) return;
+    const translations = PRESALE_CONFIG.translations.en;
+
+    // Se os dados ainda não foram buscados, mostra placeholders
+    if (PRESALE_CONFIG.nftTiers[0].priceInWei === 0n) {
+        grid.innerHTML = `<p class="text-lg text-amber-400 text-center col-span-full animate-pulse">${translations.loadingText}</p>`;
+        fetchAllTierData(); // Inicia a busca
+        return;
+    }
+
+    // Se os dados foram buscados, renderiza os cards
+    grid.innerHTML = PRESALE_CONFIG.nftTiers.map(createCardHTML).join('');
+    
+    // Atualiza o estado dos botões
+    updateBuyButtonsState(State.isConnected);
+    // Aplica a tradução aos elementos estáticos
+    setLanguage('en');
+}
+
+// =================================================================
+// ### FIM DAS NOVAS FUNÇÕES ###
+// =================================================================
 
 
 // --- Exported Page Object ---
@@ -422,9 +618,8 @@ export const PresalePage = {
                             </div>
                         </div>
 
-                        <div id="marketplace-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                            {/* Cards Renderizados Aqui */}
-                        </div>
+                        <div id="marketplace-grid" class="flex flex-nowrap overflow-x-auto gap-6 snap-x snap-mandatory px-4 py-4 sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 sm:gap-8 sm:p-0 sm:overflow-visible">
+                            </div>
                     </div>
                 </section>
 
@@ -436,8 +631,12 @@ export const PresalePage = {
         `;
         
         DOMElements.presale.innerHTML = html;
+        hasRendered = true; // Marca que o HTML base foi renderizado
+        
+        // Inicia a renderização dos cards (que inclui a busca de dados)
         renderMarketplace();
-        hasRendered = true;
+        
+        // Inicia os ouvintes de eventos e o countdown
         PresalePage.init(); 
         setLanguage('en');
         if (State.isConnected) {
@@ -445,18 +644,21 @@ export const PresalePage = {
         }
     },
 
-    // (Correção de clique mantida)
     init: () => {
         const grid = document.getElementById('marketplace-grid');
         
         if (grid && !grid._listenersAttached) { 
              grid.addEventListener('click', (e) => {
                 const buyButton = e.target.closest('.buy-button');
-                if (buyButton) { handleBuyNFT(buyButton); return; }
+                if (buyButton && !buyButton.disabled) { 
+                    handleBuyNFT(buyButton); 
+                    return; 
+                }
+                
                 const card = e.target.closest('.nft-card');
                 if (!card) return;
                 const input = card.querySelector('.quantity-input');
-                if (!input) return;
+                if (!input || input.disabled) return;
                 
                 const minusBtn = e.target.closest('.quantity-minus');
                 const plusBtn = e.target.closest('.quantity-plus');
@@ -486,10 +688,18 @@ export const PresalePage = {
             grid._listenersAttached = true; 
         }
         
+        // Inicia o countdown com a data de 1º de Dezembro
         setupCountdown();
     },
 
     update: (isConnected) => {
-        updateBuyButtonsState(isConnected);
+        if (!hasRendered) return; // Não faz nada se o HTML não foi renderizado
+        
+        // Se conectar, força a busca de dados (caso não tenham sido buscados)
+        if (isConnected && PRESALE_CONFIG.nftTiers[0].priceInWei === 0n) {
+            fetchAllTierData();
+        } else {
+             updateBuyButtonsState(isConnected);
+        }
     }
 };

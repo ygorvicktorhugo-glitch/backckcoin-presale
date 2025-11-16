@@ -1,11 +1,16 @@
 // pages/networkstaking.js
+// ✅ ARQUIVO CORRIGIDO
+// - Corrigido o bug que não renderizava as abas no estado "desconectado".
+// - 'renderValidatorContent' agora mostra um card "Connect Wallet", espelhando 'renderDelegateContent'.
+// - 'renderValidatorContent' agora usa o cache 'State.systemFees' (da API)  em vez de uma chamada de contrato.
+// - Lógica de renderização de aba simplificada e movida para 'setActiveTab'.
 
 const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { DOMElements } from '../dom-elements.js';
 import { loadUserData, loadPublicData, safeContractCall } from '../modules/data.js';
-// CORREÇÃO CRÍTICA: Removendo payValidatorFee da importação
+// CORREÇÃO: Removendo payValidatorFee (obsoleto)
 import { executeDelegation, registerValidator } from '../modules/transactions.js'; 
 import { formatBigNumber, formatAddress, formatPStake, renderLoading, renderError, renderNoData } from '../utils.js'; 
 import { openModal, showToast, closeModal } from '../ui-feedback.js';
@@ -14,10 +19,13 @@ import { addresses } from '../config.js';
 // --- CONSTANTES DO MÓDULO ---
 const ONE_DAY_IN_SECONDS = 86400;
 const VALIDATOR_REGISTRATION_KEY = "VALIDATOR_REGISTRATION_FEE"; 
-const MINERS_PER_PAGE = 10; // 10 mineradores por página
+const MINERS_PER_PAGE = 10;
 let EarnPageListenersAttached = false; 
 
-// --- UTILS E LÓGICA DE STAKING (Mantidas) ---
+// --- (setAmountUtil, updateDelegationFeedback, openDelegateModal - sem alterações) ---
+// ...
+// ... (Copie as funções setAmountUtil, updateDelegationFeedback, e openDelegateModal daqui)
+// ...
 function setAmountUtil(elementId, percentage) {
     const input = document.getElementById(elementId);
     if (State.currentUserBalance !== null && typeof State.currentUserBalance !== 'undefined' && input) {
@@ -35,12 +43,9 @@ function updateDelegationFeedback() {
     const pStakeEl = document.getElementById('modalPStakeEl');
     const netEl = document.getElementById('modalNetAmountEl');
     const bonusTextEl = document.getElementById('durationBonusText');
-
     if (!amountInput || !durationSlider || !pStakeEl || !netEl || !bonusTextEl) return;
-
     const amountStr = amountInput.value || '0';
     const durationDays = parseInt(durationSlider.value, 10);
-    
     let amountWei = 0n;
     try {
         amountWei = ethers.parseEther(amountStr);
@@ -48,18 +53,13 @@ function updateDelegationFeedback() {
     } catch {
         amountWei = 0n;
     }
-
     const netAmountWei = amountWei; 
-    
     const durationBigInt = BigInt(durationDays);
     const etherDivisor = 1_000_000_000_000_000_000n;
-    
     const pStake = (netAmountWei * durationBigInt) / etherDivisor;
-
     netEl.textContent = `${ethers.formatUnits(netAmountWei, 18)} $BKC`;
     pStakeEl.textContent = formatPStake(pStake); 
     bonusTextEl.textContent = `x${durationDays} Day Multiplier`;
-
     if (durationDays > 3000) { 
          bonusTextEl.className = 'text-sm font-bold text-green-400 mt-1';
     } else if (durationDays > 1000) { 
@@ -69,24 +69,18 @@ function updateDelegationFeedback() {
     }
 }
 
-
-// --- FUNÇÃO CENTRALIZADA DE MODAL DELEGAÇÃO ---
-
 function openDelegateModal(validatorAddr) {
     if (!State.isConnected) return showToast("Please connect your wallet first.", "error");
     if (State.currentUserBalance === 0n) return showToast("Your $BKC balance is zero.", "error");
     
     const currentValidator = validatorAddr; 
-    
     const minLockDays = 1; 
     const maxLockDays = 3650;
     const defaultLockDays = 1825;
-
     const balanceNum = formatBigNumber(State.currentUserBalance || 0n);
     const balanceLocaleString = balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const feePercentage = "0.00"; 
 
-    // Conteúdo HTML do Modal (Versão Limpa/Dashboard Style)
     const content = `
         <div class="flex justify-between items-center mb-4">
             <h3 class="text-xl font-bold text-white">Start Mining / Delegation</h3>
@@ -123,7 +117,6 @@ function openDelegateModal(validatorAddr) {
     `;
     openModal(content);
 
-    // Adiciona listeners internos do modal
     const amountInput = document.getElementById('delegateAmountInput');
     const durationSlider = document.getElementById('delegateDurationSlider');
     const durationDisplay = document.getElementById('delegateDurationDisplay');
@@ -136,21 +129,17 @@ function openDelegateModal(validatorAddr) {
         const amountStr = amountInput.value || "0";
         const durationDays = parseInt(durationSlider.value, 10);
         let amount = 0n, fee = 0n, netAmount = 0n;
-
         try {
             amount = ethers.parseUnits(amountStr.toString(), 18);
             if (amount < 0n) amount = 0n;
         } catch { amount = 0n; }
-
         const balanceBigInt = State.currentUserBalance || 0n;
         if (amount > balanceBigInt) {
             amount = balanceBigInt;
             amountInput.value = ethers.formatUnits(amount, 18);
         }
-
         fee = 0n;
         netAmount = amount; 
-
         if (amount > 0n) {
             confirmBtn.disabled = amount <= 0n; 
             confirmBtn.classList.toggle('btn-disabled', amount <= 0n);
@@ -158,13 +147,9 @@ function openDelegateModal(validatorAddr) {
             confirmBtn.disabled = true;
             confirmBtn.classList.add('btn-disabled');
         }
-
-        // Atualiza UI
         durationDisplay.textContent = `${durationDays} days`;
         feeAmountEl.textContent = `${formatBigNumber(fee).toFixed(4)} $BKC`;
         netAmountEl.textContent = `${formatBigNumber(netAmount).toFixed(4)} $BKC`;
-        
-        // Cálculo de pStake
         const durationBigInt = BigInt(durationDays);
         const etherDivisor = 1_000_000_000_000_000_000n;
         const pStake = (netAmount * durationBigInt) / etherDivisor; 
@@ -187,22 +172,17 @@ function openDelegateModal(validatorAddr) {
         e.preventDefault();
         const amountInput = document.getElementById('delegateAmountInput');
         const durationSlider = document.getElementById('delegateDurationSlider');
-
         const amountStr = amountInput.value;
         const durationDays = durationSlider.value;
-        
         if (!amountStr || parseFloat(amountStr) <= 0) return showToast('Invalid amount.', "error");
         if (!currentValidator) return showToast('Validator address not found.', "error"); 
-
         const totalAmount = ethers.parseEther(amountStr);
         const durationSeconds = parseInt(durationDays) * ONE_DAY_IN_SECONDS;
-        
         const success = await executeDelegation(currentValidator, totalAmount, durationSeconds, e.currentTarget); 
         if (success) {
             closeModal(); 
             await loadPublicData(); 
             await loadUserData(); 
-            // Renderiza novamente a página Earn
             await EarnPage.render(true); 
         }
     });
@@ -213,12 +193,9 @@ function openDelegateModal(validatorAddr) {
 
 /**
  * Renderiza os controles de paginação
- * @param {number} totalPages 
- * @param {number} currentPage 
  */
 function renderPaginationControls(totalPages, currentPage) {
     if (totalPages <= 1) return '';
-
     let html = `
         <div class="flex items-center justify-center space-x-2 mt-8">
             <button id="prevPageBtn" 
@@ -226,14 +203,10 @@ function renderPaginationControls(totalPages, currentPage) {
                     data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>
                 <i class="fa-solid fa-arrow-left"></i>
             </button>
-            
             <div class="flex space-x-1">
     `;
-
-    // Lógica para exibir números de página (máximo de 5)
     let startPage = Math.max(1, currentPage - 2);
     let endPage = Math.min(totalPages, currentPage + 2);
-
     if (currentPage <= 3) {
         endPage = Math.min(totalPages, 5);
         startPage = 1;
@@ -241,7 +214,6 @@ function renderPaginationControls(totalPages, currentPage) {
         startPage = Math.max(1, totalPages - 4);
         endPage = totalPages;
     }
-
     for (let i = startPage; i <= endPage; i++) {
         const isActive = i === currentPage;
         html += `
@@ -252,10 +224,8 @@ function renderPaginationControls(totalPages, currentPage) {
             </button>
         `;
     }
-
     html += `
             </div>
-            
             <button id="nextPageBtn" 
                     class="pagination-btn bg-zinc-700 hover:bg-zinc-600 text-white disabled:opacity-50"
                     data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>
@@ -266,12 +236,12 @@ function renderPaginationControls(totalPages, currentPage) {
     return html;
 }
 
-
+// ✅ FUNÇÃO CORRIGIDA (renderDelegateContent)
 function renderDelegateContent() {
     const container = DOMElements.earn.querySelector('#validatorsList');
     if (!container) return;
     
-    // 1. Estado de Conexão
+    // ✅ CORREÇÃO: Lógica de 'Connect Wallet' movida para cá.
     if (!State.isConnected) {
         const connectCard = (title, message, iconClass) => {
             return `
@@ -296,28 +266,24 @@ function renderDelegateContent() {
     }
     
     // 2. Estado de No Data/Loading
-    if (!Array.isArray(State.allValidatorsData) || State.allValidatorsData.length === 0) {
+    if (!Array.isArray(State.allValidatorsData)) {
+        container.innerHTML = renderLoading(); // Mostra o loading se os dados ainda não são um array
+        return;
+    }
+    
+    if (State.allValidatorsData.length === 0) {
         container.innerHTML = renderNoData("No active validators on the network. Be the first by clicking the 'Become a Full Node / Validator' tab.");
         return;
     }
 
     // 3. Paginação e Ordenação
-    const sortedData = [...State.allValidatorsData].sort((a, b) => {
-        // Ordena por pStake (TotalPStake é mais preciso)
-        if (b.totalPStake > a.totalPStake) return 1;
-        if (b.totalPStake < a.totalPStake) return -1;
-        return 0;
-    });
-
+    const sortedData = [...State.allValidatorsData].sort((a, b) => b.pStake - a.pStake);
     const totalMiners = sortedData.length;
     const totalPages = Math.ceil(totalMiners / MINERS_PER_PAGE);
-    
-    // Garante que a página atual seja válida
     let currentPage = EarnPage.currentPage;
     if (currentPage < 1) currentPage = 1;
     if (currentPage > totalPages) currentPage = totalPages;
     EarnPage.currentPage = currentPage;
-
     const startIndex = (currentPage - 1) * MINERS_PER_PAGE;
     const endIndex = startIndex + MINERS_PER_PAGE;
     const pageMiners = sortedData.slice(startIndex, endIndex);
@@ -356,17 +322,12 @@ function renderDelegateContent() {
 
     // 5. Combina HTML dos Mineradores e Controles de Paginação
     const paginationHtml = renderPaginationControls(totalPages, currentPage);
-    
-    // Injeta os mineradores na grid e adiciona a paginação após o grid
     container.innerHTML = minersHtml; 
     
     const pageWrapper = DOMElements.earn.querySelector('#delegate-content');
     if (pageWrapper) {
-        // Remove a paginação antiga, se existir
         const oldPagination = pageWrapper.querySelector('#paginationControls');
         if (oldPagination) oldPagination.remove();
-
-        // Cria e anexa a nova paginação
         const paginationDiv = document.createElement('div');
         paginationDiv.id = 'paginationControls';
         paginationDiv.innerHTML = paginationHtml;
@@ -376,7 +337,7 @@ function renderDelegateContent() {
 
 
 async function renderValidatorPayFeePanel(feeAmount) {
-    // A função registerValidator em transactions.js agora faz o trabalho unificado.
+    // (Função sem alterações)
     return `
         <div class="bg-sidebar border border-border-color rounded-xl overflow-hidden">
             <div class="p-6 md:p-8">
@@ -401,35 +362,62 @@ async function renderValidatorPayFeePanel(feeAmount) {
     `;
 }
 
+// ✅ FUNÇÃO CORRIGIDA (renderValidatorContent)
 async function renderValidatorContent() {
     const buyBkcLink = addresses.bkcDexPoolAddress || '#';
+    const contentEl = DOMElements.earn.querySelector('#validator-content');
+    if (!contentEl) return;
     
-    if (!State.delegationManagerContract || !State.ecosystemManagerContract) {
-        return renderError("Contracts failed to load. Check your connection or refresh the page.");
+    // ✅ CORREÇÃO: Lógica de 'Connect Wallet' movida para cá.
+    if (!State.isConnected) {
+        const connectCard = `
+            <div class="col-span-1 lg:col-span-3">
+                <div class="bg-sidebar border border-border-color rounded-xl p-8 text-center flex flex-col items-center max-w-2xl mx-auto">
+                    <i class="fa-solid fa-user-shield text-5xl text-zinc-600 mb-6"></i>
+                    <h3 class="text-2xl font-bold mb-3">Become a Validator</h3>
+                    <p class="text-zinc-400 max-w-sm mb-8">Connect your wallet to check your validator status or to register as a new full node.</p>
+                    <button 
+                        onclick="window.openConnectModal()" 
+                        class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-6 rounded-md transition-colors text-lg">
+                        <i class="fa-solid fa-plug mr-2"></i>
+                        Connect Wallet
+                    </button>
+                </div>
+            </div>
+        `;
+        contentEl.innerHTML = connectCard;
+        return;
     }
+
+    // Se conectado, mostra o loader
+    contentEl.innerHTML = renderLoading();
 
     try {
         const fallbackValidatorStruct = { isRegistered: false, selfStakeAmount: 0n, totalDelegatedAmount: 0n };
         const validatorInfo = await safeContractCall(State.delegationManagerContract, 'validators', [State.userAddress], fallbackValidatorStruct);
-        const registrationFeeWei = await safeContractCall(State.ecosystemManagerContract, 'getFee', [VALIDATOR_REGISTRATION_KEY], 0n); 
+        
+        // ✅ CORREÇÃO: Lê a taxa do cache da API 'State.systemFees' 
+        const registrationFeeWei = State.systemFees[VALIDATOR_REGISTRATION_KEY] || 0n; 
         
         const feeAmount = registrationFeeWei;
         
         // Estado 1: Validador Registrado
         if (validatorInfo.isRegistered) {
-            return `<div class="bg-sidebar border border-border-color rounded-xl p-8 text-center"><i class="fa-solid fa-shield-halved text-5xl text-green-400 mb-4"></i><h2 class="2xl font-bold">You are a Registered Validator</h2><p class="text-zinc-400 mt-1">Thank yourself for helping secure the Backchain network.</p></div>`;
+            contentEl.innerHTML = `<div class="bg-sidebar border border-border-color rounded-xl p-8 text-center"><i class="fa-solid fa-shield-halved text-5xl text-green-400 mb-4"></i><h2 class="2xl font-bold">You are a Registered Validator</h2><p class="text-zinc-400 mt-1">Thank you for helping secure the Backchain network.</p></div>`;
+            return;
         }
 
         // Estado 2: Taxa não configurada
         if (feeAmount === 0n) {
-            return renderError(`Registration fee (${VALIDATOR_REGISTRATION_KEY}) is zero or not configured in EcosystemManager.`);
+            contentEl.innerHTML = renderError(`Registration fee (${VALIDATOR_REGISTRATION_KEY}) is zero or not configured in EcosystemManager.`);
+            return;
         }
 
         const requiredAmount = feeAmount; 
         
         // Estado 3: Saldo Insuficiente
         if (State.currentUserBalance < requiredAmount) {
-             return `<div class="bg-sidebar border border-border-color rounded-xl p-8 text-center">
+             contentEl.innerHTML = `<div class="bg-sidebar border border-border-color rounded-xl p-8 text-center">
                 <div class="text-center p-6 border border-red-500/50 bg-red-500/10 rounded-lg space-y-3">
                     <i class="fa-solid fa-circle-exclamation text-4xl text-red-400"></i>
                     <h3 class="xl font-bold">Insufficient Balance</h3>
@@ -439,53 +427,26 @@ async function renderValidatorContent() {
                     </a>
                 </div>
             </div>`;
+             return;
         }
         
         // Estado 4: Pronto para Registrar e Pagar (Fluxo Unificado)
-        return await renderValidatorPayFeePanel(feeAmount);
+        contentEl.innerHTML = await renderValidatorPayFeePanel(feeAmount);
         
     } catch (e) {
         console.error("CRITICAL ERROR in renderValidatorContent:", e);
         const errorMessage = e.reason || e.message || 'Unknown Contract Error. Check console logs for details.';
-        return renderError(`Failed to Load Validator Panel: ${errorMessage}`);
+        contentEl.innerHTML = renderError(`Failed to Load Validator Panel: ${errorMessage}`);
     }
 }
 
 
 // --- LÓGICA DE RENDERIZAÇÃO DE CONTEÚDO DA ABA ATIVA ---
 
-async function renderActiveTabContent(tabId) {
-    const contentEl = document.getElementById(`${tabId}-content`);
+// ✅ FUNÇÃO REMOVIDA
+// async function renderActiveTabContent(tabId) { ... }
+// A lógica agora está em 'setActiveTab'
 
-    if (!contentEl) return;
-
-    // Estado Conectado (Loading)
-    if (State.isConnected) {
-        if (tabId === 'delegate') {
-            const listEl = document.getElementById('validatorsList');
-            if (listEl) listEl.innerHTML = renderLoading();
-        } else {
-            contentEl.innerHTML = renderLoading();
-        }
-    }
-
-
-    // 3. Renderiza o Conteúdo Final
-    try {
-        if (tabId === 'delegate') {
-             // Chamada para renderizar a lista de validadores na aba Delegate
-             renderDelegateContent(); // Não precisa de await
-        } else if (tabId === 'validator') {
-             // Chamada para renderizar o painel de Validador
-             const finalHtml = await renderValidatorContent();
-             contentEl.innerHTML = finalHtml;
-        }
-
-    } catch (e) {
-        console.error(`Error rendering tab ${tabId}:`, e);
-        contentEl.innerHTML = renderError(`Failed to load ${tabId} data: ${e.message || 'Unknown error.'}`);
-    }
-}
 
 // --- SETUP DE LISTENERS (RESOLVE O BINDING DO BOTÃO) ---
 
@@ -497,7 +458,7 @@ function setupEarnPageListeners() {
         const target = e.target.closest('button') || e.target.closest('a');
         if (!target) return;
         
-        // 1. ABRIR MODAL DE DELEGAÇÃO (USA delegate-btn que é a classe injetada)
+        // 1. ABRIR MODAL DE DELEGAÇÃO (USA delegate-btn)
         if (target.classList.contains('delegate-btn')) {
             e.preventDefault();
             const validatorAddr = target.dataset.validator;
@@ -509,16 +470,16 @@ function setupEarnPageListeners() {
         if (target.id === 'registerValidatorBtn') {
             e.preventDefault();
             
-            // 2.1. Obtém a taxa para aprovação (agora só para UI)
-            const requiredFee = await safeContractCall(State.ecosystemManagerContract, 'getFee', [VALIDATOR_REGISTRATION_KEY], 0n);
+            // ✅ CORREÇÃO: Lê a taxa do cache da API
+            const requiredFee = State.systemFees[VALIDATOR_REGISTRATION_KEY] || 0n;
+            if (requiredFee === 0n) {
+                return showToast("Registration fee is not set.", "error");
+            }
             const validatorAddress = State.userAddress; 
             
-            // 2.2. Executa a transação unificada
-            // [CORREÇÃO]: A função registerValidator em transactions.js espera (address, requiredFee, btnElement)
             const success = await registerValidator(validatorAddress, requiredFee, target); 
             
             if (success) {
-                // SUCESSO: Força o recarregamento de dados e a aba Validador
                 await loadPublicData(); 
                 await loadUserData();
                 await EarnPage.setActiveTab('validator'); 
@@ -541,8 +502,7 @@ function setupEarnPageListeners() {
             const newPage = parseInt(target.dataset.page, 10);
             if (newPage >= 1) {
                 EarnPage.currentPage = newPage;
-                // Re-renderiza a aba delegate (mineração)
-                renderActiveTabContent('delegate'); 
+                renderDelegateContent(); // Re-renderiza apenas a lista
             }
         }
     });
@@ -558,7 +518,8 @@ export const EarnPage = {
     activeTab: 'delegate',
     currentPage: 1, // Página atual da lista de mineradores
     
-    setActiveTab(tabId) {
+    // ✅ FUNÇÃO ATUALIZADA (setActiveTab)
+    async setActiveTab(tabId) {
         this.activeTab = tabId;
         
         // 1. Atualiza botões (visual)
@@ -580,7 +541,20 @@ export const EarnPage = {
         });
 
         // 3. Renderiza o conteúdo da nova aba (assíncrono)
-        renderActiveTabContent(tabId);
+        // ✅ Lógica de 'renderActiveTabContent' movida para cá
+        try {
+            if (tabId === 'delegate') {
+                 renderDelegateContent(); // Esta função agora lida com o estado "desconectado"
+            } else if (tabId === 'validator') {
+                 await renderValidatorContent(); // Esta função agora lida com o estado "desconectado"
+            }
+        } catch (e) {
+            console.error(`Error rendering tab ${tabId}:`, e);
+            const contentEl = document.getElementById(`${tabId}-content`);
+            if (contentEl) {
+                contentEl.innerHTML = renderError(`Failed to load ${tabId} data: ${e.message || 'Unknown error.'}`);
+            }
+        }
     },
 
     async render(isUpdate = false) {
@@ -622,7 +596,8 @@ export const EarnPage = {
         setupEarnPageListeners();
         
         // --- 3. Força a carga inicial de dados (se necessário) ---
-        if (!State.isConnected || !State.allValidatorsData || isUpdate) {
+        // (O 'data.js' [cite: 1-13] chama 'loadSystemDataFromAPI' dentro de 'loadPublicData')
+        if (!isUpdate || !State.allValidatorsData) {
             try {
                 await Promise.all([
                     loadPublicData(),

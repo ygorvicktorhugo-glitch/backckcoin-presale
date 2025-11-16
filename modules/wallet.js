@@ -4,6 +4,8 @@
 // REFA V2: Fixed incorrect ABI for actionsManager
 // REFA V3: Added 'https://' prefix to ESM imports
 // CORREÇÃO: Removido rewardManagerABI e referências ao contrato RewardManager
+// ✅ CORREÇÃO (AJUSTE FINAL): Removido 'window.walletInitialized' e refatorada
+// a lógica de subscrição para 'initWalletSubscriptions'.
 
 import { ethers } from 'https://esm.sh/ethers@6.11.1';
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
@@ -26,7 +28,7 @@ import { signIn } from './firebase-auth-service.js';
 // ============================================================================
 // GLOBAL STATE FOR WALLET INITIALIZATION
 // ============================================================================
-window.walletInitialized = false;
+// ✅ CORREÇÃO: Removido 'window.walletInitialized'
 let balancePollingInterval = null;
 
 // ============================================================================
@@ -213,7 +215,7 @@ async function setupSignerAndLoadData(provider, address) {
         startBalancePolling();
         
         State.isConnected = true;
-        window.walletInitialized = true; // Signal initialization complete
+        // ✅ CORREÇÃO: Removido 'window.walletInitialized'
         
         return true;
     } catch (error) {
@@ -269,17 +271,22 @@ export async function initPublicProvider() {
 }
 
 /**
- * FIXED: Active polling for wallet initialization instead of fixed timeout
+ * ✅ CORREÇÃO: Renomeada e refatorada de 'subscribeToWalletChanges'
+ * Esta função agora lida com a inicialização E subscrição.
  */
-export async function subscribeToWalletChanges(callback) {
+export function initWalletSubscriptions(callback) {
     let wasPreviouslyConnected = web3modal.getIsConnected(); 
+    let isHandlingChange = false; // Mutex-like flag
 
     // NOVO: FORÇA A DESCONEXÃO DE QUALQUER SESSÃO SALVA AO CARREGAR A PÁGINA
+    // (Esta lógica está correta e deve ser mantida)
     if (wasPreviouslyConnected) {
         console.log("⚠️ Found saved session on load. Forcing immediate disconnect to reset state.");
         try {
-            await web3modal.disconnect();
-            console.log("✅ Session disconnected successfully.");
+            // Não 'await' aqui, pois estamos em um contexto síncrono
+            web3modal.disconnect().then(() => {
+                console.log("✅ Session disconnected successfully.");
+            });
         } catch (e) {
             console.warn("Could not force disconnect, may already be cleaning up:", e);
         }
@@ -288,20 +295,25 @@ export async function subscribeToWalletChanges(callback) {
     // FIM DO BLOCO DE DESCONEXÃO FORÇADA
 
     const handler = async ({ provider, address, chainId, isConnected }) => {
+        // Previne execuções simultâneas
+        if (isHandlingChange) {
+            console.log("Handler already running, skipping redundant call.");
+            return;
+        }
+        isHandlingChange = true;
+        
         console.log("Web3Modal State Change:", { isConnected, address, chainId });
 
         if (isConnected) {
-            // Network validation
+            // ... (Validação de rede - sem alterações) ...
             if (chainId !== Number(sepoliaChainId)) {
                 showToast(`Wrong network. Switching to Sepolia...`, 'error');
                 const expectedChainIdHex = '0x' + (Number(sepoliaChainId)).toString(16);
-
                 try {
                     await provider.request({
                         method: 'wallet_switchEthereumChain',
                         params: [{ chainId: expectedChainIdHex }],
                     });
-                    return;
                 } catch (switchError) {
                     if (switchError.code === 4902) {
                         showToast('Sepolia network not found. Adding...', 'info');
@@ -316,19 +328,19 @@ export async function subscribeToWalletChanges(callback) {
                                     blockExplorerUrls: [sepolia.explorerUrl],
                                 }],
                             });
-                            return;
                         } catch (addError) {
                             console.error("Failed to add Sepolia network:", addError);
                             showToast('You need to add and connect to Sepolia network.', 'error');
                             await web3modal.disconnect();
-                            return;
                         }
+                    } else {
+                        console.error("Failed to switch network:", switchError);
+                        showToast('You need to be on Sepolia network to use the dApp.', 'error');
+                        await web3modal.disconnect();
                     }
-                    console.error("Failed to switch network:", switchError);
-                    showToast('You need to be on Sepolia network to use the dApp.', 'error');
-                    await web3modal.disconnect();
-                    return;
                 }
+                isHandlingChange = false; // Libera o flag em caso de erro de rede
+                return; // Retorna para esperar a próxima mudança de estado
             }
 
             // Setup signer and load data
@@ -357,13 +369,11 @@ export async function subscribeToWalletChanges(callback) {
             
             const wasConnected = State.isConnected;
 
-            // Stop polling
+            // ... (Limpeza de estado - sem alterações) ...
             if (balancePollingInterval) {
                 clearInterval(balancePollingInterval);
                 balancePollingInterval = null;
             }
-
-            // Clear state
             State.web3Provider = null; 
             State.provider = null;
             State.signer = null;
@@ -372,10 +382,9 @@ export async function subscribeToWalletChanges(callback) {
             State.currentUserBalance = 0n;
             State.userDelegations = [];
             State.activityHistory = [];
-            // REMOVIDO: State.myCertificates = [];
             State.myBoosters = [];
             State.userTotalPStake = 0n;
-            window.walletInitialized = false;
+            // ✅ CORREÇÃO: Removido 'window.walletInitialized'
 
             // Reinitialize contracts with public provider
             if(State.publicProvider) {
@@ -388,13 +397,21 @@ export async function subscribeToWalletChanges(callback) {
             });
             wasPreviouslyConnected = false;
         }
+        
+        isHandlingChange = false; // Libera o flag
     };
     
     // Attach handler for future events
     web3modal.subscribeProvider(handler);
 
-    // REMOVIDO: Bloco de reconexão de sessão salva (não é mais necessário)
-    console.log("Reconexão automática desativada conforme solicitado. Usuário deve clicar em Connect.");
+    // ✅ CORREÇÃO: Dispara manualmente o callback com o estado inicial (desconectado)
+    // Isso garante que o app.js renderize o estado desconectado
+    // imediatamente, em vez de esperar um evento.
+    console.log("Disparando estado inicial (desconectado) para o app.");
+    callback({ 
+        isConnected: false,
+        wasConnected: wasPreviouslyConnected
+    });
 }
 
 /**

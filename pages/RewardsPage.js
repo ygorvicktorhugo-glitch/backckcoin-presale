@@ -1,4 +1,7 @@
 // pages/RewardsPage.js
+// ✅ ARQUIVO CORRIGIDO
+// - Adicionado 'loadUserData' à lista de importação, corrigindo
+//   o 'ReferenceError' que impedia a página de renderizar.
 
 const ethers = window.ethers;
 
@@ -8,7 +11,8 @@ import {
     calculateUserTotalRewards, 
     calculateClaimDetails,
     getHighestBoosterBoostFromAPI, 
-    safeContractCall 
+    safeContractCall,
+    loadUserData // ✅ <-- CORREÇÃO AQUI
 } from '../modules/data.js'; 
 import { executeUniversalClaim } from '../modules/transactions.js'; 
 import { 
@@ -37,10 +41,13 @@ async function renderClaimPanel() {
     }
     
     rewardsPanel.classList.remove('hidden');
-    renderLoading(el);
+    
+    // ✅ CORREÇÃO: Passa 'el' para renderLoading
+    renderLoading(el); 
 
     try {
         // 1. Calcular Detalhes da Reivindicação (Net/Fee)
+        // (Nota: Certifique-se que 'State.systemData' foi substituído por 'State.systemFees' se você mudou isso)
         const claimDetails = await calculateClaimDetails();
         const { totalRewards, netClaimAmount, feeAmount, discountPercent, basePenaltyPercent } = claimDetails;
 
@@ -50,8 +57,9 @@ async function renderClaimPanel() {
         // 3. Obter Detalhes do Desconto (para exibição)
         const efficiencyData = await getHighestBoosterBoostFromAPI();
         
-        // CORREÇÃO: Pega a taxa base do claim (assumindo CLAIM_REWARD_FEE_BIPS está carregado no State)
-        const baseClaimFeeBips = State.systemData.claimRewardFeeBips || 0n;
+        // CORREÇÃO: Pega a taxa base do claim
+        // (Nota: 'State.systemData' pode precisar ser 'State.systemFees' dependendo de outros arquivos)
+        const baseClaimFeeBips = State.systemFees?.["CLAIM_REWARD_FEE_BIPS"] || 0n;
         const baseFeeAmount = (totalRewards * baseClaimFeeBips) / 10000n;
         
         // O valor real economizado
@@ -60,7 +68,6 @@ async function renderClaimPanel() {
             : 0n;
 
         // Renderiza o painel de recompensas
-        // REDESENHO: Layout elegante e focado em um único card de resumo
         el.innerHTML = `
             <div class="space-y-4">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -90,7 +97,7 @@ async function renderClaimPanel() {
                             <span class="${calculatedDiscountAmount > 0n ? 'line-through text-red-400/70' : 'text-red-400'}">-${formatBigNumber(baseFeeAmount).toFixed(4)} $BKC</span>
                         </div>
                         
-                        ${efficiencyData.highestBoost > 0n ? 
+                        ${efficiencyData.highestBoost > 0 ? // Corrigido de 0n para 0
                             `<div class="flex justify-between font-semibold text-sm text-cyan-400">
                                 <span>Booster Discount (${efficiencyData.highestBoost / 100}%):</span>
                                 <span>+${formatBigNumber(calculatedDiscountAmount).toFixed(4)} $BKC</span>
@@ -149,7 +156,7 @@ export const RewardsPage = {
             <div id="claimable-rewards-panel" class="mb-8 p-6 bg-sidebar border border-border-color rounded-xl max-w-2xl mx-auto shadow-2xl">
                 <h2 class="text-xl font-bold mb-4 text-amber-300">Available Rewards for Claim</h2>
                 <div id="rewards-details-content">
-                    ${State.isConnected ? renderLoading() : renderNoData(null, "Connect your wallet to view rewards.")}
+                    ${State.isConnected ? renderLoading() : renderNoData("Connect your wallet to view rewards.")}
                 </div>
             </div>
 
@@ -164,7 +171,7 @@ export const RewardsPage = {
 
         if (State.isConnected) {
             // Garante que o usuário tem os dados mais recentes antes de renderizar
-            await loadUserData(); 
+            await loadUserData(); // <-- Esta linha agora funciona
             await renderClaimPanel();
         }
     },

@@ -1,6 +1,5 @@
 // data.js
-// ARQUIVO ATUALIZADO: Revertido o endpoint 'uploadFileToIPFS' para a Vercel (API relativa).
-// Todos os outros endpoints (GCloud) permanecem.
+// ARQUIVO FINAL: Aponta o uploadFileToIPFS para /api/upload (o endpoint gerado pelo upload.js na Vercel)
 
 const ethers = window.ethers;
 
@@ -14,16 +13,13 @@ import { addresses, boosterTiers, ipfsGateway } from '../config.js';
 // ====================================================================
 export const API_ENDPOINTS = {
     // 1. APIs do Projeto Principal: backchain-backand (Google Cloud Functions)
-    // Estes estão corretos, pois são apenas leituras de dados.
     getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
     getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
 
-    // 2. API Pinata/Upload (Revertida para a Vercel)
-    // ✅ CORREÇÃO: Movido do GCloud de volta para a Vercel para velocidade.
-    // O NotaryPage.js chamará este endpoint.
-    // Isso assume que seu arquivo de API na Vercel está em /api/uploadfiletoipfs.js
-    uploadFileToIPFS: '/api/uploadfiletoipfs', 
+    // 2. API Pinata/Upload (Vercel)
+    // ✅ CORREÇÃO: Apontando para /api/upload, que corresponde ao seu arquivo upload.js
+    uploadFileToIPFS: '/api/upload', 
     
     // 3. API Airdrop (Projeto SEPARADO: airdropbackchainnew)
     claimAirdrop: 'https://us-central1-airdropbackchainnew.cloudfunctions.net/claimAirdrop'
@@ -129,7 +125,7 @@ export async function loadPublicData() {
 
         const MINT_POOL = MAX_SUPPLY > TGE_SUPPLY ? MAX_SUPPLY - TGE_SUPPLY : 0n;
         if (totalSupply === 0n && TGE_SUPPLY > 0n) {
-             console.warn("Usando TGE_SUPPLY como estimativa de Total Supply devido à falha na chamada totalSupply().");
+             console.warn("Usando TGE_SUPPLY como estimativa de Total Supply due to totalSupply() call failure.");
         }
         
         if (validators.length === 0) {
@@ -334,6 +330,6 @@ export async function loadMyBoostersFromAPI() {
     } catch (e) {
         console.error("CRITICAL Error loading My Boosters from API:", e);
         State.myBoosters = [];
-        return [];
+        return []; 
     }
 }

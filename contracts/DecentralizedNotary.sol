@@ -32,8 +32,6 @@ contract DecentralizedNotary is
         address indexed owner,
         string indexed documentMetadataHash 
     );
-    
-    // CONSTRUTOR REMOVIDO PARA EVITAR ERRO DE UPGRADE DE SEGURANÇA
 
     function initialize(
         address _initialOwner,
@@ -72,6 +70,11 @@ contract DecentralizedNotary is
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
+    /**
+     * @notice Notarizes a document by minting an NFT linked to its metadata URI.
+     * @dev ✅ CORRIGIDO: Esta função não distribui mais taxas (treasury/delegator) manualmente.
+     * Ela transfere 100% da taxa para o MiningManager, que é o responsável pela distribuição.
+     */
     function notarize(
         string calldata _documentMetadataURI, 
         uint256 _boosterTokenId
@@ -83,13 +86,14 @@ contract DecentralizedNotary is
         
         // 1. Get Base Fee and pStake Minimum from Hub
         (uint256 baseFee, uint256 minPStake) = ecosystemManager.getServiceRequirements(SERVICE_KEY);
+        
         // 2. Check pStake Minimum
         if (minPStake > 0) {
             uint256 userPStake = IDelegationManager(ecosystemManager.getDelegationManagerAddress()).userTotalPStake(msg.sender);
             require(userPStake >= minPStake, "Notary: Insufficient pStake");
         }
         
-        // 3. Apply Booster Discount (Manual Check)
+        // 3. Apply Booster Discount
         uint256 feeToPay = baseFee;
         if (feeToPay > 0 && _boosterTokenId > 0) {
             address boosterAddress = ecosystemManager.getBoosterAddress();
@@ -109,39 +113,31 @@ contract DecentralizedNotary is
                     // Ignore if NFT is invalid 
                 }
             }
-       
         }
         
         require(feeToPay > 0, "Notary: Fee cannot be zero");
-        // 50/50 Fee Split
-        uint256 treasuryFee = feeToPay / 2;
-        uint256 delegatorFee = feeToPay - treasuryFee;
 
         // 4. Pull Fee from User
         bkcToken.transferFrom(msg.sender, address(this), feeToPay);
-        // 5. CRITICAL FIX: Transfer Fee to MiningManager (PoP Trigger)
+        
+        // 5. Transfer 100% Fee to MiningManager (PoP Trigger)
         require(
             bkcToken.transfer(miningManagerAddress, feeToPay),
             "Notary: Transfer to MiningManager failed"
         );
-        // 6. Call MiningManager to Mint Tokens (This token will be distributed by MM to pools)
+        
+        // 6. Call MiningManager. 
+        // O MiningManager cuidará da distribuição (Tesouro/Pools).
         uint256 bonusReward = IMiningManager(miningManagerAddress)
             .performPurchaseMining(
                 SERVICE_KEY,
-                feeToPay // The fee is the POP purchase amount
+                feeToPay // A taxa é o valor da compra PoP
             );
-        // 7. Redistribute the original Fee tokens (50/50)
-        address treasury = ecosystemManager.getTreasuryAddress();
-        if (treasuryFee > 0) {
-            bkcToken.transfer(treasury, treasuryFee);
-        }
         
-        if (delegatorFee > 0) {
-            bkcToken.approve(address(delegationManager), delegatorFee);
-            delegationManager.depositRewards(0, delegatorFee);
-        }
-        
-        // 8. Devolve the Mining Bonus to the user (if any)
+        // 7. ✅ CORREÇÃO: Lógica de divisão de taxas (treasuryFee, delegatorFee) REMOVIDA
+        // A transferência duplicada que causava o erro "exceeds balance" foi removida.
+
+        // 8. Devolve o Bônus de Mineração para o usuário (se houver)
         if (bonusReward > 0) {
             bkcToken.transfer(msg.sender, bonusReward);
         }

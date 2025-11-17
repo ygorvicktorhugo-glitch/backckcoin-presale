@@ -16,6 +16,9 @@ export const API_ENDPOINTS = {
     getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
     getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
+    
+    // ✅ NOVO ENDPOINT: (O URL será este após o deploy do Firebase)
+    getNotaryHistory: 'https://getnotaryhistory-4wvdcuoouq-uc.a.run.app',
 
     // 2. API Pinata/Upload (Vercel)
     // ✅ CORREÇÃO: Apontando para /api/upload, que corresponde ao seu arquivo upload.js

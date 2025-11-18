@@ -1,5 +1,5 @@
-// data.js
-// ARQUIVO FINAL: Aponta o uploadFileToIPFS para /api/upload (o endpoint gerado pelo upload.js na Vercel)
+// modules/data.js
+// FINAL VERSION: Corrigida chamada de rewards e remoção de lógica obsoleta.
 
 const ethers = window.ethers;
 
@@ -11,19 +11,14 @@ import { addresses, boosterTiers, ipfsGateway } from '../config.js';
 // ====================================================================
 // CONSTANTES E UTILITÁRIOS (NOVOS)
 // ====================================================================
-const API_TIMEOUT_MS = 10000; // 10 segundos de timeout para APIs lentas
-
-// Cache para dados do sistema para evitar chamadas excessivas
+const API_TIMEOUT_MS = 10000; 
 let systemDataCache = null;
 let systemDataCacheTime = 0;
-const CACHE_DURATION_MS = 60000; // 1 minuto de cache
+const CACHE_DURATION_MS = 60000; 
+
 
 /**
  * Executa um fetch com um tempo limite.
- * Se o tempo limite for atingido, a promise é rejeitada.
- * @param {string} url
- * @param {number} timeoutMs
- * @returns {Promise<Response>}
  */
 async function fetchWithTimeout(url, timeoutMs) {
     const controller = new AbortController();
@@ -47,18 +42,11 @@ async function fetchWithTimeout(url, timeoutMs) {
 // ENDPOINTS DE API
 // ====================================================================
 export const API_ENDPOINTS = {
-    // 1. APIs do Projeto Principal: backchain-backand (Google Cloud Functions)
     getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
     getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
-    
-    // NOVO ENDPOINT: (O URL será este após o deploy do Firebase)
     getNotaryHistory: 'https://getnotaryhistory-4wvdcuoouq-uc.a.run.app',
-
-    // 2. API Pinata/Upload (Vercel)
     uploadFileToIPFS: '/api/upload', 
-    
-    // 3. API Airdrop (Projeto SEPARADO: airdropbackchainnew)
     claimAirdrop: 'https://us-central1-airdropbackchainnew.cloudfunctions.net/claimAirdrop'
 };
 
@@ -109,7 +97,6 @@ export async function loadSystemDataFromAPI() {
     const now = Date.now();
     if (systemDataCache && (now - systemDataCacheTime < CACHE_DURATION_MS)) {
         console.log("Using cached system data.");
-        // Popula o State com o cache
         applySystemDataToState(systemDataCache);
         return true;
     }
@@ -117,7 +104,6 @@ export async function loadSystemDataFromAPI() {
     try {
         console.log("Loading system rules from API with 10s timeout...");
         
-        // CORREÇÃO: Usa fetchWithTimeout
         const response = await fetchWithTimeout(API_ENDPOINTS.getSystemData, API_TIMEOUT_MS); 
         
         if (!response.ok) {
@@ -135,9 +121,7 @@ export async function loadSystemDataFromAPI() {
         return true;
 
     } catch (e) {
-        // Agora, se houver falha (CORS ou Timeout), o erro aparece rápido
         console.error("CRITICAL Error loading system data from API:", e.message);
-        // O restante do loadPublicData() e a UI não serão bloqueados por 1 minuto.
         return false;
     }
 }
@@ -154,10 +138,13 @@ function applySystemDataToState(systemData) {
     }
     
     State.boosterDiscounts = systemData.discounts; 
+    
+    // Adiciona dado do Oracle se disponível (FortunePool)
+    if (systemData.oracleFeeInWei) {
+         State.systemData = State.systemData || {};
+         State.systemData.oracleFeeInWei = BigInt(systemData.oracleFeeInWei);
+    }
 }
-
-// ====================================================================
-
 
 // ====================================================================
 // LÓGICA DE DADOS PÚBLICOS E PRIVADOS 
@@ -172,33 +159,21 @@ export async function loadPublicData() {
 
         const [
             totalSupply, 
-            // validators (removido, pois getAllValidators não existe mais)
             MAX_SUPPLY, 
             TGE_SUPPLY
         ] = await Promise.all([
             safeContractCall(publicBkcContract, 'totalSupply', [], 0n), 
-            // safeContractCall(publicDelegationContract, 'getAllValidators', [], []), // REMOVED
             safeContractCall(publicBkcContract, 'MAX_SUPPLY', [], 0n), 
             safeContractCall(publicBkcContract, 'TGE_SUPPLY', [], 0n)
         ]);
-
-        const MINT_POOL = MAX_SUPPLY > TGE_SUPPLY ? MAX_SUPPLY - TGE_SUPPLY : 0n;
-        if (totalSupply === 0n && TGE_SUPPLY > 0n) {
-             console.warn("Usando TGE_SUPPLY como estimativa de Total Supply due to totalSupply() call failure.");
-        }
         
-        // Como não há mais validadores individuais públicos para listar, limpamos o array ou usamos dados mock se necessário para UI legacy
         State.allValidatorsData = []; 
 
-        // Carrega o Total Network pStake diretamente
         const totalPStake = await safeContractCall(publicDelegationContract, 'totalNetworkPStake', [], 0n);
         State.totalNetworkPStake = totalPStake;
         
-        // Chamada à API com Timeout
         await loadSystemDataFromAPI();
         
-        // Se a chamada acima falhar, o código continua aqui, permitindo que a UI atualize
-        // com os dados on-chain (TVL, Validators, etc.)
         if (window.updateUIState) {
             window.updateUIState();
         }
@@ -210,7 +185,7 @@ export async function loadPublicData() {
 }
 
 export async function loadUserData() {
-    if (!State.signer || !State.userAddress) return;
+    if (!State.isConnected || !State.userAddress) return;
 
     try {
         const [balance, delegationsRaw, totalUserPStake] = await Promise.all([
@@ -222,12 +197,11 @@ export async function loadUserData() {
         State.currentUserBalance = balance;
         
         // Mapeia a resposta da struct (que agora tem 3 campos: amount, unlockTime, lockDuration)
-        // Ajustado para refletir a nova ABI sem 'validator'
+        // O campo 'validator' foi removido do contrato.
         State.userDelegations = delegationsRaw.map((d, index) => ({
             amount: d[0], 
             unlockTime: d[1],
             lockDuration: d[2], 
-            // validator: d[3], // REMOVIDO
             index,
             txHash: null 
         }));
@@ -239,6 +213,9 @@ export async function loadUserData() {
             const nativeBalance = await State.provider.getBalance(State.userAddress);
             State.currentUserNativeBalance = nativeBalance;
         }
+
+        // 4. Boosters (Load from API for efficiency)
+        await loadMyBoostersFromAPI();
         
     } catch (e) {
         console.error("Error loading user data:", e);
@@ -246,21 +223,15 @@ export async function loadUserData() {
 }
 
 export async function calculateUserTotalRewards() {
-    if (!State.delegationManagerContract || !State.userAddress) {
+    if (!State.isConnected || !State.delegationManagerContract) {
         return { stakingRewards: 0n, minerRewards: 0n, totalRewards: 0n };
     }
 
     try {
-        // 1. Staking Rewards (Delegator) - Agora chamado 'pendingRewards' ou 'pendingDelegatorRewards' dependendo do contrato final
-        // Vou assumir 'pendingRewards' conforme a nova ABI sugerida, mas mantenho fallback
-        let stakingRewards = await safeContractCall(State.delegationManagerContract, 'pendingRewards', [State.userAddress], 0n);
+        // ✅ CORRIGIDO: Usa o nome único da função 'pendingRewards' do novo contrato
+        const stakingRewards = await safeContractCall(State.delegationManagerContract, 'pendingRewards', [State.userAddress], 0n);
         
-        // Se falhar, tenta o nome antigo por compatibilidade se o contrato não foi atualizado exatamente como planejado
-        if (stakingRewards === 0n) {
-             stakingRewards = await safeContractCall(State.delegationManagerContract, 'pendingDelegatorRewards', [State.userAddress], 0n);
-        }
-
-        // 2. Miner Rewards (Validator) - REMOVED (Always 0)
+        // Miner Rewards (Validator) é sempre 0n na nova arquitetura
         const minerRewards = 0n; 
 
         const totalRewards = stakingRewards + minerRewards;
@@ -372,7 +343,6 @@ export async function loadMyBoostersFromAPI() {
         console.log("Loading user boosters from API...");
         const userAddress = State.userAddress;
         
-        // Uso de fetch original, pois falha na API de Booster é menos crítica que a de SystemData
         const response = await fetch(`${API_ENDPOINTS.getBoosters}/${userAddress}`);
         
         if (!response.ok) {

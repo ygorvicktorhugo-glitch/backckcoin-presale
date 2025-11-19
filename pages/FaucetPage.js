@@ -11,8 +11,8 @@ import { safeBalanceOf, safeContractCall } from '../modules/data.js';
 
 let faucetState = {
     ethBalance: null,
-    // REMOVIDO: hasClaimedBKC: null, // Não mais necessário
     faucetBKCBalance: null,
+    isLoading: false, // Adicionando estado de loading para evitar chamadas múltiplas
 };
 
 // --- Função Auxiliar: Copiar para Clipboard ---
@@ -24,8 +24,12 @@ function copyToClipboard(text, buttonElement) {
         buttonElement.disabled = true;
         setTimeout(() => {
             if (buttonElement) {
-                 buttonElement.innerHTML = originalHTML;
-                 buttonElement.disabled = false;
+                // Ensure the button element still exists before updating
+                const buttonToUpdate = document.getElementById(buttonElement.id);
+                if (buttonToUpdate) {
+                    buttonToUpdate.innerHTML = originalHTML;
+                    buttonToUpdate.disabled = false;
+                }
             }
         }, 1500);
     }).catch(err => {
@@ -38,10 +42,10 @@ function copyToClipboard(text, buttonElement) {
 function renderStepCard({ title, status, icon, contentHTML, actionHTML = '', customClass = '' }) {
     // Classes de status ajustadas para melhor alinhamento visual
     const statusStyles = {
-        required: { border: 'border-red-500',    bg: 'bg-red-900/30',    text: 'text-red-400',    iconBg: 'bg-red-500/20' },
-        active:   { border: 'border-green-500',   bg: 'bg-green-900/30',   text: 'text-green-400',  iconBg: 'bg-green-500/20' },
-        error:    { border: 'border-amber-500',     bg: 'bg-amber-900/30',    text: 'text-amber-400',    iconBg: 'bg-amber-500/20' },
-        complete: { border: 'border-zinc-700',   bg: 'bg-zinc-800/50',  text: 'text-zinc-400',   iconBg: 'bg-zinc-700/50' }
+        required: { border: 'border-red-500',    bg: 'bg-red-900/30',    text: 'text-red-400',    iconBg: 'bg-red-500/20' },
+        active:   { border: 'border-green-500',   bg: 'bg-green-900/30',   text: 'text-green-400',  iconBg: 'bg-green-500/20' },
+        error:    { border: 'border-amber-500',     bg: 'bg-amber-900/30',    text: 'text-amber-400',    iconBg: 'bg-amber-500/20' },
+        complete: { border: 'border-zinc-700',   bg: 'bg-zinc-800/50',  text: 'text-zinc-400',   iconBg: 'bg-zinc-700/50' }
     };
     const styles = statusStyles[status] || statusStyles.complete; // Default para 'complete' (cinza)
 
@@ -144,36 +148,57 @@ function renderScreen_ReadyToClaim() {
     `;
 }
 
+function renderScreen_Disconnected() {
+    return `
+        <div class="max-w-xl mx-auto text-center py-20">
+            <i class="fa-solid fa-plug-circle-exclamation text-6xl text-red-500 mb-6"></i>
+            <h3 class="text-2xl font-bold text-white mb-3">Connect Your Wallet to Access the Testnet Faucet</h3>
+            <p class="text-zinc-400 mb-6">
+                Please connect your wallet on the Sepolia Testnet to verify your address and claim free $BKC tokens for testing.
+            </p>
+            <button onclick="window.openConnectModal()" class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-8 rounded-lg text-lg transition-all shadow-lg hover:shadow-amber-500/20">
+                <i class="fa-solid fa-wallet mr-2"></i> Connect Wallet
+            </button>
+        </div>
+    `;
+}
+
 // --- Função Principal de Renderização ---
 async function renderFaucetContent() {
     const container = document.getElementById('faucet-content-wrapper');
     if (!container) return;
 
-    // 1. Verificações de Conexão e Configuração
-    if (!State.isConnected || !State.userAddress || !State.provider) { renderNoData(container, 'Please connect your wallet to use the Faucet.'); return; }
-    if (!addresses.faucet || addresses.faucet.startsWith('0x...')) { renderError(container, 'Faucet contract address not configured.'); return; }
-    if (!State.faucetContract || !State.bkcTokenContract) { renderError(container, 'Faucet or Token contract instance missing.'); return; }
+    // 1. VERIFICAÇÃO DE CONEXÃO
+    if (!State.isConnected || !State.userAddress || !State.provider) { 
+        container.innerHTML = renderScreen_Disconnected(); 
+        return; 
+    }
+    
+    // 2. Verificações de Configuração
+    // Nota: O State.faucetContractPublic é inicializado em wallet.js
+    if (!addresses.faucet || addresses.faucet.startsWith('0x...') || !State.faucetContractPublic || !State.bkcTokenContractPublic) {
+        return renderError(container, 'Faucet contract is not configured or instantiated correctly in the dApp.');
+    }
 
 
-    // 2. Carregamento dos Dados
-    // REMOVIDO: hasClaimedBKC da verificação de estado
+    // 3. Carregamento dos Dados
+    // Verifica se os dados necessários para o render já foram buscados
     if (faucetState.ethBalance === null || faucetState.faucetBKCBalance === null) {
         if (!faucetState.isLoading) {
             faucetState.isLoading = true;
             container.innerHTML = `<div class="max-w-xl mx-auto text-center py-20"><div class="loader inline-block !w-8 !h-8"></div><p class="text-zinc-400 mt-4 text-lg">Loading faucet status...</p></div>`;
             console.log("FAUCET: Starting data fetch...");
             try {
-                // REMOVIDO: safeContractCall(State.faucetContract, 'hasClaimed', [State.userAddress], null),
+                // Usamos a instância pública (State.publicProvider e State.bkcTokenContractPublic) para leitura
                 const [ethBal, faucetBal] = await Promise.all([
-                    State.provider.getBalance(State.userAddress),
-                    safeBalanceOf(State.bkcTokenContract, addresses.faucet)
+                    State.publicProvider.getBalance(State.userAddress), // Usando publicProvider
+                    safeBalanceOf(State.bkcTokenContractPublic, addresses.faucet) // Usando public contract
                 ]);
                 faucetState.ethBalance = ethBal;
-                // faucetState.hasClaimedBKC = hasClaimed; // REMOVIDO
                 faucetState.faucetBKCBalance = faucetBal;
             } catch (e) {
                 console.error("FAUCET: Critical error during data fetch.", e);
-                return renderError(container, `Could not load faucet data. Please check network connection.`);
+                return renderError(container, `Could not load faucet data. Check the configured Faucet address on Sepolia.`);
             }
             faucetState.isLoading = false;
         } else {
@@ -181,20 +206,17 @@ async function renderFaucetContent() {
         }
     }
 
-    // 3. Determinação da Tela
+    // 4. Determinação da Tela (Conectado)
     let screenContent = '';
     const needsSepoliaETH = faucetState.ethBalance === 0n;
-    // REMOVIDO: const claimed = faucetState.hasClaimedBKC === true;
-    const faucetHasFunds = faucetState.faucetBKCBalance >= FAUCET_AMOUNT_WEI;
 
     if (needsSepoliaETH) {
         screenContent = renderScreen_MissingETH();
     } else { 
-        // Não há mais tela de "Claimed", pois o claim é repetível.
         screenContent = renderScreen_ReadyToClaim();
     }
 
-    // 4. Renderização Final da Estrutura
+    // 5. Renderização Final da Estrutura
     container.innerHTML = `
         <div class="max-w-2xl mx-auto">
             <div class="text-center mb-10">
@@ -213,11 +235,11 @@ async function renderFaucetContent() {
         </div>
     `;
 
-    // 5. Re-adiciona Listeners de Cópia e Claim
+    // 6. Re-adiciona Listeners de Cópia e Claim
     const copyBtnElement = document.getElementById('copyAddressBtnStep1');
     if (copyBtnElement && State.userAddress) {
         copyBtnElement.addEventListener('click', (e) => {
-             copyToClipboard(State.userAddress, e.currentTarget);
+            copyToClipboard(State.userAddress, e.currentTarget);
         });
     }
 
@@ -233,32 +255,39 @@ export const FaucetPage = {
     async render() {
         const faucetContainer = document.getElementById('faucet');
         if (!faucetContainer) return;
-        // Reseta o estado para forçar a busca de dados
-        faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false };
+        
+        // 1. Renderiza o wrapper da página
         faucetContainer.innerHTML = `<div id="faucet-content-wrapper" class="container mx-auto max-w-7xl py-8"></div>`;
+
+        // 2. Reseta o estado apenas se estiver desconectado ou se não houve conexão anterior, 
+        // caso contrário, chamamos renderContent que fará as checagens
+        if (!State.isConnected) {
+            faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false };
+        }
+        
+        // 3. Renderiza o conteúdo (que agora fará a busca de dados ou a tela de desconexão)
         await renderFaucetContent();
     },
     async claimHandler(e) {
-         const claimBtn = e.currentTarget;
-         if (claimBtn && !claimBtn.disabled) {
+        const claimBtn = e.currentTarget;
+        if (claimBtn && !claimBtn.disabled) {
             const success = await executeFaucetClaim(claimBtn);
             if (success) {
-                // Não marca mais como 'claimed', apenas força o re-render para atualizar o saldo
-                // Força re-renderização completa após delay
-                setTimeout(async () => { await FaucetPage.render(); }, 2500);
+                // Força re-renderização completa após delay para refletir o novo saldo de BKC
+                setTimeout(async () => { 
+                    // Limpa o estado para forçar o recarregamento dos saldos do Faucet
+                    faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false };
+                    await FaucetPage.render(); 
+                }, 2500);
             }
-         }
-    },
-    init() {
-        // O listener de click do claim agora é adicionado diretamente após a renderização
-        // e o handler `claimHandler` é definido no objeto FaucetPage para ser reutilizado.
+        }
     },
     update(isConnected) {
         const faucetContainer = document.getElementById('faucet');
         const isVisible = faucetContainer && !faucetContainer.classList.contains('hidden');
         if (isVisible) {
-            // Reseta o estado para forçar o re-render (seja por ETH recebido ou por reconexão)
-            FaucetPage.render();
+             // Chamado quando o estado da carteira muda (ex: conectou/desconectou)
+             FaucetPage.render();
         }
     }
 };

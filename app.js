@@ -1,5 +1,5 @@
 // js/app.js
-// ✅ ARQUIVO ATUALIZADO (SEM DAO)
+// ✅ ARQUIVO ATUALIZADO (COM LÓGICA DE BANNER DE TESTNET)
 
 // Função 'inject' (Vercel Analytics)
 const inject = window.inject || (() => { console.warn("Vercel Analytics not loaded globally."); });
@@ -9,7 +9,7 @@ const ethers = window.ethers;
 
 // Inject Vercel Analytics if not on localhost
 if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    inject();
+    inject();
 }
 
 import { DOMElements } from './dom-elements.js';
@@ -29,7 +29,6 @@ import { AboutPage } from './pages/AboutPage.js';
 import { AirdropPage } from './pages/AirdropPage.js';
 import { AdminPage } from './pages/AdminPage.js';
 import { PresalePage } from './pages/PresalePage.js';
-// REMOVIDO: import { DaoPage } from './pages/DaoPage.js';
 import { FaucetPage } from './pages/FaucetPage.js';
 import { TokenomicsPage } from './pages/TokenomicsPage.js';
 import { NotaryPage } from './pages/NotaryPage.js';
@@ -39,16 +38,16 @@ import { NotaryPage } from './pages/NotaryPage.js';
 // ============================================================================
 
 function formatAddress(addr) {
-    if (!addr || addr.length < 42) return '...';
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`; 
+    if (!addr || addr.length < 42) return '...';
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`; 
 }
 
 function formatLargeBalance(bigNum) {
-    const num = formatBigNumber(bigNum);
-    if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(2) + 'B';
-    if (num >= 1_000_000) return (num / 1_000_000).toFixed(2) + 'M';
-    if (num >= 10_000) return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const num = formatBigNumber(bigNum);
+    if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(2) + 'B';
+    if (num >= 1_000_000) return (num / 1_000_000).toFixed(2) + 'M';
+    if (num >= 10_000) return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ============================================================================
@@ -56,19 +55,18 @@ function formatLargeBalance(bigNum) {
 // ============================================================================
 
 const routes = {
-    'dashboard': DashboardPage,
-    'mine': EarnPage, 
-    'store': StorePage,
-    'rewards': RewardsPage,
-    'actions': FortunePoolPage, 
-    'notary': NotaryPage,
-    'airdrop': AirdropPage,
-    // REMOVIDO: 'dao': DaoPage,
-    'tokenomics': TokenomicsPage,
-    'faucet': FaucetPage,
-    'about': AboutPage,
-    'admin': AdminPage,
-    'presale': PresalePage,
+    'dashboard': DashboardPage,
+    'mine': EarnPage, 
+    'store': StorePage,
+    'rewards': RewardsPage,
+    'actions': FortunePoolPage, 
+    'notary': NotaryPage,
+    'airdrop': AirdropPage,
+    'tokenomics': TokenomicsPage,
+    'faucet': FaucetPage,
+    'about': AboutPage,
+    'admin': AdminPage,
+    'presale': PresalePage,
 };
 
 let activePageId = 'dashboard';
@@ -80,16 +78,16 @@ let currentPageCleanup = null;
 // ============================================================================
 
 function onWalletStateChange(changes) {
-    const { isConnected, address, isNewConnection, wasConnected } = changes;
-    console.log("Wallet State Changed (App):", changes);
+    const { isConnected, address, isNewConnection, wasConnected } = changes;
+    console.log("Wallet State Changed (App):", changes);
 
-    updateUIState(true); 
-    
-    if (isConnected && isNewConnection) {
-        showToast(`Connected: ${formatAddress(address)}`, "success");
-    } else if (!isConnected && wasConnected) {
-        showToast("Wallet disconnected.", "info");
-    }
+    updateUIState(true); 
+    
+    if (isConnected && isNewConnection) {
+        showToast(`Connected: ${formatAddress(address)}`, "success");
+    } else if (!isConnected && wasConnected) {
+        showToast("Wallet disconnected.", "info");
+    }
 }
 
 // ============================================================================
@@ -97,57 +95,57 @@ function onWalletStateChange(changes) {
 // ============================================================================
 
 function navigateTo(pageId, forceUpdate = false) {
-    const pageContainer = document.querySelector('main > div.container');
-    const navItems = document.querySelectorAll('.sidebar-link');
+    const pageContainer = document.querySelector('main > div.container');
+    const navItems = document.querySelectorAll('.sidebar-link');
 
-    if (!pageContainer || !navItems.length) {
-        console.error("DOM elements for navigation not found.");
-        return;
-    }
+    if (!pageContainer || !navItems.length) {
+        console.error("DOM elements for navigation not found.");
+        return;
+    }
 
-    if (currentPageCleanup && typeof currentPageCleanup === 'function') {
-        currentPageCleanup();
-        currentPageCleanup = null;
-    }
+    if (currentPageCleanup && typeof currentPageCleanup === 'function') {
+        currentPageCleanup();
+        currentPageCleanup = null;
+    }
 
-    Array.from(pageContainer.children).forEach(child => {
-        if (child.tagName === 'SECTION') {
-            child.classList.add('hidden');
-            child.classList.remove('active');
-        }
-    });
+    Array.from(pageContainer.children).forEach(child => {
+        if (child.tagName === 'SECTION') {
+            child.classList.add('hidden');
+            child.classList.remove('active');
+        }
+    });
 
-    navItems.forEach(item => {
-        item.classList.remove('active');
-        item.classList.add('text-zinc-400', 'hover:text-white', 'hover:bg-zinc-700');
-    });
+    navItems.forEach(item => {
+        item.classList.remove('active');
+        item.classList.add('text-zinc-400', 'hover:text-white', 'hover:bg-zinc-700');
+    });
 
-    const targetPage = document.getElementById(pageId);
-    if (targetPage && routes[pageId]) {
-        targetPage.classList.remove('hidden');
-        targetPage.classList.add('active');
-        
-        const isNewPage = activePageId !== pageId;
-        activePageId = pageId;
+    const targetPage = document.getElementById(pageId);
+    if (targetPage && routes[pageId]) {
+        targetPage.classList.remove('hidden');
+        targetPage.classList.add('active');
+        
+        const isNewPage = activePageId !== pageId;
+        activePageId = pageId;
 
-        const activeNavItem = document.querySelector(`.sidebar-link[data-target="${pageId}"]`);
-        if (activeNavItem) {
-            activeNavItem.classList.remove('text-zinc-400', 'hover:text-white', 'hover:bg-zinc-700');
-            activeNavItem.classList.add('active');
-        }
+        const activeNavItem = document.querySelector(`.sidebar-link[data-target="${pageId}"]`);
+        if (activeNavItem) {
+            activeNavItem.classList.remove('text-zinc-400', 'hover:text-white', 'hover:bg-zinc-700');
+            activeNavItem.classList.add('active');
+        }
 
-        if (routes[pageId] && typeof routes[pageId].render === 'function') {
-            routes[pageId].render(isNewPage || forceUpdate);
-        }
-        
-        if (typeof routes[pageId].cleanup === 'function') {
-            currentPageCleanup = routes[pageId].cleanup;
-        }
-        
-    } else {
-        console.error(`Page ID '${pageId}' not found or route not defined.`);
-        navigateTo('dashboard');
-    }
+        if (routes[pageId] && typeof routes[pageId].render === 'function') {
+            routes[pageId].render(isNewPage || forceUpdate);
+        }
+        
+        if (typeof routes[pageId].cleanup === 'function') {
+            currentPageCleanup = routes[pageId].cleanup;
+        }
+        
+    } else {
+        console.error(`Page ID '${pageId}' not found or route not defined.`);
+        navigateTo('dashboard');
+    }
 }
 window.navigateTo = navigateTo;
 
@@ -156,99 +154,143 @@ window.navigateTo = navigateTo;
 // ============================================================================
 
 function updateUIState(forcePageUpdate = false) {
-    const adminLinkContainer = document.getElementById('admin-link-container');
-    const statUserBalanceEl = document.getElementById('statUserBalance');
-    const connectButtonDesktop = document.getElementById('connectButtonDesktop');
-    const connectButtonMobile = document.getElementById('connectButtonMobile');
-    const mobileAppDisplay = document.getElementById('mobileAppDisplay');
-    
-    const checkElement = (el, name) => { 
-        if (!el) console.warn(`Element ${name} not found in DOM during UI update.`); 
-        return el; 
-    };
+    const adminLinkContainer = document.getElementById('admin-link-container');
+    const statUserBalanceEl = document.getElementById('statUserBalance');
+    const connectButtonDesktop = document.getElementById('connectButtonDesktop');
+    const connectButtonMobile = document.getElementById('connectButtonMobile');
+    const mobileAppDisplay = document.getElementById('mobileAppDisplay');
+    
+    const checkElement = (el, name) => { 
+        if (!el) console.warn(`Element ${name} not found in DOM during UI update.`); 
+        return el; 
+    };
 
-    if (State.isConnected && State.userAddress) {
-        const balanceString = formatLargeBalance(State.currentUserBalance);
-        checkElement(connectButtonDesktop, 'connectButtonDesktop').textContent = `${balanceString} $BKC`;
-        checkElement(connectButtonMobile, 'connectButtonMobile').textContent = `${balanceString} $BKC`;
-        const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
-        if (mobileDisplayEl) { 
-            mobileDisplayEl.textContent = 'Backcoin.org'; 
-            mobileDisplayEl.classList.add('text-amber-400'); 
-            mobileDisplayEl.classList.remove('text-white'); 
-        }
-        const fullBalanceNum = formatBigNumber(State.currentUserBalance);
-        if (statUserBalanceEl) {
-            statUserBalanceEl.textContent = fullBalanceNum.toLocaleString('en-US', { 
-                minimumFractionDigits: 2, 
-                maximumFractionDigits: 2 
-            });
-        }
-        if (adminLinkContainer) { 
-            adminLinkContainer.style.display = (State.userAddress.toLowerCase() === ADMIN_WALLET.toLowerCase()) ? 'block' : 'none'; 
-        }
-        
-    } else {
-        checkElement(connectButtonDesktop, 'connectButtonDesktop').textContent = "Connect";
-        checkElement(connectButtonMobile, 'connectButtonMobile').textContent = "Connect";
-        const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
-        if (mobileDisplayEl) { 
-            mobileDisplayEl.textContent = 'Backcoin.org'; 
-            mobileDisplayEl.classList.add('text-amber-400'); 
-            mobileDisplayEl.classList.remove('text-white'); 
-        }
-        if (adminLinkContainer) adminLinkContainer.style.display = 'none';
-        if (statUserBalanceEl) statUserBalanceEl.textContent = '--';
-    }
+    if (State.isConnected && State.userAddress) {
+        const balanceString = formatLargeBalance(State.currentUserBalance);
+        checkElement(connectButtonDesktop, 'connectButtonDesktop').textContent = `${balanceString} $BKC`;
+        checkElement(connectButtonMobile, 'connectButtonMobile').textContent = `${balanceString} $BKC`;
+        const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
+        if (mobileDisplayEl) { 
+            mobileDisplayEl.textContent = 'Backcoin.org'; 
+            mobileDisplayEl.classList.add('text-amber-400'); 
+            mobileDisplayEl.classList.remove('text-white'); 
+        }
+        const fullBalanceNum = formatBigNumber(State.currentUserBalance);
+        if (statUserBalanceEl) {
+            statUserBalanceEl.textContent = fullBalanceNum.toLocaleString('en-US', { 
+                minimumFractionDigits: 2, 
+                maximumFractionDigits: 2 
+            });
+        }
+        if (adminLinkContainer) { 
+            adminLinkContainer.style.display = (State.userAddress.toLowerCase() === ADMIN_WALLET.toLowerCase()) ? 'block' : 'none'; 
+        }
+        
+    } else {
+        checkElement(connectButtonDesktop, 'connectButtonDesktop').textContent = "Connect";
+        checkElement(connectButtonMobile, 'connectButtonMobile').textContent = "Connect";
+        const mobileDisplayEl = checkElement(mobileAppDisplay, 'mobileAppDisplay');
+        if (mobileDisplayEl) { 
+            mobileDisplayEl.textContent = 'Backcoin.org'; 
+            mobileDisplayEl.classList.add('text-amber-400'); 
+            mobileDisplayEl.classList.remove('text-white'); 
+        }
+        if (adminLinkContainer) adminLinkContainer.style.display = 'none';
+        if (statUserBalanceEl) statUserBalanceEl.textContent = '--';
+    }
 
-    navigateTo(activePageId, forcePageUpdate); 
+    navigateTo(activePageId, forcePageUpdate); 
 }
 
 // ============================================================================
-// GLOBAL EVENT LISTENERS
+// GLOBAL EVENT LISTENERS & TESTNET BANNER LOGIC
 // ============================================================================
 
 function setupGlobalListeners() {
-    const navItems = document.querySelectorAll('.sidebar-link');
-    const menuButton = document.getElementById('menu-btn');
-    const sidebar = document.getElementById('sidebar');
-    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
-    const connectButton = document.getElementById('connectButtonDesktop');
-    const connectButtonMobile = document.getElementById('connectButtonMobile');
-    const shareButton = document.getElementById('shareProjectBtn');
-
-    if (navItems.length > 0) {
-        navItems.forEach(item => {
-            item.addEventListener('click', () => {
-                const pageId = item.dataset.target;
-                if (pageId) {
-                    navigateTo(pageId, false); 
-                    if (sidebar.classList.contains('translate-x-0')) {
-                        sidebar.classList.remove('translate-x-0');
-                        sidebar.classList.add('-translate-x-full');
-                        sidebarBackdrop.classList.add('hidden');
-                    }
-                }
-            });
-        });
-    }
+    const navItems = document.querySelectorAll('.sidebar-link');
+    const menuButton = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    const connectButton = document.getElementById('connectButtonDesktop');
+    const connectButtonMobile = document.getElementById('connectButtonMobile');
+    const shareButton = document.getElementById('shareProjectBtn');
     
-    if (connectButton) connectButton.addEventListener('click', openConnectModal);
-    if (connectButtonMobile) connectButtonMobile.addEventListener('click', openConnectModal);
-    if (shareButton) shareButton.addEventListener('click', () => showShareModal(State.userAddress));
+    // --- Lógica do Banner de Testnet ---
+    const banner = document.getElementById('testnet-banner');
+    const closeButton = document.getElementById('close-testnet-banner');
+    const HIDE_STORAGE_KEY = 'hideTestnetBanner';
+    const AUTO_HIDE_DELAY_MS = 30000; // Increased auto-hide delay from 15s to 30s
 
-    if (menuButton && sidebar && sidebarBackdrop) {
-        menuButton.addEventListener('click', () => {
-            sidebar.classList.toggle('-translate-x-full');
-            sidebar.classList.toggle('translate-x-0');
-            sidebarBackdrop.classList.toggle('hidden');
-        });
-        sidebarBackdrop.addEventListener('click', () => {
-            sidebar.classList.add('-translate-x-full');
-            sidebar.classList.remove('translate-x-0');
-            sidebarBackdrop.classList.add('hidden');
-        });
+    const closeBanner = (auto = false) => {
+        if (!banner) return;
+
+        // Animação de fechamento
+        banner.style.transform = 'translateY(100%)'; 
+        
+        setTimeout(() => {
+            if(banner.parentElement) {
+                banner.remove();
+            }
+        }, 500); 
+
+        // Salva a preferência de fechar na sessão (para que não reapareça)
+        localStorage.setItem(HIDE_STORAGE_KEY, 'true');
+    };
+
+    if (banner && closeButton) {
+        if (localStorage.getItem(HIDE_STORAGE_KEY) !== 'true') {
+            // Configura o botão de fechar
+            closeButton.addEventListener('click', () => closeBanner(false));
+            
+            // Configura o desaparecimento automático
+            setTimeout(() => {
+                if (banner.parentElement) { // Verifica se ainda está no DOM (se o usuário não fechou manualmente)
+                    closeBanner(true);
+                }
+            }, AUTO_HIDE_DELAY_MS);
+            
+            // Garante que o banner está visível (se foi escondido por CSS)
+            banner.style.transform = 'translateY(0)'; 
+
+        } else {
+             // Se já está marcado para esconder, remove imediatamente
+             banner.remove();
+        }
     }
+    // --- Fim da Lógica do Banner de Testnet ---
+
+    if (navItems.length > 0) {
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const pageId = item.dataset.target;
+                if (pageId) {
+                    navigateTo(pageId, false); 
+                    if (sidebar.classList.contains('translate-x-0')) {
+                        sidebar.classList.remove('translate-x-0');
+                        sidebar.classList.add('-translate-x-full');
+                        sidebarBackdrop.classList.add('hidden');
+                    }
+                }
+            });
+        });
+    }
+    
+    if (connectButton) connectButton.addEventListener('click', openConnectModal);
+    if (connectButtonMobile) connectButtonMobile.addEventListener('click', openConnectModal);
+    if (shareButton) shareButton.addEventListener('click', () => showShareModal(State.userAddress));
+
+    if (menuButton && sidebar && sidebarBackdrop) {
+        menuButton.addEventListener('click', () => {
+            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('translate-x-0');
+            sidebarBackdrop.classList.toggle('hidden');
+        });
+        sidebarBackdrop.addEventListener('click', () => {
+            sidebar.classList.add('-translate-x-full');
+            sidebar.classList.remove('translate-x-0');
+            sidebarBackdrop.classList.add('hidden');
+        });
+    }
 }
 
 // ============================================================================
@@ -256,26 +298,26 @@ function setupGlobalListeners() {
 // ============================================================================
 
 window.addEventListener('load', async () => {
-    console.log("Window 'load' event fired. Starting initialization...");
+    console.log("Window 'load' event fired. Starting initialization...");
 
-    if (!DOMElements.earn) {
-        DOMElements.earn = document.getElementById('mine'); 
-    }
+    if (!DOMElements.earn) {
+        DOMElements.earn = document.getElementById('mine'); 
+    }
 
-    try {
-        const addressesLoaded = await loadAddresses(); 
-        if (!addressesLoaded) return;
-    } catch (error) {
-        console.error("Critical failure loading addresses:", error);
-        return;
-    }
-    
-    setupGlobalListeners();
+    try {
+        const addressesLoaded = await loadAddresses(); 
+        if (!addressesLoaded) return;
+    } catch (error) {
+        console.error("Critical failure loading addresses:", error);
+        return;
+    }
+    
+    setupGlobalListeners();
 
-    await initPublicProvider(); 
-    initWalletSubscriptions(onWalletStateChange);
-    showWelcomeModal();
-    console.log("Application initialization sequence complete.");
+    await initPublicProvider(); 
+    initWalletSubscriptions(onWalletStateChange);
+    showWelcomeModal();
+    console.log("Application initialization sequence complete.");
 });
 
 window.EarnPage = EarnPage; 

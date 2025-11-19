@@ -1,4 +1,4 @@
-// ui-feedback.js - Versão Profissional e Otimizada com i18n
+// ui-feedback.js - Versão Otimizada de 1 Página
 
 import { DOMElements } from './dom-elements.js';
 import { addresses } from './config.js';
@@ -19,34 +19,22 @@ let currentLang = 'en';
  */
 const translations = {
     'pt': {
-        // Títulos e Textos Principais
+        // Títulos e Textos Principais (AGORA APENAS UMA PÁGINA)
         'welcome_name': 'Backcoin.org',
         'welcome_slogan': 'O futuro é descentralizado',
-        'welcome_subtitle': 'Conheça Algo Novo e Disruptivo',
-        'welcome_description': 'Um ecossistema completo onde sua participação gera recompensas reais e impacto social.',
-        'welcome_continue_btn': 'Continuar para as Ações Principais',
-        'welcome_step2_title': 'Bem-vindo à Backchain',
-        'welcome_step2_subtitle': 'O que você gostaria de fazer agora?',
-        'welcome_presale_btn': 'Adquirir Booster NFT (50% OFF)',
-        'welcome_airdrop_btn': 'Participar do Airdrop Gratuito',
-        'welcome_explore_btn': 'Explorar o Ecossistema (Dashboard)',
+        'welcome_subtitle_strategic': 'Participe da Revolução Web3',
+        'welcome_description_strategic': 'Um ecossistema de ações descentralizadas: gere pStake ao delegar $BKC, ganhe recompensas por taxas de serviço e garanta a segurança da rede.',
         
-        // Novos textos para botões de atalho
-        'welcome_tokenomics_btn': 'Tokenomics',
-        'welcome_about_btn': 'Saiba Mais',
+        // Botões de Ação Específicos (Substitui Step 2)
+        'welcome_presale_btn': 'Adquirir Booster NFT (Pré-venda)',
+        'welcome_testnet_btn': 'Explorar Rede de Testes', // Mapeado para 'faucet'
+        'welcome_airdrop_btn': 'Participar do Airdrop Gratuito',
+        'welcome_explore_btn': 'Explore o Ecossistema (Dashboard)', 
 
-        // Features (Welcome Modal)
-        'feat_taxes_title': 'Ganhe Taxas do Ecossistema',
-        'feat_taxes_desc': 'Delegue seus $BKC e receba uma parte das taxas de uso de *todos* os serviços.',
-        'feat_pop_title': 'Mineração por Compra (PoP)',
-        'feat_pop_desc': 'Ganhe $BKC ao criar Certificados de Vesting e apoiar a liquidez.',
-        'feat_actions_title': 'Ações Descentralizadas',
-        'feat_actions_desc': 'Participe de loterias e campanhas 100% on-chain, com justiça garantida.',
-        'feat_notary_title': 'Cartório Descentralizado',
-        'feat_notary_desc': 'Registre a existência de documentos na blockchain, para sempre.',
-        'feat_dao_title': 'Governança (DAO)',
-        'feat_dao_desc': 'Ajude a decidir o futuro do ecossistema votando em propostas.',
-
+        // Timer
+        'timer_unlocked': 'Desbloqueado',
+        'timer_fee_text': 'Taxa de Saque: 1% (Padrão)',
+        
         // Intro Modal
         'intro_title': 'Participe. Ganhe. Apoie.',
         'intro_desc': 'A Backchain é um ecossistema de Ações Descentralizadas. Sua participação é transparente, segura e recompensadora.',
@@ -89,39 +77,24 @@ const translations = {
         'toast_nft_canceled': 'Ação cancelada pelo usuário.',
         'toast_nft_error': 'Erro ao adicionar NFT: %s',
         'toast_no_wallet': 'Nenhuma carteira Ethereum detectada.',
-        
-        // Timer
-        'timer_unlocked': 'Desbloqueado',
-        'timer_fee_text': 'Taxa de Saque: 1% (Padrão)',
     },
     'en': {
-        // Títulos e Textos Principais
+        // Títulos e Textos Principais (AGORA APENAS UMA PÁGINA)
         'welcome_name': 'Backcoin.org',
         'welcome_slogan': 'The future is decentralized',
-        'welcome_subtitle': 'Discover Something New and Disruptive',
-        'welcome_description': 'A complete ecosystem where your participation generates real rewards and social impact.',
-        'welcome_continue_btn': 'Continue to Main Actions',
-        'welcome_step2_title': 'Welcome to Backchain',
-        'welcome_step2_subtitle': 'What would you like to do now?',
-        'welcome_presale_btn': 'Acquire Booster NFT (50% OFF)',
+        'welcome_subtitle_strategic': 'Join the Web3 Revolution',
+        'welcome_description_strategic': 'A decentralized actions ecosystem: generate pStake by delegating $BKC, earn rewards from service fees, and guarantee network security.',
+        
+        // Botões de Ação Específicos (Substitui Step 2)
+        'welcome_presale_btn': 'Acquire Booster NFT (Presale)',
+        'welcome_testnet_btn': 'Explore Testnet Network', // Mapeado para 'faucet'
         'welcome_airdrop_btn': 'Participate in the Free Airdrop',
-        'welcome_explore_btn': 'Explore the Ecosystem (Dashboard)',
+        'welcome_explore_btn': 'Explore the Ecosystem (Dashboard)', 
 
-        // Novos textos para botões de atalho
-        'welcome_tokenomics_btn': 'Tokenomics',
-        'welcome_about_btn': 'About the Project',
-
-        // Features (Welcome Modal)
-        'feat_taxes_title': 'Earn Ecosystem Fees',
-        'feat_taxes_desc': 'Delegate your $BKC and receive a share of the usage fees from *all* services.',
-        'feat_pop_title': 'Proof-of-Purchase Mining (PoP)',
-        'feat_pop_desc': 'Earn $BKC by creating Vesting Certificates and supporting liquidity.',
-        'feat_actions_title': 'Decentralized Actions',
-        'feat_actions_desc': 'Participate in 100% on-chain lotteries and campaigns, with guaranteed fairness.',
-        'feat_notary_title': 'Decentralized Notary',
-        'feat_notary_desc': 'Register the existence of documents on the blockchain, forever.',
-        'feat_dao_title': 'Governance (DAO)',
-        'feat_dao_desc': 'Help decide the future of the ecosystem by voting on proposals.',
+        // Timer
+        'timer_unlocked': 'Unlocked',
+        'timer_fee_text': 'Unstake Fee: 1% (Default)',
+        // ... (Outras traduções mantidas abaixo para manter o arquivo completo)
 
         // Intro Modal
         'intro_title': 'Participate. Earn. Support.',
@@ -164,40 +137,28 @@ const translations = {
         'toast_nft_added': 'NFT #%s added successfully!',
         'toast_nft_canceled': 'Action canceled by the user.',
         'toast_nft_error': 'Error adding NFT: %s',
-        'toast_no_wallet': 'No Ethereum wallet detected.',
         
         // Timer
         'timer_unlocked': 'Unlocked',
         'timer_fee_text': 'Unstake Fee: 1% (Default)',
     },
     'es': {
-        // Títulos e Textos Principais
+        // Títulos e Textos Principais (AGORA APENAS UMA PÁGINA)
         'welcome_name': 'Backcoin.org',
         'welcome_slogan': 'El futuro es descentralizado',
-        'welcome_subtitle': 'Descubre Algo Nuevo y Disruptivo',
-        'welcome_description': 'Un ecosistema completo donde tu participación genera recompensas reales e impacto social.',
-        'welcome_continue_btn': 'Continuar a las Acciones Principales',
-        'welcome_step2_title': 'Bienvenido a Backchain',
-        'welcome_step2_subtitle': '¿Qué te gustaría hacer ahora?',
-        'welcome_presale_btn': 'Adquirir Booster NFT (50% OFF)',
+        'welcome_subtitle_strategic': 'Únete a la Revolución Web3',
+        'welcome_description_strategic': 'Un ecosistema de acciones descentralizadas: genera pStake al delegar $BKC, gana recompensas por tarifas de servicio y garantiza la seguridad de la red.',
+        
+        // Botões de Ação Específicos (Substitui Step 2)
+        'welcome_presale_btn': 'Adquirir Booster NFT (Preventa)',
+        'welcome_testnet_btn': 'Explorar Red de Pruebas', // Mapeado para 'faucet'
         'welcome_airdrop_btn': 'Participar en el Airdrop Gratuito',
-        'welcome_explore_btn': 'Explorar el Ecosistema (Dashboard)',
+        'welcome_explore_btn': 'Explorar el Ecosistema (Dashboard)', 
 
-        // Novos textos para botões de atalho
-        'welcome_tokenomics_btn': 'Tokenomics',
-        'welcome_about_btn': 'Acerca del Proyecto',
-
-        // Features (Welcome Modal)
-        'feat_taxes_title': 'Gana Tarifas del Ecosistema',
-        'feat_taxes_desc': 'Delega tus $BKC y recibe una parte de las tarifas de uso de *todos* los servicios.',
-        'feat_pop_title': 'Minería por Compra (PoP)',
-        'feat_pop_desc': 'Gana $BKC al crear Certificados de Vesting y apoyar la liquidez.',
-        'feat_actions_title': 'Acciones Descentralizadas',
-        'feat_actions_desc': 'Participa en loterías y campañas 100% on-chain, con justicia garantizada.',
-        'feat_notary_title': 'Notaría Descentralizada',
-        'feat_notary_desc': 'Registra la existencia de documentos en la blockchain, para siempre.',
-        'feat_dao_title': 'Gobernanza (DAO)',
-        'feat_dao_desc': 'Ayuda a decidir el futuro del ecosistema votando propuestas.',
+        // Timer
+        'timer_unlocked': 'Desbloqueado',
+        'timer_fee_text': 'Tarifa de Retiro: 1% (Predeterminado)',
+        // ... (Outras traduções mantidas abaixo para manter el archivo completo)
 
         // Intro Modal
         'intro_title': 'Participa. Gana. Apoya.',
@@ -298,8 +259,8 @@ export const showToast = (message, type = 'info', txHash = null) => {
 
     const toast = document.createElement('div');
     toast.className = `flex items-center w-full max-w-xs p-3 text-white rounded-lg shadow-2xl transition-all duration-500 ease-out 
-                       transform translate-x-full opacity-0 
-                       ${def.color} border-l-4 ${def.border}`;
+                         transform translate-x-full opacity-0 
+                         ${def.color} border-l-4 ${def.border}`;
 
     let content = `
         <div class="flex items-center flex-1">
@@ -312,7 +273,7 @@ export const showToast = (message, type = 'info', txHash = null) => {
         const explorerUrl = `https://sepolia.etherscan.io/tx/${txHash}`;
         content += `<a href="${explorerUrl}" target="_blank" title="View on Etherscan" class="ml-3 flex-shrink-0 text-zinc-200 hover:text-white transition-colors">
                         <i class="fa-solid fa-arrow-up-right-from-square text-sm"></i>
-                     </a>`;
+                      </a>`;
     }
     
     // Botão de fechar para profissionalismo
@@ -614,13 +575,13 @@ export function openUgcSubmitModal(platform, referralLink, shareText, onSubmit) 
 
         <div class="bg-zinc-800/50 border border-blue-600/50 rounded-xl p-5 mb-6 space-y-4">
              <p class="text-lg text-blue-400 font-semibold flex items-center">
-                <i class="fa-solid fa-lightbulb mr-3 text-2xl"></i>${getTranslation('ugc_instructions_title')}
-            </p>
-            <ul class="list-disc list-inside text-zinc-300 space-y-2 pl-4">
-                <li><strong class="text-white">${getTranslation('ugc_inst1_title')}</strong> ${getTranslation('ugc_inst1_desc')}</li>
-                <li><strong class="text-white">${getTranslation('ugc_inst2_title')}</strong> ${getTranslation('ugc_inst2_desc')}</li>
-                <li><strong class="text-white">${getTranslation('ugc_inst3_title')}</strong> ${getTranslation('ugc_inst3_desc')}</li>
-            </ul>
+                 <i class="fa-solid fa-lightbulb mr-3 text-2xl"></i>${getTranslation('ugc_instructions_title')}
+             </p>
+             <ul class="list-disc list-inside text-zinc-300 space-y-2 pl-4">
+                 <li><strong class="text-white">${getTranslation('ugc_inst1_title')}</strong> ${getTranslation('ugc_inst1_desc')}</li>
+                 <li><strong class="text-white">${getTranslation('ugc_inst2_title')}</strong> ${getTranslation('ugc_inst2_desc')}</li>
+                 <li><strong class="text-white">${getTranslation('ugc_inst3_title')}</strong> ${getTranslation('ugc_inst3_desc')}</li>
+             </ul>
         </div>
 
         <div class="mb-6">
@@ -642,9 +603,9 @@ export function openUgcSubmitModal(platform, referralLink, shareText, onSubmit) 
             <button id="confirmUgcSubmitBtn" class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-6 rounded-lg transition-colors flex-1 text-lg shadow-lg">
                 <i class="fa-solid fa-paper-plane mr-2"></i> ${getTranslation('ugc_submit_btn')}
             </button>
-             <button class="bg-zinc-700 hover:bg-zinc-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors closeModalBtn">
+            <button class="bg-zinc-700 hover:bg-zinc-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors closeModalBtn">
                 <i class="fa-solid fa-xmark mr-2"></i> ${getTranslation('ugc_cancel_btn')}
-             </button>
+            </button>
         </div>
     `;
     openModal(content, 'max-w-xl'); 
@@ -677,82 +638,8 @@ export function openUgcSubmitModal(platform, referralLink, shareText, onSubmit) 
 }
 
 // =======================================================
-//  MODAL DE BOAS-VINDAS (REESCRITO EM 2 ETAPAS)
+//  MODAL DE BOAS-VINDAS (REESCRITO PARA 1 PÁGINA)
 // =======================================================
-
-/**
- * Função auxiliar para renderizar item de feature (melhora a legibilidade)
- */
-function renderFeatureItem(title, description, icon, iconColor) {
-    return `
-        <div class="flex items-start p-3 bg-zinc-800/50 rounded-lg border border-zinc-700 transition-transform hover:bg-zinc-800 hover:border-amber-500/50">
-            <i class="fa-solid ${icon} ${iconColor} mt-1 mr-3 flex-shrink-0 text-xl"></i>
-            <div>
-                <strong class="text-white block text-lg">${title}</strong>
-                <span class="text-zinc-400 text-sm">${description}</span>
-            </div>
-        </div>
-    `;
-}
-
-/**
- * ETAPA 2: A tela de botões de ações principais, AGORA COM TOKENOMICS E ABOUT
- */
-function showWelcomeModalStep2() {
-    const content = `
-        <div class="text-center p-4">
-            <img src="./assets/bkc_logo_3d.png" alt="Backcoin.org Logo" class="h-24 w-24 mx-auto mb-4 shadow-xl rounded-full border-4 border-amber-500/50">
-            <h2 class="text-3xl font-extrabold text-white mb-2">${getTranslation('welcome_step2_title')}</h2>
-            <h3 class="text-xl font-semibold text-amber-400 mb-6">${getTranslation('welcome_step2_subtitle')}</h3>
-            
-            <div class="flex flex-col gap-4">
-                <button id="welcomeBtnPresale" class="w-full bg-amber-500 hover:bg-amber-600 text-zinc-900 font-extrabold py-3 px-5 rounded-xl text-lg transition-all duration-300 transform hover:scale-[1.02] shadow-xl">
-                    <i class="fa-solid fa-tags mr-3"></i> ${getTranslation('welcome_presale_btn')}
-                </button>
-                
-                <button id="welcomeBtnAirdrop" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 px-5 rounded-xl text-lg transition-all duration-300 transform hover:scale-[1.02] shadow-xl">
-                    <i class="fa-solid fa-parachute-box mr-3"></i> ${getTranslation('welcome_airdrop_btn')}
-                </button>
-                
-                <button id="welcomeBtnTokenomics" class="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-semibold py-3 px-5 rounded-xl transition-colors text-lg">
-                    <i class="fa-solid fa-chart-line mr-3"></i> ${getTranslation('welcome_tokenomics_btn')}
-                </button>
-
-                <button id="welcomeBtnAbout" class="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-semibold py-3 px-5 rounded-xl transition-colors text-lg">
-                    <i class="fa-solid fa-circle-info mr-3"></i> ${getTranslation('welcome_about_btn')}
-                </button>
-
-                <button id="welcomeBtnExplore" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-semibold py-3 px-4 rounded-xl transition-colors closeModalBtn text-base mt-2">
-                    <i class="fa-solid fa-compass mr-3"></i> ${getTranslation('welcome_explore_btn')}
-                </button>
-            </div>
-        </div>
-    `;
-    
-    // Abre o modal (substituindo o conteúdo do Passo 1)
-    openModal(content, 'max-w-sm'); 
-
-    // Adiciona os listeners de navegação
-    const modalContent = document.getElementById('modal-content');
-    if (!modalContent) return;
-
-    // Função auxiliar para navegação
-    const navigateAndClose = (target) => {
-        // Envia o clique do link do menu para que a navegação e o 'active' sejam gerenciados pelo app.js
-        document.querySelector(`.sidebar-link[data-target="${target}"]`)?.click();
-        closeModal();
-    };
-
-    modalContent.querySelector('#welcomeBtnPresale')?.addEventListener('click', () => navigateAndClose('presale'));
-    modalContent.querySelector('#welcomeBtnAirdrop')?.addEventListener('click', () => navigateAndClose('airdrop'));
-    
-    // Listeners para os novos atalhos
-    modalContent.querySelector('#welcomeBtnTokenomics')?.addEventListener('click', () => navigateAndClose('tokenomics'));
-    modalContent.querySelector('#welcomeBtnAbout')?.addEventListener('click', () => navigateAndClose('about'));
-    
-    // O botão explore/dashboard
-    modalContent.querySelector('#welcomeBtnExplore')?.addEventListener('click', () => navigateAndClose('dashboard'));
-}
 
 /**
  * Renderiza os botões de seleção de idioma com imagens de bandeira.
@@ -786,7 +673,16 @@ function renderLanguageSelectors() {
 }
 
 /**
- * ETAPA 1: O modal de curiosidade (Visão Geral do Ecossistema)
+ * Função de navegação auxiliar para os botões do modal.
+ */
+const navigateAndClose = (target) => {
+    // Envia o clique do link do menu para que a navegação e o 'active' sejam gerenciados pelo app.js
+    document.querySelector(`.sidebar-link[data-target="${target}"]`)?.click();
+    closeModal();
+};
+
+/**
+ * Função Unificada: O modal de resumo estratégico e botões de ação.
  */
 export function showWelcomeModal() {
     // Só exibe uma vez por sessão
@@ -796,39 +692,41 @@ export function showWelcomeModal() {
         // Se o modal já foi exibido, só o reabre se for chamado manualmente (ex: troca de idioma)
     }
 
-    // Constrói o HTML dos itens de feature usando a função auxiliar
-    const featureItems = [
-        renderFeatureItem(getTranslation('feat_taxes_title'), getTranslation('feat_taxes_desc'), 'fa-sack-dollar', 'text-green-400'),
-        renderFeatureItem(getTranslation('feat_pop_title'), getTranslation('feat_pop_desc'), 'fa-gem', 'text-cyan-400'),
-        renderFeatureItem(getTranslation('feat_actions_title'), getTranslation('feat_actions_desc'), 'fa-dice', 'text-purple-400'),
-        renderFeatureItem(getTranslation('feat_notary_title'), getTranslation('feat_notary_desc'), 'fa-scroll', 'text-yellow-400'),
-        renderFeatureItem(getTranslation('feat_dao_title'), getTranslation('feat_dao_desc'), 'fa-users-cog', 'text-red-400')
-    ].join(''); // Junta os itens em uma única string HTML
-
     const content = `
         <div class="text-center p-4">
             ${renderLanguageSelectors()}
-            <img src="./assets/bkc_logo_3d.png" alt="Backcoin.org Logo" class="h-20 w-20 mx-auto mb-4 shadow-xl rounded-full">
+            <img src="./assets/bkc_logo_3d.png" alt="Backcoin.org Logo" class="h-20 w-20 mx-auto mb-4 shadow-xl rounded-full border-4 border-amber-500/50">
             
             <h2 class="text-4xl font-extrabold text-amber-400 leading-none">${getTranslation('welcome_name')}</h2> 
-            <h3 class="text-xl font-semibold text-white mb-6">${getTranslation('welcome_slogan')}</h3>
-
-            <h3 class="text-xl font-semibold text-white mb-6">${getTranslation('welcome_subtitle')}</h3>
-            <p class="text-zinc-300 mb-8">
-                ${getTranslation('welcome_description')}
+            <h3 class="text-xl font-semibold text-white mb-4">${getTranslation('welcome_slogan')}</h3>
+            
+            <h3 class="text-lg font-semibold text-purple-400 mt-6">${getTranslation('welcome_subtitle_strategic')}</h3>
+            <p class="text-zinc-300 mb-8 max-w-sm mx-auto">
+                ${getTranslation('welcome_description_strategic')}
             </p>
             
-            <div class="space-y-3 text-left">
-                ${featureItems}
+            <div class="flex flex-col gap-3">
+                
+                <button id="welcomeBtnPresale" class="w-full bg-amber-500 hover:bg-amber-600 text-zinc-900 font-extrabold py-3 px-5 rounded-xl text-lg transition-all duration-300 transform hover:scale-[1.02] shadow-xl">
+                    <i class="fa-solid fa-tags mr-3"></i> ${getTranslation('welcome_presale_btn')}
+                </button>
+                
+                <button id="welcomeBtnTestnet" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3 px-5 rounded-xl text-lg transition-all duration-300 transform hover:scale-[1.02] shadow-xl">
+                    <i class="fa-solid fa-flask mr-3"></i> ${getTranslation('welcome_testnet_btn')}
+                </button>
+                
+                <button id="welcomeBtnAirdrop" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 px-5 rounded-xl text-lg transition-all duration-300 transform hover:scale-[1.02] shadow-xl">
+                    <i class="fa-solid fa-parachute-box mr-3"></i> ${getTranslation('welcome_airdrop_btn')}
+                </button>
             </div>
             
-            <button id="welcomeBtnContinue" class="w-full bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3.5 px-5 rounded-lg text-xl transition-all duration-300 transform hover:scale-[1.01] mt-8 shadow-lg">
-                ${getTranslation('welcome_continue_btn')} <i class="fa-solid fa-arrow-right ml-2"></i>
+            <button class="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-semibold py-3 px-4 rounded-xl transition-colors closeModalBtn text-base mt-4">
+                <i class="fa-solid fa-compass mr-3"></i> ${getTranslation('welcome_explore_btn')}
             </button>
         </div>
     `;
 
-    openModal(content, 'max-w-lg'); 
+    openModal(content, 'max-w-sm'); 
 
     const modalContent = document.getElementById('modal-content');
     if (!modalContent) return;
@@ -843,8 +741,13 @@ export function showWelcomeModal() {
         });
     });
 
-    // O botão "Continuar" agora chama o Passo 2 (os botões de ação)
-    modalContent.querySelector('#welcomeBtnContinue')?.addEventListener('click', () => {
-        showWelcomeModalStep2();
-    });
+    // Adiciona listeners de navegação para os botões de ação
+    modalContent.querySelector('#welcomeBtnPresale')?.addEventListener('click', () => navigateAndClose('presale'));
+    
+    // CORREÇÃO: O botão Testnet agora navega para a página 'faucet'
+    modalContent.querySelector('#welcomeBtnTestnet')?.addEventListener('click', () => navigateAndClose('faucet'));
+    
+    modalContent.querySelector('#welcomeBtnAirdrop')?.addEventListener('click', () => navigateAndClose('airdrop'));
+    
+    // O fechamento do modal (closeModalBtn ou backdrop) levará o usuário ao dashboard.
 }

@@ -263,6 +263,10 @@ export async function initPublicProvider() {
         if (isValidAddress(addresses.actionsManager))
             State.actionsManagerContractPublic = new ethers.Contract(addresses.actionsManager, actionsManagerABI, State.publicProvider);
         
+        // ADICIONADO: Instância pública do Faucet (necessário para ler o saldo na FaucetPage)
+        if (isValidAddress(addresses.faucet))
+            State.faucetContractPublic = new ethers.Contract(addresses.faucet, faucetABI, State.publicProvider);
+        
         await loadPublicData();
         
         console.log("Public provider initialized.");

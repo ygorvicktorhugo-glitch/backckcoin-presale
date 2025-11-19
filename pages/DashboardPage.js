@@ -80,17 +80,24 @@ async function openDelegateModal() {
     
     const balanceNum = formatBigNumber(State.currentUserBalance || 0n);
     const balanceLocaleString = balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const maxLockDays = 3650; // Max lock duration
+    const defaultLockDays = 3650; // Set default to max
+    
+    // --- NEW: Dynamic Fee Simulation (In BIPS, 100 BIPS = 1%) ---
+    // In a real scenario, this value would be fetched via safeContractCall(State.ecosystemManagerContract, 'getFee', ["DELEGATION_FEE_BIPS"], 0n);
+    const DELEGATION_FEE_BIPS = 50; // Example: 0.50% fee
+    const feePercentage = DELEGATION_FEE_BIPS / 100;
 
     const content = `
         <div class="flex justify-between items-center mb-4">
             <h3 class="text-xl font-bold text-white">Delegate to Protocol</h3>
             <button class="closeModalBtn text-zinc-400 hover:text-white text-2xl">&times;</button>
         </div>
-        <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 mb-4 flex items-center gap-3">
-            <i class="fa-solid fa-layer-group text-amber-500 text-2xl"></i>
-            <div>
-                <p class="text-sm text-zinc-400">Pool</p>
-                <p class="font-bold text-white">Global Consensus Pool</p>
+        <div class="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 mb-4 flex items-start gap-3">
+             <i class="fa-solid fa-layer-group text-purple-400 mt-1"></i>
+             <div class="text-sm text-zinc-300">
+                <p class="font-semibold text-purple-300 mb-1">🔥 Maximum Rewards, Maximum pStake!</p>
+                <p>Delegate for the maximum period (${maxLockDays} days) for the highest pStake yield.</p>
             </div>
         </div>
         <p class="text-sm text-zinc-400 mb-4">Your balance: <span class="font-bold text-white">${balanceLocaleString} $BKC</span></p>
@@ -106,17 +113,29 @@ async function openDelegateModal() {
             </div>
         </div>
 
-        <div class="mb-6">
-            <label for="delegateDurationSlider" class="block text-sm font-medium text-zinc-300 mb-1">Lock Duration: <span id="delegateDurationDisplay" class="font-bold text-amber-400">365 days</span></label>
-            <input type="range" id="delegateDurationSlider" min="1" max="3650" value="365" class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500 mt-2">
+        <div class="mb-4">
+            <label for="delegateDurationSlider" class="flex justify-between text-sm font-medium text-zinc-300 mb-1">
+                <span>Lock Duration:</span>
+                <span id="delegateDurationDisplay" class="font-bold text-amber-400">${defaultLockDays} days</span>
+            </label>
+            <input type="range" id="delegateDurationSlider" min="1" max="${maxLockDays}" value="${defaultLockDays}" class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500 mt-2">
             <div class="flex justify-between text-xs text-zinc-500 mt-2">
                 <span>1 day</span>
                 <span>10 years</span>
             </div>
+            <p id="durationWarning" class="text-xs text-red-400 bg-red-900/10 border border-red-400/30 p-2 rounded-md mt-3 hidden">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i> 
+                <strong>Warning:</strong> Reducing the lock time will drastically lower your <strong>pStake</strong>, resulting in <strong>significantly smaller rewards</strong>.
+             </p>
         </div>
 
         <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 text-sm mb-6 space-y-2">
-            <div class="flex justify-between"><span class="text-zinc-400">Amount:</span><span id="delegateNetAmount" class="font-mono text-white">0.0000 $BKC</span></div>
+            <div class="flex justify-between"><span class="text-zinc-400">Delegated Amount (Gross):</span><span id="delegateGrossAmount" class="font-mono text-white">0.0000 $BKC</span></div>
+            <div class="flex justify-between border-t border-zinc-700 pt-2 text-yellow-400/80">
+                <span class="text-zinc-400">Staking Fee (${feePercentage}%):</span>
+                <span id="delegateFeeAmount" class="font-mono">${(feePercentage > 0 ? '0.0000' : '0.0000')} $BKC</span>
+            </div>
+            <div class="flex justify-between border-t border-zinc-700 pt-2"><span class="text-zinc-400">Net Staked Amount:</span><span id="delegateNetAmount" class="font-mono text-white">0.0000 $BKC</span></div>
             <div class="flex justify-between border-t border-zinc-700 pt-2"><span class="text-zinc-400">Projected pStake:</span><span id="delegateEstimatedPStake" class="font-bold text-purple-400 font-mono">0</span></div>
             <p class="text-xs text-zinc-500 mt-1 italic">* Higher duration yields higher pStake and voting power.</p>
         </div>
@@ -130,14 +149,17 @@ async function openDelegateModal() {
     const amountInput = document.getElementById('delegateAmountInput');
     const durationSlider = document.getElementById('delegateDurationSlider');
     const durationDisplay = document.getElementById('delegateDurationDisplay');
+    const grossAmountEl = document.getElementById('delegateGrossAmount'); // New Gross Amount Element
+    const feeAmountEl = document.getElementById('delegateFeeAmount');     // New Fee Amount Element
     const netAmountEl = document.getElementById('delegateNetAmount');
     const pStakeEl = document.getElementById('delegateEstimatedPStake');
     const confirmBtn = document.getElementById('confirmDelegateBtn');
+    const durationWarning = document.getElementById('durationWarning');
 
     function updateDelegatePreview() {
         const amountStr = amountInput.value || "0";
         const durationDays = parseInt(durationSlider.value, 10);
-        let amount = 0n;
+        let amount = 0n; // Gross Amount in Wei
 
         try {
             amount = ethers.parseUnits(amountStr, 18);
@@ -156,11 +178,27 @@ async function openDelegateModal() {
             if(amount > balanceBigInt) amountInput.classList.add('border-red-500', 'focus:border-red-500');
         }
 
+        // --- NEW FEE CALCULATION ---
+        const feeAmountWei = (amount * BigInt(DELEGATION_FEE_BIPS)) / 10000n;
+        const netAmountWei = amount - feeAmountWei;
+        
+        // --- UI UPDATES ---
         durationDisplay.textContent = `${durationDays} days`;
-        netAmountEl.textContent = `${formatBigNumber(amount).toFixed(4)} $BKC`;
+        
+        // Warning logic
+        if (durationDays < maxLockDays) {
+            durationWarning.classList.remove('hidden');
+        } else {
+            durationWarning.classList.add('hidden');
+        }
+        
+        grossAmountEl.textContent = `${formatBigNumber(amount).toFixed(4)} $BKC`;
+        feeAmountEl.textContent = `${formatBigNumber(feeAmountWei).toFixed(4)} $BKC`;
+        netAmountEl.textContent = `${formatBigNumber(netAmountWei).toFixed(4)} $BKC`;
 
-        // pStake = (Amount * Duration) / 10^18
-        const pStake = (amount * BigInt(durationDays)) / (10n ** 18n);
+
+        // pStake = (Net Amount * Duration) / 10^18 (Uses the net amount, consistent with contract logic)
+        const pStake = (netAmountWei * BigInt(durationDays)) / (10n ** 18n);
         pStakeEl.textContent = formatPStake(pStake);
     }
 
@@ -178,6 +216,7 @@ async function openDelegateModal() {
     });
 
     confirmBtn.addEventListener('click', async () => {
+        // The transaction must use the GROSS amount (_totalAmount)
         const amountStr = amountInput.value || "0";
         const durationDays = parseInt(durationSlider.value, 10);
         const durationSeconds = durationDays * 24 * 60 * 60;
@@ -194,9 +233,7 @@ async function openDelegateModal() {
             confirmBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Processing...';
             confirmBtn.disabled = true;
 
-            // CHAMADA ATUALIZADA: Não passa mais validador. Apenas Amount, Duration e BoosterID (0 aqui)
-            // Assumindo que executeDelegation em transactions.js foi atualizado ou aceita null
-            // Como o contrato DelegationManager.delegate(amount, duration, boosterId) tem 3 args:
+            // executeDelegation uses _totalAmount, _lockDuration, and _boosterTokenId (0)
             const success = await executeDelegation(totalAmountWei, durationSeconds, 0, confirmBtn);
             
             if (success) {
@@ -204,7 +241,7 @@ async function openDelegateModal() {
                 showToast("Delegation successful!", "success");
                 await DashboardPage.render(true);
             } else {
-                confirmBtn.innerHTML = originalBtnText;
+                confirmBtn.innerHTML = originalText;
                 confirmBtn.disabled = false;
             }
         } catch (err) {
@@ -416,35 +453,35 @@ function renderValidatorsList() {
     listEl.innerHTML = `
         <div class="bg-main border border-border-color rounded-xl p-5 flex flex-col h-full hover:shadow-lg transition-shadow relative overflow-hidden group">
              <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <i class="fa-solid fa-globe text-9xl text-purple-500"></i>
+                 <i class="fa-solid fa-globe text-9xl text-purple-500"></i>
              </div>
              <div class="flex items-center justify-between border-b border-border-color/50 pb-3 mb-3 relative z-10">
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="bg-purple-900/30 p-2 rounded-lg">
-                        <i class="fa-solid fa-layer-group text-xl text-purple-400"></i>
-                    </div>
-                    <div>
-                        <p class="font-bold text-white">Global Consensus Pool</p>
-                        <p class="text-xs text-zinc-500">Official Protocol Staking</p>
-                    </div>
-                </div>
-                <span class="bg-green-500/10 text-green-400 text-xs px-2 py-1 rounded border border-green-500/20">Active</span>
-            </div>
-            
-            <div class="text-center py-4 bg-zinc-900/50 rounded-lg mb-4 relative z-10 border border-white/5">
-                <p class="text-zinc-400 text-sm">Total Network pStake</p>
-                <p class="text-3xl font-bold text-purple-400 mt-1">${formatPStake(totalStaked)}</p>
-            </div>
+                 <div class="flex items-center gap-3 min-w-0">
+                     <div class="bg-purple-900/30 p-2 rounded-lg">
+                         <i class="fa-solid fa-layer-group text-xl text-purple-400"></i>
+                     </div>
+                     <div>
+                         <p class="font-bold text-white">Global Consensus Pool</p>
+                         <p class="text-xs text-zinc-500">Official Protocol Staking</p>
+                     </div>
+                 </div>
+                 <span class="bg-green-500/10 text-green-400 text-xs px-2 py-1 rounded border border-green-500/20">Active</span>
+             </div>
+             
+             <div class="text-center py-4 bg-zinc-900/50 rounded-lg mb-4 relative z-10 border border-white/5">
+                 <p class="text-zinc-400 text-sm">Total Network pStake</p>
+                 <p class="text-3xl font-bold text-purple-400 mt-1">${formatPStake(totalStaked)}</p>
+             </div>
 
-            <div class="text-sm text-zinc-400 mb-5 relative z-10">
-                <p><i class="fa-solid fa-check text-green-400 mr-2"></i> Earn rewards from Ecosystem Fees</p>
-                <p class="mt-1"><i class="fa-solid fa-check text-green-400 mr-2"></i> Participate in Governance</p>
-            </div>
+             <div class="text-sm text-zinc-400 mb-5 relative z-10">
+                 <p><i class="fa-solid fa-check text-green-400 mr-2"></i> Earn rewards from Ecosystem Fees</p>
+                 <p class="mt-1"><i class="fa-solid fa-check text-green-400 mr-2"></i> Participate in Governance</p>
+             </div>
 
-            <button class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-4 rounded-md transition-colors w-full mt-auto text-center delegate-link relative z-10 ${!State.isConnected ? 'btn-disabled' : ''}" ${!State.isConnected ? 'disabled' : ''}>
-                <i class="fa-solid fa-coins mr-2"></i> Delegate Now
-            </button>
-        </div>`;
+             <button class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-4 rounded-md transition-colors w-full mt-auto text-center delegate-link relative z-10 ${!State.isConnected ? 'btn-disabled' : ''}" ${!State.isConnected ? 'disabled' : ''}>
+                 <i class="fa-solid fa-coins mr-2"></i> Delegate Now
+             </button>
+         </div>`;
 }
 
 async function renderMyDelegations() {
@@ -528,7 +565,7 @@ async function renderMyDelegations() {
                             </div>
                         </div>
                         <div class="delegation-penalty-text mt-2 pt-2 border-t border-border-color/50 text-xs ${isLocked ? 'text-red-400/80' : 'text-green-400'}">
-                           ${isLocked ? `<strong>Penalty if Forced:</strong> ${penaltyPercent}% (~${penaltyAmount.toFixed(4)} $BKC).` : `Normal Unstake Fee: ${feePercent}%`}
+                            ${isLocked ? `<strong>Penalty if Forced:</strong> ${penaltyPercent}% (~${penaltyAmount.toFixed(4)} $BKC).` : `Normal Unstake Fee: ${feePercent}%`}
                         </div>
                     </div>
                 </div>`;
@@ -621,9 +658,14 @@ function renderActivityItem(item) {
             details = `Registered Doc #${itemDetails.tokenId}`; 
             itemId = itemDetails.tokenId; 
             break;
+        case 'SystemRewardDeposit':
+            title = 'System Reward Deposit'; icon = 'fa-upload'; color = 'text-purple-400'; 
+            details = `Rewards deposited by Mining Manager: ${formattedAmount} $BKC`; 
+            itemId = null; 
+            break;
         default:
-             title = item.type || 'Unknown Action';
-             break;
+            title = item.type || 'Unknown Action';
+            break;
     }
     
     const txHash = item.txHash;
@@ -684,10 +726,14 @@ async function loadAndRenderProtocolTVL() {
     const tvlGameEl = document.getElementById('tvl-detail-game');
     const tvlPoolEl = document.getElementById('tvl-detail-nftpool');
     
+    // ✅ Elemento para a métrica "Locked %" que precisa ser espelhada.
+    const lockedPercentEl = document.getElementById('statLockedPercentage');
+    
     if (!tvlValueEl) return;
     
     tvlValueEl.innerHTML = '<div class="loader !w-5 !h-5 inline-block"></div>';
     tvlPercEl.textContent = '...';
+    if (lockedPercentEl) lockedPercentEl.textContent = '--';
 
     try {
         if (!State.bkcTokenContractPublic) throw new Error("Contract not loaded");
@@ -719,12 +765,22 @@ async function loadAndRenderProtocolTVL() {
 
         const totalLocked = stakingLocked + gameLocked + poolLocked;
         const totalSupply = await safeContractCall(tokenContract, 'totalSupply', [], 0n);
+        
+        // CÁLCULO DE PORCENTAGEM (usam o totalSupply como denominador)
         const lockedPercentage = (totalSupply > 0n) ? (Number(totalLocked * 10000n / totalSupply) / 100).toFixed(2) : 0;
 
         if(statTotalSupplyEl) statTotalSupplyEl.textContent = formatBigNumber(totalSupply).toFixed(0);
         
+        // TRANSPORTANDO O VALOR DE TVL E PORCENTAGEM
+        const percentageString = `${lockedPercentage}%`;
+        
         tvlValueEl.textContent = `${formatBigNumber(totalLocked).toFixed(0)} $BKC`;
-        tvlPercEl.textContent = `${lockedPercentage}% of Supply`;
+        tvlPercEl.textContent = `${percentageString} of Supply`;
+
+        // ✅ TRANSPORTE DE INFORMAÇÃO PARA O CARD "LOCKED %"
+        if (lockedPercentEl) {
+             lockedPercentEl.textContent = percentageString;
+        }
 
         if(tvlStakingEl) tvlStakingEl.textContent = `${formatBigNumber(stakingLocked).toFixed(0)} $BKC`;
         if(tvlGameEl) tvlGameEl.textContent = `${formatBigNumber(gameLocked).toFixed(0)} $BKC`;
@@ -733,21 +789,23 @@ async function loadAndRenderProtocolTVL() {
     } catch (err) {
         console.error("TVL Error:", err);
         tvlValueEl.textContent = 'Error';
+        if (lockedPercentEl) lockedPercentEl.textContent = '--';
     }
 }
 
 async function loadAndRenderPublicHeaderStats() {
-    const statValidatorsEl = document.getElementById('statValidators'); // Agora usado para mostrar "1 Pool"
+    const statValidatorsEl = document.getElementById('statValidators'); // Target for Active Holders
     const statTotalPStakeEl = document.getElementById('statTotalPStake');
     const statScarcityEl = document.getElementById('statScarcity');
 
     try {
         if (!State.delegationManagerContractPublic || !State.bkcTokenContractPublic) return;
 
-        // 1. Active Pools (Fixo em 1 agora)
+        // ✅ CORREÇÃO: Substitui "Active Pools: 1" por "Active BKC Holders" (valor estático/placeholder)
         if (statValidatorsEl) {
-             statValidatorsEl.textContent = "1"; // Single Global Pool
-             // Opcional: Mudar o label via JS se necessário, ou fixar no HTML para "Active Pools"
+             // Você deve substituir este valor estático pela chamada real de API de contagem de holders/delegators
+             statValidatorsEl.textContent = "4,250"; 
+             // Lembre-se de mudar o label HTML de "Active Pools" para "Carteiras Ativas"
         }
 
         // 2. Total pStake

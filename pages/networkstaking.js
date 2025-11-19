@@ -12,6 +12,7 @@ import { addresses } from '../config.js';
 // --- CONSTANTES ---
 const ONE_DAY_IN_SECONDS = 86400;
 let EarnPageListenersAttached = false; 
+let initialDataLoaded = false; // Flag para prevenir loop de recarregamento
 
 function setAmountUtil(elementId, percentage) {
     const input = document.getElementById(elementId);
@@ -33,8 +34,12 @@ function openDelegateModal() {
     const balanceLocaleString = balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
     const minLockDays = 1; 
     const maxLockDays = 3650;
-    const defaultLockDays = 365; 
+    const defaultLockDays = 3650; // Set default to max lock duration
 
+    // --- Fee Simulation (This would be loaded from EcosystemManager) ---
+    const DELEGATION_FEE_BIPS = 50; // Example: 0.50% fee (50 BIPS)
+    const feePercentage = DELEGATION_FEE_BIPS / 100;
+    
     const content = `
         <div class="flex justify-between items-center mb-4">
             <h3 class="text-xl font-bold text-white">Delegate to Global Pool</h3>
@@ -42,10 +47,10 @@ function openDelegateModal() {
         </div>
 
         <div class="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 mb-6 flex items-start gap-3">
-            <i class="fa-solid fa-info-circle text-purple-400 mt-1"></i>
+            <i class="fa-solid fa-layer-group text-purple-400 mt-1"></i>
             <div class="text-sm text-zinc-300">
-                <p class="font-semibold text-purple-300 mb-1">Global Consensus Staking</p>
-                <p>You are delegating directly to the Backchain Protocol. Rewards are distributed automatically based on your share of the total network pStake.</p>
+                <p class="font-semibold text-purple-300 mb-1">🔥 Maximum Rewards, Maximum pStake!</p>
+                <p>Delegate for the maximum period (${maxLockDays} days) for the highest pStake yield.</p>
             </div>
         </div>
 
@@ -63,10 +68,10 @@ function openDelegateModal() {
             </div>
         </div>
 
-        <div class="mb-6">
+        <div class="mb-4">
             <label for="delegateDurationSlider" class="flex justify-between text-sm font-medium text-zinc-300 mb-2">
                 <span>Lock Duration</span>
-                <span id="delegateDurationDisplay" class="font-bold text-amber-400">365 days</span>
+                <span id="delegateDurationDisplay" class="font-bold text-amber-400">${defaultLockDays} days</span>
             </label>
             <input type="range" id="delegateDurationSlider" min="${minLockDays}" max="${maxLockDays}" value="${defaultLockDays}" class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
             <div class="flex justify-between text-xs text-zinc-500 mt-2">
@@ -74,10 +79,20 @@ function openDelegateModal() {
                 <span class="text-amber-500/70">Longer lock = More pStake = More Rewards</span>
                 <span>10 years</span>
             </div>
+             <p id="durationWarning" class="text-xs text-red-400 bg-red-900/10 border border-red-400/30 p-2 rounded-md mt-3 hidden">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i> 
+                <strong>Warning:</strong> Reducing the lock time will drastically lower your <strong>pStake</strong>, resulting in <strong>significantly smaller rewards</strong>.
+             </p>
         </div>
 
         <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 space-y-2 text-sm mb-6">
-             <div class="flex justify-between items-center">
+            <div class="flex justify-between"><span class="text-zinc-400">Delegated Amount (Gross):</span><span id="delegateGrossAmount" class="font-mono text-white">0.0000 $BKC</span></div>
+            <div class="flex justify-between border-t border-zinc-700 pt-2 text-yellow-400/80">
+                <span class="text-zinc-400">Staking Fee (${feePercentage}%):</span>
+                <span id="delegateFeeAmount" class="font-mono">0.0000 $BKC</span>
+            </div>
+            <div class="flex justify-between border-t border-zinc-700 pt-2"><span class="text-zinc-400">Net Staked Amount:</span><span id="delegateNetAmount" class="font-mono text-white">0.0000 $BKC</span></div>
+             <div class="flex justify-between items-center border-t border-zinc-700 pt-2">
                 <span class="text-zinc-400">Estimated pStake Power:</span>
                 <span id="delegateEstimatedPStake" class="font-bold text-xl text-purple-400 font-mono">0</span>
             </div>
@@ -93,19 +108,27 @@ function openDelegateModal() {
     const amountInput = document.getElementById('delegateAmountInput');
     const durationSlider = document.getElementById('delegateDurationSlider');
     const durationDisplay = document.getElementById('delegateDurationDisplay');
+    const grossAmountEl = document.getElementById('delegateGrossAmount');
+    const feeAmountEl = document.getElementById('delegateFeeAmount');
+    const netAmountEl = document.getElementById('delegateNetAmount');
     const pStakeEl = document.getElementById('delegateEstimatedPStake');
     const confirmBtn = document.getElementById('confirmDelegateBtn');
+    const durationWarning = document.getElementById('durationWarning');
 
     function updateDelegatePreview() {
         const amountStr = amountInput.value || "0";
         const durationDays = parseInt(durationSlider.value, 10);
-        let amount = 0n;
+        let amount = 0n; // Gross Amount in Wei
         try {
             amount = ethers.parseUnits(amountStr, 18);
             if (amount < 0n) amount = 0n;
         } catch { amount = 0n; }
         
         const balanceBigInt = State.currentUserBalance || 0n;
+        
+        // --- FEE CALCULATION ---
+        const feeAmountWei = (amount * BigInt(DELEGATION_FEE_BIPS)) / 10000n;
+        const netAmountWei = amount - feeAmountWei;
         
         if (amount > 0n && amount <= balanceBigInt) {
             confirmBtn.disabled = false;
@@ -118,9 +141,23 @@ function openDelegateModal() {
         if (amount > balanceBigInt) amountInput.classList.add('border-red-500');
         else amountInput.classList.remove('border-red-500');
 
+        // --- UI UPDATES ---
         durationDisplay.textContent = `${durationDays} days`;
         
-        const pStake = (amount * BigInt(durationDays)) / (10n ** 18n);
+        // Warning logic
+        if (durationDays < maxLockDays) {
+            durationWarning.classList.remove('hidden');
+        } else {
+            durationWarning.classList.add('hidden');
+        }
+        
+        grossAmountEl.textContent = `${formatBigNumber(amount).toFixed(4)} $BKC`;
+        feeAmountEl.textContent = `${formatBigNumber(feeAmountWei).toFixed(4)} $BKC`;
+        netAmountEl.textContent = `${formatBigNumber(netAmountWei).toFixed(4)} $BKC`;
+
+
+        // pStake = (Net Amount * Duration) / 10^18 
+        const pStake = (netAmountWei * BigInt(durationDays)) / (10n ** 18n);
         pStakeEl.textContent = formatPStake(pStake);
     }
 
@@ -144,6 +181,7 @@ function openDelegateModal() {
         
         if (!amountStr || parseFloat(amountStr) <= 0) return showToast('Invalid amount.', "error");
         
+        // Use the gross amount for the transaction call
         const totalAmount = ethers.parseEther(amountStr);
         const durationSeconds = parseInt(durationDays) * ONE_DAY_IN_SECONDS;
         
@@ -156,7 +194,7 @@ function openDelegateModal() {
         if (success) {
             closeModal(); 
             await loadUserData(); 
-            // showToast removido daqui pois executeDelegation já exibe.
+            // showToast removed here because executeDelegation already displays it.
             await EarnPage.render(true);
         } else {
             confirmBtn.innerHTML = originalText;
@@ -241,6 +279,7 @@ export const EarnPage = {
     async render(isUpdate = false) {
         console.log(`EarnPage.render (isUpdate: ${isUpdate})`);
         
+        // Renderiza a estrutura básica e o loading
         DOMElements.earn.innerHTML = `
             <div class="container max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
                 <div class="flex items-center gap-4 mb-8">
@@ -257,12 +296,22 @@ export const EarnPage = {
         setupEarnPageListeners();
         
         try {
-            if (!isUpdate) {
+            // CORREÇÃO CRÍTICA: A busca de dados pesada deve ocorrer APENAS na primeira carga.
+            // O isUpdate: false persistente está quebrando o fluxo, por isso usamos initialDataLoaded.
+            if (!initialDataLoaded) { 
                 await Promise.all([
                     loadPublicData(),
                     State.isConnected ? loadUserData() : Promise.resolve()
                 ]);
+                initialDataLoaded = true; // Marca como carregado
             }
+            
+            // Se estiver conectado, sempre faz uma atualização leve para garantir que os saldos estejam atualizados.
+            // O loadUserData precisa ser otimizado internamente (em data.js) para não refazer buscas caras.
+            else if (State.isConnected) {
+                await loadUserData();
+            }
+            
             renderStakingOverview();
         } catch (e) {
             console.error("Error loading EarnPage data", e);

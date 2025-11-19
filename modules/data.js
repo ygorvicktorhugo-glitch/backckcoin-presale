@@ -1,5 +1,5 @@
 // modules/data.js
-// FINAL VERSION: Endpoints atualizados conforme fornecido (Cloud Run).
+// FINAL VERSION: Com proteção Anti-Throttling (Erro 429) e Retry Logic
 
 const ethers = window.ethers;
 
@@ -11,11 +11,13 @@ import { addresses, boosterTiers, ipfsGateway } from '../config.js';
 // ====================================================================
 // CONSTANTES E UTILITÁRIOS
 // ====================================================================
-const API_TIMEOUT_MS = 15000; // Aumentado levemente para garantir conexões Cloud Run a frio
+const API_TIMEOUT_MS = 15000; 
 let systemDataCache = null;
 let systemDataCacheTime = 0;
 const CACHE_DURATION_MS = 60000; 
 
+// Função auxiliar para "dormir" (esperar)
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Executa um fetch com um tempo limite.
@@ -37,30 +39,37 @@ async function fetchWithTimeout(url, timeoutMs) {
     }
 }
 
-
 // ====================================================================
 // ENDPOINTS DE API (ATUALIZADOS)
 // ====================================================================
 export const API_ENDPOINTS = {
-    // Endpoints atualizados para Cloud Run Services
     getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
     getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
-    getNotaryHistory: 'https://getnotaryhistory-4wvdcuoouq-uc.a.run.app', //
-    uploadFileToIPFS: 'https://uploadfiletoipfs-4wvdcuoouq-uc.a.run.app',   //
-    
-    // Mantido endpoint de airdrop original se ainda for válido, caso contrário deve ser atualizado
+    getNotaryHistory: 'https://getnotaryhistory-4wvdcuoouq-uc.a.run.app',
+    uploadFileToIPFS: 'https://uploadfiletoipfs-4wvdcuoouq-uc.a.run.app',   
     claimAirdrop: 'https://us-central1-airdropbackchainnew.cloudfunctions.net/claimAirdrop'
 };
 
 // ====================================================================
-// Funções de Segurança e Resiliência 
+// Funções de Segurança e Resiliência (COM RETRY LOGIC)
 // ====================================================================
 
 export const safeBalanceOf = async (contract, address) => {
     try {
         return await contract.balanceOf(address);
     } catch (e) {
+        // Se for erro de limite (429), tenta novamente após 1s
+        if (e?.error?.code === 429 || e?.code === 429 || (e.message && e.message.includes("429"))) {
+            console.warn("Rate limited on balanceOf. Retrying in 1s...");
+            await wait(1000);
+            try {
+                return await contract.balanceOf(address);
+            } catch (retryError) {
+                console.error("Retry failed for balanceOf", retryError);
+                return 0n;
+            }
+        }
         if (e.code === 'BAD_DATA' || e.code === 'CALL_EXCEPTION') {
             console.warn(`SafeBalanceOf: Falha ao buscar saldo para ${address}. Assumindo 0n.`, e);
             return 0n;
@@ -69,11 +78,26 @@ export const safeBalanceOf = async (contract, address) => {
     }
 };
 
-export const safeContractCall = async (contract, method, args = [], fallbackValue = 0n) => {
+// Função Genérica com Retry embutido para evitar erro 429
+export const safeContractCall = async (contract, method, args = [], fallbackValue = 0n, retries = 2) => {
     try {
         const result = await contract[method](...args);
         return result;
     } catch (e) {
+        // DETECÇÃO DO ERRO 429 (MUITAS REQUISIÇÕES)
+        const isRateLimit = 
+            e?.error?.code === 429 || 
+            e?.code === 429 || 
+            (e.message && e.message.includes("429")) ||
+            (e.message && e.message.includes("compute units"));
+
+        if (isRateLimit && retries > 0) {
+            const delayTime = 1000 + (Math.random() * 500); // Espera aleatória entre 1s e 1.5s
+            console.warn(`Rate limit hit on ${method}. Retrying in ${delayTime.toFixed(0)}ms... (${retries} left)`);
+            await wait(delayTime);
+            return safeContractCall(contract, method, args, fallbackValue, retries - 1);
+        }
+
         if (e.code === 'BAD_DATA' || e.code === 'CALL_EXCEPTION') {
             console.warn(`SafeContractCall (${method}): Falha com BAD_DATA/CALL_EXCEPTION. Retornando fallback.`, e);
             if (typeof fallbackValue === 'object' && fallbackValue !== null && !Array.isArray(fallbackValue) && typeof fallbackValue !== 'bigint') {
@@ -81,13 +105,14 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
             }
             return fallbackValue;
         }
+        
         console.error(`SafeContractCall (${method}) unexpected error:`, e);
         return fallbackValue;
     }
 };
 
 // ====================================================================
-// loadSystemDataFromAPI (AJUSTADA COM TIMEOUT E CACHE)
+// loadSystemDataFromAPI
 // ====================================================================
 export async function loadSystemDataFromAPI() {
     
@@ -95,7 +120,6 @@ export async function loadSystemDataFromAPI() {
     if (!State.systemPStakes) State.systemPStakes = {};
     if (!State.boosterDiscounts) State.boosterDiscounts = {};
 
-    // Verifica Cache
     const now = Date.now();
     if (systemDataCache && (now - systemDataCacheTime < CACHE_DURATION_MS)) {
         console.log("Using cached system data.");
@@ -105,7 +129,6 @@ export async function loadSystemDataFromAPI() {
 
     try {
         console.log("Loading system rules from API...");
-        
         const response = await fetchWithTimeout(API_ENDPOINTS.getSystemData, API_TIMEOUT_MS); 
         
         if (!response.ok) {
@@ -115,7 +138,6 @@ export async function loadSystemDataFromAPI() {
 
         applySystemDataToState(systemData);
         
-        // Atualiza Cache
         systemDataCache = systemData;
         systemDataCacheTime = now;
         
@@ -141,7 +163,6 @@ function applySystemDataToState(systemData) {
     
     State.boosterDiscounts = systemData.discounts; 
     
-    // Adiciona dado do Oracle se disponível (FortunePool)
     if (systemData.oracleFeeInWei) {
          State.systemData = State.systemData || {};
          State.systemData.oracleFeeInWei = BigInt(systemData.oracleFeeInWei);
@@ -159,15 +180,15 @@ export async function loadPublicData() {
         const publicDelegationContract = State.delegationManagerContractPublic;
         const publicBkcContract = State.bkcTokenContractPublic;
 
-        const [
-            totalSupply, 
-            MAX_SUPPLY, 
-            TGE_SUPPLY
-        ] = await Promise.all([
-            safeContractCall(publicBkcContract, 'totalSupply', [], 0n), 
-            safeContractCall(publicBkcContract, 'MAX_SUPPLY', [], 0n), 
-            safeContractCall(publicBkcContract, 'TGE_SUPPLY', [], 0n)
-        ]);
+        // ALTERAÇÃO IMPORTANTE: Chamadas sequenciais em vez de paralelas (Promise.all)
+        // para evitar estourar o limite de computação da Alchemy
+        
+        const totalSupply = await safeContractCall(publicBkcContract, 'totalSupply', [], 0n);
+        // Pequeno delay para respirar
+        
+        const MAX_SUPPLY = await safeContractCall(publicBkcContract, 'MAX_SUPPLY', [], 0n);
+        
+        const TGE_SUPPLY = await safeContractCall(publicBkcContract, 'TGE_SUPPLY', [], 0n);
         
         State.allValidatorsData = []; 
 
@@ -190,16 +211,17 @@ export async function loadUserData() {
     if (!State.isConnected || !State.userAddress) return;
 
     try {
-        const [balance, delegationsRaw, totalUserPStake] = await Promise.all([
-            safeBalanceOf(State.bkcTokenContract, State.userAddress),
-            safeContractCall(State.delegationManagerContract, 'getDelegationsOf', [State.userAddress], []),
-            safeContractCall(State.delegationManagerContract, 'userTotalPStake', [State.userAddress], 0n)
-        ]);
-
-        State.currentUserBalance = balance;
+        // ALTERAÇÃO IMPORTANTE: Sequencial para evitar erro 429
         
-        // Mapeia a resposta da struct (que agora tem 3 campos: amount, unlockTime, lockDuration)
-        // O campo 'validator' foi removido do contrato.
+        const balance = await safeBalanceOf(State.bkcTokenContract, State.userAddress);
+        State.currentUserBalance = balance;
+
+        // Pequeno delay
+        await wait(100);
+
+        const delegationsRaw = await safeContractCall(State.delegationManagerContract, 'getDelegationsOf', [State.userAddress], []);
+        
+        // Mapeia a resposta
         State.userDelegations = delegationsRaw.map((d, index) => ({
             amount: d[0], 
             unlockTime: d[1],
@@ -208,15 +230,18 @@ export async function loadUserData() {
             txHash: null 
         }));
         
+        await wait(100);
+
+        const totalUserPStake = await safeContractCall(State.delegationManagerContract, 'userTotalPStake', [State.userAddress], 0n);
         State.userTotalPStake = totalUserPStake;
 
-        // Tenta carregar saldo nativo (ETH/MATIC) para verificações de gás
+        // Tenta carregar saldo nativo (ETH/MATIC)
         if (State.provider) {
             const nativeBalance = await State.provider.getBalance(State.userAddress);
             State.currentUserNativeBalance = nativeBalance;
         }
 
-        // 4. Boosters (Load from API for efficiency)
+        // 4. Boosters (API)
         await loadMyBoostersFromAPI();
         
     } catch (e) {
@@ -230,12 +255,8 @@ export async function calculateUserTotalRewards() {
     }
 
     try {
-        // ✅ CORRIGIDO: Usa o nome único da função 'pendingRewards' do novo contrato
         const stakingRewards = await safeContractCall(State.delegationManagerContract, 'pendingRewards', [State.userAddress], 0n);
-        
-        // Miner Rewards (Validator) é sempre 0n na nova arquitetura
         const minerRewards = 0n; 
-
         const totalRewards = stakingRewards + minerRewards;
 
         return { stakingRewards, minerRewards, totalRewards };
@@ -262,7 +283,6 @@ export async function calculateClaimDetails() {
     }
 
     const baseFeePercent = Number(baseFeeBips) / 100;
-    
     const boosterData = await getHighestBoosterBoostFromAPI(); 
     
     let discountBips = State.boosterDiscounts?.[boosterData.highestBoost];
@@ -273,10 +293,8 @@ export async function calculateClaimDetails() {
     }
     
     const discountPercent = Number(discountBips) / 100;
-
     const finalFeeBips = baseFeeBips > discountBips ? baseFeeBips - discountBips : 0n;
     const finalFeeAmount = (totalRewards * finalFeeBips) / 10000n;
-    
     const netClaimAmount = totalRewards - finalFeeAmount;
     
     return { 

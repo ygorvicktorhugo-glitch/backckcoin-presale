@@ -1,4 +1,3 @@
-// api/upload.js
 import pinataSDK from '@pinata/sdk';
 import { Formidable } from 'formidable';
 import fs from 'fs';
@@ -10,10 +9,11 @@ export const config = {
     },
 };
 
-// Função auxiliar para definir cabeçalhos CORS
+// --- FUNÇÃO AUXILIAR PARA CORS ---
+// Isso permite que seu front-end (backcoin.org ou localhost) chame esta API.
 const setCorsHeaders = (res) => {
     res.setHeader('Access-Control-Allow-Credentials', true);
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Ou defina seu domínio específico em produção
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Em produção, você pode restringir ao seu domínio
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
     res.setHeader(
         'Access-Control-Allow-Headers',
@@ -22,10 +22,10 @@ const setCorsHeaders = (res) => {
 };
 
 export default async function handler(req, res) {
-    // 1. Configurar CORS imediatamente
+    // 1. Aplicar Headers de CORS imediatamente
     setCorsHeaders(res);
 
-    // 2. Responder imediatamente a requisições preflight (OPTIONS)
+    // 2. Responder a requisições "Preflight" (OPTIONS) imediatamente
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
@@ -47,12 +47,12 @@ export default async function handler(req, res) {
     let file = null;
 
     try {
+        // Configuração robusta do Formidable
         const form = new Formidable({
             maxFileSize: 50 * 1024 * 1024, // 50MB
             uploadDir: '/tmp',
             keepExtensions: true,
-            // Garante que, mesmo se um arquivo só for enviado, seja tratado como array (padrão v3)
-            multiples: true, 
+            multiples: true, // Garante tratamento consistente de arrays/objetos
         });
 
         console.log('📋 Parsing form data...');
@@ -66,7 +66,7 @@ export default async function handler(req, res) {
             });
         });
 
-        // Formidable v3 retorna arrays. Verifica se existe e pega o primeiro.
+        // Tratamento seguro para pegar o arquivo (funciona com V2 e V3 do formidable)
         file = (files.file && Array.isArray(files.file)) ? files.file[0] : files.file;
         
         if (!file) {
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
         // =======================================================
         console.log('🔑 Verifying wallet signature...');
         
-        // Formidable v3 coloca campos de texto em arrays também
+        // Extração segura dos campos (tratando arrays ou strings)
         const signature = (Array.isArray(fields.signature)) ? fields.signature[0] : fields.signature;
         const address = (Array.isArray(fields.address)) ? fields.address[0] : fields.address;
         const userDescription = (Array.isArray(fields.description)) ? fields.description[0] : (fields.description || 'No description provided.');
@@ -147,13 +147,9 @@ export default async function handler(req, res) {
         const mimeType = file.mimetype || '';
         let contentField = 'image';
         
-        // Lógica para determinar se exibe como imagem ou animação/vídeo no OpenSea
+        // Define o campo correto para OpenSea/Marketplaces
         if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
             contentField = 'animation_url';
-        } else if (mimeType === 'application/pdf') {
-            // PDFs muitas vezes usam external_url ou image (se houver thumbnail), 
-            // mas manteremos no padrão image/external por enquanto.
-            contentField = 'image'; 
         }
 
         // Cria o objeto JSON de metadados

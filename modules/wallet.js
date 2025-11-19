@@ -1,8 +1,7 @@
 // modules/wallet.js
 // FIXED: Race conditions, validation, polling fallback
 // CORREÇÃO: Removido rewardManagerABI e referências ao contrato RewardManager
-// ✅ CORREÇÃO (AJUSTE FINAL): Restaurado uso de imports ESM/CDN para Ethers e Web3Modal (Original)
-// O problema de CORS/404 deve ser resolvido na camada de infraestrutura/servidor.
+// ✅ AJUSTE PARA O AVISO MetaMask: Desabilitado web3.js legado.
 
 import { ethers } from 'https://esm.sh/ethers@6.11.1';
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
@@ -25,9 +24,7 @@ import { signIn } from './firebase-auth-service.js';
 // ============================================================================
 // GLOBAL STATE FOR WALLET INITIALIZATION
 // ============================================================================
-// ✅ CORREÇÃO: Removido 'window.walletInitialized'
 let balancePollingInterval = null;
-// 🚀 NOVO: Flag para garantir que a desconexão forçada da sessão salva aconteça apenas uma vez.
 let hasForcedInitialDisconnect = false; 
 
 // ============================================================================
@@ -56,7 +53,9 @@ const ethersConfig = defaultConfig({
     enableInjected: true,
     enableCoinbase: true,
     rpcUrl: sepoliaRpcUrl,
-    defaultChainId: Number(sepoliaChainId)
+    defaultChainId: Number(sepoliaChainId),
+    // ✅ CORREÇÃO: Desativa explicitamente a injeção de web3.js legacy
+    enableWeb3Js: false
 });
 
 const featuredWallets = [
@@ -102,36 +101,44 @@ function validateEthereumAddress(address) {
 }
 
 /**
+ * Helper para validar se o endereço é válido (não 0x0, não placeholder)
+ */
+function isValidAddress(addr) {
+    return addr && addr !== ethers.ZeroAddress && !addr.startsWith('0x...');
+}
+
+
+/**
  * Instantiate contracts with signer or provider
  */
 function instantiateContracts(signerOrProvider) {
     try {
-        if (addresses.bkcToken)
+        if (isValidAddress(addresses.bkcToken))
             State.bkcTokenContract = new ethers.Contract(addresses.bkcToken, bkcTokenABI, signerOrProvider);
-        if (addresses.delegationManager)
+            
+        if (isValidAddress(addresses.delegationManager))
             State.delegationManagerContract = new ethers.Contract(addresses.delegationManager, delegationManagerABI, signerOrProvider);
-        // REMOVIDO: State.rewardManagerContract
-        if (addresses.actionsManager)
-            // --- CORRIGIDO AQUI (usando actionsManagerABI) ---
+
+        if (isValidAddress(addresses.actionsManager))
             State.actionsManagerContract = new ethers.Contract(addresses.actionsManager, actionsManagerABI, signerOrProvider);
-        if (addresses.rewardBoosterNFT) {
+            
+        if (isValidAddress(addresses.rewardBoosterNFT)) {
             State.rewardBoosterContract = new ethers.Contract(addresses.rewardBoosterNFT, rewardBoosterABI, signerOrProvider);
         }
-        
-        // --- (REFA) LÓGICA OBSOLETA REMOVIDA ---
-        // (O bloco 'if (addresses.nftBondingCurve)' foi removido daqui)
-        // O frontend agora deve criar instâncias de pool sob demanda
 
-        if (addresses.publicSale) {
+        if (isValidAddress(addresses.publicSale)) {
             State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
         }
-        if (addresses.faucet && !addresses.faucet.startsWith('0x...')) {
+        
+        if (isValidAddress(addresses.faucet)) {
             State.faucetContract = new ethers.Contract(addresses.faucet, faucetABI, signerOrProvider);
         }
-        if (addresses.ecosystemManager) {
+        
+        if (isValidAddress(addresses.ecosystemManager)) {
             State.ecosystemManagerContract = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, signerOrProvider);
         }
-        if (addresses.decentralizedNotary) {
+        
+        if (isValidAddress(addresses.decentralizedNotary)) {
             State.decentralizedNotaryContract = new ethers.Contract(addresses.decentralizedNotary, decentralizedNotaryABI, signerOrProvider);
         }
     } catch (e) {
@@ -247,18 +254,15 @@ export async function initPublicProvider() {
     try {
         State.publicProvider = new ethers.JsonRpcProvider(sepoliaRpcUrl);
 
-        if (addresses.bkcToken)
+        if (isValidAddress(addresses.bkcToken))
             State.bkcTokenContractPublic = new ethers.Contract(addresses.bkcToken, bkcTokenABI, State.publicProvider);
-        if (addresses.delegationManager)
+            
+        if (isValidAddress(addresses.delegationManager))
             State.delegationManagerContractPublic = new ethers.Contract(addresses.delegationManager, delegationManagerABI, State.publicProvider);
-        // REMOVIDO: State.rewardManagerContractPublic
-        if (addresses.actionsManager)
-            // --- CORRIGIDO AQUI (usando actionsManagerABI) ---
+            
+        if (isValidAddress(addresses.actionsManager))
             State.actionsManagerContractPublic = new ethers.Contract(addresses.actionsManager, actionsManagerABI, State.publicProvider);
         
-        // --- (REFA) LÓGICA OBSOLETA REMOVIDA ---
-        // (O bloco 'if (addresses.nftBondingCurve)' foi removido daqui)
-
         await loadPublicData();
         
         console.log("Public provider initialized.");
@@ -277,12 +281,9 @@ export function initWalletSubscriptions(callback) {
     let isHandlingChange = false; // Mutex-like flag
 
     // ✅ CORREÇÃO DA NAVEGAÇÃO: Adiciona a flag 'hasForcedInitialDisconnect'
-    // Esta lógica de desconexão só deve ocorrer na primeira carga do app, 
-    // e não a cada navegação de página.
     if (wasPreviouslyConnected && !hasForcedInitialDisconnect) {
         console.log("⚠️ Found saved session on load. Forcing immediate disconnect to reset state.");
         try {
-            // Não 'await' aqui, pois estamos em um contexto síncrono
             web3modal.disconnect().then(() => {
                 console.log("✅ Session disconnected successfully.");
             });
@@ -290,7 +291,7 @@ export function initWalletSubscriptions(callback) {
             console.warn("Could not force disconnect, may already be cleaning up:", e);
         }
         wasPreviouslyConnected = false;
-        hasForcedInitialDisconnect = true; // Garante que não será executado novamente na navegação
+        hasForcedInitialDisconnect = true; 
     }
     // FIM DO BLOCO DE DESCONEXÃO FORÇADA
 
@@ -369,7 +370,7 @@ export function initWalletSubscriptions(callback) {
             
             const wasConnected = State.isConnected;
 
-            // ... (Limpeza de estado - sem alterações) ...
+            // ... (Limpeza de estado) ...
             if (balancePollingInterval) {
                 clearInterval(balancePollingInterval);
                 balancePollingInterval = null;
@@ -384,7 +385,6 @@ export function initWalletSubscriptions(callback) {
             State.activityHistory = [];
             State.myBoosters = [];
             State.userTotalPStake = 0n;
-            // ✅ CORREÇÃO: Removido 'window.walletInitialized'
 
             // Reinitialize contracts with public provider
             if(State.publicProvider) {
@@ -405,8 +405,6 @@ export function initWalletSubscriptions(callback) {
     web3modal.subscribeProvider(handler);
 
     // ✅ CORREÇÃO: Dispara manualmente o callback com o estado inicial (desconectado)
-    // Isso garante que o app.js renderize o estado desconectado
-    // imediatamente, em vez de esperar um evento.
     console.log("Disparando estado inicial (desconectado) para o app.");
     callback({ 
         isConnected: false,

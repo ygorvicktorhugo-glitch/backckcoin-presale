@@ -25,13 +25,17 @@ contract DecentralizedNotary is
     address public miningManagerAddress;
 
     CountersUpgradeable.Counter private _tokenIdCounter;
-    mapping(uint256 => string) public documentMetadataURI; // <-- CORRIGIDO AQUI
+    mapping(uint256 => string) public documentMetadataURI;
+    // <<< NOVO: Mapeamento para registrar a taxa paga por NFT
+    mapping(uint256 => uint256) public notarizationFeePaid; 
+
     string public constant SERVICE_KEY = "NOTARY_SERVICE";
 
     event NotarizationEvent(
         uint256 indexed tokenId,
         address indexed owner,
-        string indexed documentMetadataHash
+        string indexed documentMetadataHash,
+        uint256 feePaid // <<< AJUSTADO: Inclui a taxa paga
     );
 
     function initialize(
@@ -64,7 +68,6 @@ contract DecentralizedNotary is
                 _miningManagerAddr != address(0),
             "Notary: Core contracts not set in Brain"
         );
-        
         bkcToken = BKCToken(_bkcTokenAddress);
         delegationManager = IDelegationManager(_dmAddress);
         miningManagerAddress = _miningManagerAddr;
@@ -117,7 +120,7 @@ contract DecentralizedNotary is
         }
         
         require(feeToPay > 0, "Notary: Fee cannot be zero");
-
+        
         // 4. Pull Fee from User
         require(bkcToken.transferFrom(msg.sender, address(this), feeToPay), "Notary: Fee transfer failed or insufficient allowance");
         
@@ -128,7 +131,6 @@ contract DecentralizedNotary is
         );
         
         // 6. Call MiningManager to perform PoP mining.
-        // The MiningManager handles all distribution (Treasury/Validator/Delegator).
         IMiningManager(miningManagerAddress)
             .performPurchaseMining(
                 SERVICE_KEY,
@@ -139,9 +141,18 @@ contract DecentralizedNotary is
         _tokenIdCounter.increment();
         tokenId = _tokenIdCounter.current();
         _safeMint(msg.sender, tokenId);
-
+        
+        // 8. Registro de Metadados e TAXA (AJUSTADO)
         documentMetadataURI[tokenId] = _documentMetadataURI;
-        emit NotarizationEvent(tokenId, msg.sender, _documentMetadataURI);
+        notarizationFeePaid[tokenId] = feeToPay; // <<< NOVO: Registra a taxa
+        
+        // 9. Emitir Evento (AJUSTADO)
+        emit NotarizationEvent(
+            tokenId, 
+            msg.sender, 
+            _documentMetadataURI, 
+            feeToPay // <<< NOVO: Emite a taxa
+        );
         return tokenId;
     }
 

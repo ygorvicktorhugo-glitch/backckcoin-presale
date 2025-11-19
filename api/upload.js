@@ -10,7 +10,26 @@ export const config = {
     },
 };
 
+// Função auxiliar para definir cabeçalhos CORS
+const setCorsHeaders = (res) => {
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Ou defina seu domínio específico em produção
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    );
+};
+
 export default async function handler(req, res) {
+    // 1. Configurar CORS imediatamente
+    setCorsHeaders(res);
+
+    // 2. Responder imediatamente a requisições preflight (OPTIONS)
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     console.log(`[${new Date().toISOString()}] Upload request received`);
 
     if (req.method !== 'POST') {
@@ -32,6 +51,8 @@ export default async function handler(req, res) {
             maxFileSize: 50 * 1024 * 1024, // 50MB
             uploadDir: '/tmp',
             keepExtensions: true,
+            // Garante que, mesmo se um arquivo só for enviado, seja tratado como array (padrão v3)
+            multiples: true, 
         });
 
         console.log('📋 Parsing form data...');
@@ -45,7 +66,9 @@ export default async function handler(req, res) {
             });
         });
 
-        file = files.file ? files.file[0] : null;
+        // Formidable v3 retorna arrays. Verifica se existe e pega o primeiro.
+        file = (files.file && Array.isArray(files.file)) ? files.file[0] : files.file;
+        
         if (!file) {
             console.error('❌ No file received in request');
             return res.status(400).json({ error: 'No file received.' });
@@ -55,8 +78,11 @@ export default async function handler(req, res) {
         // ### 1. VERIFICAÇÃO DE ASSINATURA ###
         // =======================================================
         console.log('🔑 Verifying wallet signature...');
-        const signature = fields.signature ? fields.signature[0] : null;
-        const address = fields.address ? fields.address[0] : null; // A carteira do usuário
+        
+        // Formidable v3 coloca campos de texto em arrays também
+        const signature = (Array.isArray(fields.signature)) ? fields.signature[0] : fields.signature;
+        const address = (Array.isArray(fields.address)) ? fields.address[0] : fields.address;
+        const userDescription = (Array.isArray(fields.description)) ? fields.description[0] : (fields.description || 'No description provided.');
         
         const message = "I am signing to authenticate my file for notarization on Backchain."; 
 
@@ -67,7 +93,16 @@ export default async function handler(req, res) {
 
         let recoveredAddress;
         try {
-            recoveredAddress = ethers.verifyMessage(message, signature);
+            // Compatibilidade Ethers v5 vs v6
+            if (ethers.verifyMessage) {
+                // Ethers v6
+                recoveredAddress = ethers.verifyMessage(message, signature);
+            } else if (ethers.utils && ethers.utils.verifyMessage) {
+                // Ethers v5
+                recoveredAddress = ethers.utils.verifyMessage(message, signature);
+            } else {
+                throw new Error("Ethers library version incompatibility: verifyMessage not found.");
+            }
         } catch (e) {
             console.error('❌ Signature verification failed:', e.message);
             return res.status(401).json({ error: 'Unauthorized', details: 'Invalid signature format.' });
@@ -79,6 +114,7 @@ export default async function handler(req, res) {
         }
 
         console.log('✅ Signature verified for address:', recoveredAddress);
+
         // =======================================================
         // ### 2. UPLOAD DO ARQUIVO (ETAPA 1 de 2) ###
         // =======================================================
@@ -104,16 +140,20 @@ export default async function handler(req, res) {
         // ### 3. UPLOAD DOS METADADOS (ETAPA 2 de 2) ###
         // =======================================================
         
-        // --- CONSTRUINDO A DESCRIÇÃO COMBINADA ---
-        const userDescription = fields.description ? fields.description[0] : 'No description provided.';
         const notarizationTimestamp = new Date().toISOString();
         const notarizerWallet = address;
         const finalDescription = `Notarized By Backcoin.Org Decentralized Notary On ${notarizationTimestamp}, Wallet ${notarizerWallet}. Description: "${userDescription}"`;
         
         const mimeType = file.mimetype || '';
         let contentField = 'image';
+        
+        // Lógica para determinar se exibe como imagem ou animação/vídeo no OpenSea
         if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
             contentField = 'animation_url';
+        } else if (mimeType === 'application/pdf') {
+            // PDFs muitas vezes usam external_url ou image (se houver thumbnail), 
+            // mas manteremos no padrão image/external por enquanto.
+            contentField = 'image'; 
         }
 
         // Cria o objeto JSON de metadados
@@ -122,8 +162,6 @@ export default async function handler(req, res) {
             description: finalDescription, 
             [contentField]: fileHash, 
             external_url: fileHash, 
-            
-            // ✅ BLOCO 'attributes' ADICIONADO PARA CONSISTÊNCIA
             attributes: [
                 { trait_type: "MIME Type", value: mimeType },
                 { trait_type: "Notarized By", value: notarizerWallet },
@@ -145,14 +183,12 @@ export default async function handler(req, res) {
         const metadataHash = `ipfs://${metadataResult.IpfsHash}`;
         console.log('✅ Metadata uploaded:', metadataHash);
 
-
         // =======================================================
-        // ### 4. RETORNO (Envia o hash dos metadados) ###
+        // ### 4. RETORNO ###
         // =======================================================
 
-        console.log('✅ Vercel Upload successful!');
-        console.log('Returning METADATA URI:', metadataHash);
-
+        console.log('✅ Upload successful!');
+        
         return res.status(200).json({ 
             success: true,
             cid: metadataResult.IpfsHash, 
@@ -160,18 +196,20 @@ export default async function handler(req, res) {
         });
 
     } catch (error) {
-        console.error('❌ Vercel/Piñata Upload Error (Main Catch):', error);
+        console.error('❌ Upload Error (Main Catch):', error);
         return res.status(500).json({
-            error: 'Vercel Internal Server Error during upload.',
-            details: error.message || 'Internal error processing Piñata upload.',
+            error: 'Server Error during upload.',
+            details: error.message || 'Internal error processing upload.',
         });
 
     } finally {
-        // Limpa o arquivo temporário
+        // Limpeza do arquivo temporário
         if (file && file.filepath) {
             try {
-                fs.unlinkSync(file.filepath);
-                console.log('🗑️  Temporary file deleted:', file.filepath);
+                if (fs.existsSync(file.filepath)) {
+                    fs.unlinkSync(file.filepath);
+                    console.log('🗑️  Temporary file deleted:', file.filepath);
+                }
             } catch (e) {
                 console.warn('⚠️  Could not delete temporary file:', e.message);
             }

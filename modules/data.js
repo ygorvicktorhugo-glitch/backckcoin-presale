@@ -1,5 +1,5 @@
 // modules/data.js
-// FINAL VERSION: Corrigida chamada de rewards e remoção de lógica obsoleta.
+// FINAL VERSION: Endpoints atualizados conforme fornecido (Cloud Run).
 
 const ethers = window.ethers;
 
@@ -9,9 +9,9 @@ import { formatBigNumber, formatPStake } from '../utils.js';
 import { addresses, boosterTiers, ipfsGateway } from '../config.js';
 
 // ====================================================================
-// CONSTANTES E UTILITÁRIOS (NOVOS)
+// CONSTANTES E UTILITÁRIOS
 // ====================================================================
-const API_TIMEOUT_MS = 10000; 
+const API_TIMEOUT_MS = 15000; // Aumentado levemente para garantir conexões Cloud Run a frio
 let systemDataCache = null;
 let systemDataCacheTime = 0;
 const CACHE_DURATION_MS = 60000; 
@@ -39,17 +39,19 @@ async function fetchWithTimeout(url, timeoutMs) {
 
 
 // ====================================================================
-// ENDPOINTS DE API
+// ENDPOINTS DE API (ATUALIZADOS)
 // ====================================================================
 export const API_ENDPOINTS = {
+    // Endpoints atualizados para Cloud Run Services
     getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
     getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
-    getNotaryHistory: 'https://getnotaryhistory-4wvdcuoouq-uc.a.run.app',
-    uploadFileToIPFS: '/api/upload', 
+    getNotaryHistory: 'https://getnotaryhistory-4wvdcuoouq-uc.a.run.app', //
+    uploadFileToIPFS: 'https://uploadfiletoipfs-4wvdcuoouq-uc.a.run.app',   //
+    
+    // Mantido endpoint de airdrop original se ainda for válido, caso contrário deve ser atualizado
     claimAirdrop: 'https://us-central1-airdropbackchainnew.cloudfunctions.net/claimAirdrop'
 };
-
 
 // ====================================================================
 // Funções de Segurança e Resiliência 
@@ -102,7 +104,7 @@ export async function loadSystemDataFromAPI() {
     }
 
     try {
-        console.log("Loading system rules from API with 10s timeout...");
+        console.log("Loading system rules from API...");
         
         const response = await fetchWithTimeout(API_ENDPOINTS.getSystemData, API_TIMEOUT_MS); 
         

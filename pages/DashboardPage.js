@@ -1,5 +1,5 @@
 // pages/DashboardPage.js
-// ✅ VERSÃO FINAL: Cards Corrigidos + Proteção Anti-Loop (Infura Friendly)
+// ✅ VERSÃO FINAL: Otimizada para Performance e Proteção Anti-Loop
 
 const ethers = window.ethers;
 
@@ -9,25 +9,26 @@ import {
     loadUserData,
     calculateUserTotalRewards,
     getHighestBoosterBoostFromAPI,
-    loadPublicData,
     safeContractCall,
     calculateClaimDetails,
     API_ENDPOINTS
 } from '../modules/data.js';
 import { executeUniversalClaim, executeUnstake, executeForceUnstake, executeDelegation } from '../modules/transactions.js';
 import {
-    formatBigNumber, formatAddress, formatPStake, renderLoading,
-    renderNoData, ipfsGateway, renderPaginatedList, renderError
+    formatBigNumber, formatPStake, renderLoading,
+    renderNoData, renderPaginatedList, renderError
 } from '../utils.js';
 import { startCountdownTimers, openModal, showToast, addNftToWallet, closeModal } from '../ui-feedback.js';
-import { addresses, boosterTiers } from '../config.js';
+import { addresses } from '../config.js';
 
 // --- ESTADO LOCAL E CONSTANTES ---
 let activityCurrentPage = 1;
 const EXPLORER_BASE_URL = "https://sepolia.etherscan.io/tx/"; 
 
+// Flag para evitar recarregamento de abas se já carregadas
 let tabsState = {
     delegationsLoaded: false,
+    historyLoaded: false
 };
 
 // --- ANIMAÇÃO DE RECOMPENSAS ---
@@ -37,6 +38,7 @@ let displayedRewardValue = 0n;
 
 function animateClaimableRewards() {
     const rewardsEl = document.getElementById('statUserRewards');
+    // Se o elemento não existe ou usuário desconectou, para a animação
     if (!rewardsEl || !State.isConnected) {
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
@@ -44,11 +46,13 @@ function animateClaimableRewards() {
     }
 
     const difference = targetRewardValue - displayedRewardValue;
+    // Limiar de convergência (para BigInt pequenos)
     if (difference > -1000000000000n && difference < 1000000000000n) { 
         if (displayedRewardValue !== targetRewardValue) {
              displayedRewardValue = targetRewardValue;
         }
     } else if (difference !== 0n) {
+        // Suavização (Move 10% da diferença)
         const movement = difference / 10n; 
         displayedRewardValue += (movement === 0n && difference !== 0n) ? (difference > 0n ? 1n : -1n) : movement;
     }
@@ -67,6 +71,7 @@ function animateClaimableRewards() {
 function startRewardAnimation(initialTargetValue) {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     targetRewardValue = initialTargetValue;
+    // Se estava zerado, começa de 90% para efeito visual rápido
     if (displayedRewardValue === 0n && targetRewardValue > 0n) {
          displayedRewardValue = (targetRewardValue * 90n) / 100n; 
     }
@@ -256,6 +261,7 @@ function setupActivityTabListeners() {
         if (!button) return;
         const targetId = button.dataset.target;
 
+        // UI Toggle
         document.querySelectorAll('#user-activity-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
         button.classList.add('active');
 
@@ -270,6 +276,7 @@ function setupActivityTabListeners() {
             targetContent.classList.add('active');
         }
 
+        // Lazy Load Content
         try {
             if (targetId === 'tab-delegations' && !tabsState.delegationsLoaded) {
                 await renderMyDelegations(); 
@@ -291,6 +298,7 @@ function setupDashboardActionListeners() {
         const target = e.target.closest('button, a, img');
         if (!target) return;
 
+        // Classes que disparam ação direta (não navegação)
         const needsPrevent = ['dashboardClaimBtn', 'unstake-btn', 'force-unstake-btn', 'delegate-link', 'go-to-store', 'nft-clickable-image', 'go-to-rewards'];
         if (needsPrevent.some(cls => target.id === cls || target.classList.contains(cls))) {
             e.preventDefault();
@@ -339,8 +347,7 @@ function setupDashboardActionListeners() {
                 await openDelegateModal();
 
             } else if (target.classList.contains('go-to-store')) {
-                if (typeof window.navigateToPage === 'function') window.navigateToPage('store');
-                else document.querySelector('.sidebar-link[data-target="store"]')?.click();
+                window.navigateTo('store');
 
             } else if (target.classList.contains('nft-clickable-image')) {
                 const address = target.dataset.address;
@@ -348,8 +355,7 @@ function setupDashboardActionListeners() {
                 if (address && tokenId) addNftToWallet(address, tokenId);
 
             } else if (target.classList.contains('go-to-rewards')) {
-                if (typeof window.navigateToPage === 'function') window.navigateToPage('rewards');
-                else document.querySelector('.sidebar-link[data-target="rewards"]')?.click();
+                window.navigateTo('rewards');
             }
         } catch (error) {
              console.error("Dashboard action error:", error);
@@ -412,60 +418,40 @@ async function renderRewardEfficiencyPanel(efficiencyData) {
 // --- RENDERIZADORES PÚBLICOS E CABEÇALHO ---
 
 async function loadAndRenderPublicHeaderStats() {
-    // CARDS DO CABEÇALHO
     const statTotalSupplyEl = document.getElementById('statTotalSupply');
-    const statActiveHoldersEl = document.getElementById('statActiveHolders'); // Corrigido: ID novo para Holders
     const statTotalPStakeEl = document.getElementById('statTotalPStake');
     const statScarcityEl = document.getElementById('statScarcity');
-    const statLockedPercentEl = document.getElementById('statLockedPercentage'); // Card de Porcentagem
-    const tvlValueEl = document.getElementById('protocol-tvl-value'); // TVL Card (Valor)
+    const statLockedPercentEl = document.getElementById('statLockedPercentage'); 
+    const tvlValueEl = document.getElementById('protocol-tvl-value'); 
 
-    if (State.tvlLoaded) return; // Evita recarregar se já carregou
+    if (State.tvlLoaded) return; 
 
     try {
         if (!State.bkcTokenContractPublic || !State.delegationManagerContractPublic) return;
 
-        // 1. Total Supply (Chama contrato)
+        // 1. Total Supply
         const totalSupply = await safeContractCall(State.bkcTokenContractPublic, 'totalSupply', [], 0n);
         if(statTotalSupplyEl) statTotalSupplyEl.textContent = formatBigNumber(totalSupply).toFixed(0);
 
-        // 2. Active Holders (Simulado conforme pedido)
-        if(statActiveHoldersEl) statActiveHoldersEl.textContent = "4,250"; // Simulado
-        // Se o elemento ainda se chamar "Active Pools" no HTML, ele vai procurar pelo ID antigo.
-        // Vou assumir que o ID do HTML é 'statValidators' ou 'statActivePools'.
-        // PROCURA O ELEMENTO ANTIGO SE O NOVO NÃO EXISTIR:
-        const fallbackActivePools = document.getElementById('statValidators') || document.getElementById('statActivePools');
-        if (fallbackActivePools) fallbackActivePools.textContent = "4,250";
-
-        // 3. Total pStake (Network)
+        // 2. Total pStake
         const totalPStake = await safeContractCall(State.delegationManagerContractPublic, 'totalNetworkPStake', [], 0n);
         if(statTotalPStakeEl) statTotalPStakeEl.textContent = formatPStake(totalPStake);
 
-        // 4. TVL & Locked % Calculation
+        // 3. TVL & Locked % 
         let totalLocked = 0n;
         
-        // Soma Staking
-        if (addresses.delegationManager) {
-            const stakingBal = await safeContractCall(State.bkcTokenContractPublic, 'balanceOf', [addresses.delegationManager], 0n);
-            totalLocked += stakingBal;
-        }
-        // Soma Game
-        if (addresses.fortunePool) {
-            const gameBal = await safeContractCall(State.bkcTokenContractPublic, 'balanceOf', [addresses.fortunePool], 0n);
-            totalLocked += gameBal;
-        }
-        // Soma Pools (Itera sobre endereços conhecidos de pool)
+        const addBalance = async (addr) => {
+            if(addr) totalLocked += await safeContractCall(State.bkcTokenContractPublic, 'balanceOf', [addr], 0n);
+        };
+
+        await addBalance(addresses.delegationManager);
+        await addBalance(addresses.fortunePool);
         for (const key in addresses) {
-            if (key.startsWith('pool_') && addresses[key]) {
-                 const poolBal = await safeContractCall(State.bkcTokenContractPublic, 'balanceOf', [addresses[key]], 0n);
-                 totalLocked += poolBal;
-            }
+            if (key.startsWith('pool_')) await addBalance(addresses[key]);
         }
 
-        // Atualiza Card TVL (Valor)
         if (tvlValueEl) tvlValueEl.textContent = `${formatBigNumber(totalLocked).toFixed(0)} $BKC`;
 
-        // Atualiza Card Locked %
         if (statLockedPercentEl) {
             if (totalSupply > 0n) {
                 const percent = (Number(totalLocked * 10000n / totalSupply) / 100).toFixed(2);
@@ -475,7 +461,7 @@ async function loadAndRenderPublicHeaderStats() {
             }
         }
 
-        // 5. Scarcity Rate
+        // 4. Scarcity Rate
         const MAX_SUPPLY = await safeContractCall(State.bkcTokenContractPublic, 'MAX_SUPPLY', [], 0n);
         const TGE_SUPPLY = await safeContractCall(State.bkcTokenContractPublic, 'TGE_SUPPLY', [], 0n);
         const mintPool = MAX_SUPPLY - TGE_SUPPLY;
@@ -487,14 +473,13 @@ async function loadAndRenderPublicHeaderStats() {
             statScarcityEl.textContent = `${scarcity}%`;
         }
 
-        State.tvlLoaded = true; // Marca como carregado para não repetir no loop
+        State.tvlLoaded = true; 
 
     } catch (err) {
         console.error("Header Stats Error:", err);
     }
 }
 
-// Renderiza a lista de validadores (Agora Global Pool)
 function renderValidatorsList() {
     const listEl = document.getElementById('top-validators-list');
     if (!listEl) return;
@@ -559,7 +544,7 @@ async function renderMyDelegations() {
     if (!listEl) return;
     if (!State.isConnected) { renderNoData(listEl, "Connect your wallet to view delegations."); return; }
 
-    renderLoading(listEl);
+    listEl.innerHTML = renderLoading();
     try {
         const delegationsRaw = await safeContractCall(State.delegationManagerContract, 'getDelegationsOf', [State.userAddress], []);
         
@@ -572,11 +557,10 @@ async function renderMyDelegations() {
         
         const delegations = State.userDelegations;
 
-        if (!delegations || delegations.length === 0) { renderNoData(listEl, "You have no active delegations."); return; }
+        if (!delegations || delegations.length === 0) { listEl.innerHTML = renderNoData("You have no active delegations."); return; }
         
         const forceUnstakePenaltyBips = await safeContractCall(State.ecosystemManagerContract, 'getFee', ["FORCE_UNSTAKE_PENALTY_BIPS"], 5000n);
-        const unstakeFeeBips = await safeContractCall(State.ecosystemManagerContract, 'getFee', ["UNSTAKE_FEE_BIPS"], 100n);
-
+        
         const html = delegations.map((d) => {
             const amount = d.amount;
             const amountFormatted = formatBigNumber(amount);
@@ -595,7 +579,6 @@ async function renderMyDelegations() {
             const isLocked = unlockTimestamp > nowSeconds;
             
             const penaltyPercent = (Number(forceUnstakePenaltyBips) / 100).toFixed(2);
-            const feePercent = (Number(unstakeFeeBips) / 100).toFixed(2);
             
             const unlockDate = new Date(unlockTimestamp * 1000);
             const dateString = unlockDate.toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' });
@@ -638,12 +621,11 @@ async function renderMyDelegations() {
         if (timers.length > 0) startCountdownTimers(Array.from(timers));
     } catch (error) {
         console.error("Error rendering delegations:", error);
-        renderError(listEl, "Failed to load delegations.");
+        listEl.innerHTML = renderError("Failed to load delegations.");
     }
 }
 
 function renderActivityItem(item) {
-    // ... (Função de renderização de item mantida igual) ...
     let timestamp;
     if (typeof item.timestamp === 'object' && item.timestamp._seconds) {
         timestamp = Number(item.timestamp._seconds);
@@ -666,7 +648,6 @@ function renderActivityItem(item) {
     const formattedAmount = formatBigNumber(itemAmount).toFixed(2);
     const itemDetails = item.details || {};
     
-    // ... (Switch de tipos mantido) ...
     switch(item.type) {
         case 'Delegation': title = `Delegation`; icon = 'fa-layer-group'; color = 'text-purple-400'; details = `Delegated ${formattedAmount} to Global Pool`; break;
         case 'BoosterNFT': title = `Booster Acquired`; icon = 'fa-gem'; color = 'text-green-400'; details = `Tier: ${itemDetails.tierName}`; break;
@@ -702,9 +683,12 @@ function renderActivityItem(item) {
 async function renderActivityHistory() {
     const listEl = document.getElementById('activity-history-list-container');
     if (!listEl) return;
-    if (!State.isConnected) { renderNoData(listEl, "Connect your wallet to view history."); return; }
+    if (!State.isConnected) { listEl.innerHTML = renderNoData("Connect your wallet to view history."); return; }
     
-    renderLoading(listEl);
+    // Verifica se já carregou para não repetir
+    if (tabsState.historyLoaded && listEl.children.length > 0) return;
+
+    listEl.innerHTML = renderLoading();
     try {
         const historyUrl = `${API_ENDPOINTS.getHistory}/${State.userAddress}`;
         const response = await fetch(historyUrl);
@@ -712,16 +696,17 @@ async function renderActivityHistory() {
         const allActivities = await response.json(); 
 
         if (allActivities.length === 0) {
-            renderNoData(listEl, "Your recent activities will appear here.");
+            listEl.innerHTML = renderNoData("Your recent activities will appear here.");
         } else {
             renderPaginatedList(
                 allActivities, listEl, renderActivityItem, 6, activityCurrentPage,
                 (newPage) => { activityCurrentPage = newPage; renderActivityHistory(); },
                 'grid grid-cols-1 md:grid-cols-2 gap-4'
             );
+            tabsState.historyLoaded = true;
         }
     } catch (error) {
-        renderError(listEl, "Failed to load history.");
+        listEl.innerHTML = renderError("Failed to load history.");
     }
 }
 
@@ -729,36 +714,41 @@ async function renderActivityHistory() {
 
 export const DashboardPage = {
     hasRenderedOnce: false,
+    
     async render(isUpdate = false) {
-        if (!DOMElements.dashboard._listenersInitialized && DOMElements.dashboard) {
+        if (!DOMElements.dashboard) return;
+
+        if (!DOMElements.dashboard._listenersInitialized) {
             setupDashboardActionListeners();
             DOMElements.dashboard._listenersInitialized = true;
         }
 
         // --- FASE 1: CARREGAMENTO PÚBLICO (SÓ NA PRIMEIRA VEZ) ---
         if (!this.hasRenderedOnce) {
-            await loadAndRenderPublicHeaderStats(); // Total Supply, Scarcity, Holders
-            renderValidatorsList(); // Card de Staking
+            await loadAndRenderPublicHeaderStats(); 
+            renderValidatorsList(); 
             this.hasRenderedOnce = true;
         }
 
         // --- FASE 2: CARREGAMENTO PRIVADO (SE CONECTADO) ---
         if (State.isConnected) {
             
-            // Se for apenas um update de polling (saldo), não recarrega tudo
+            // Se for apenas um update de polling (saldo), atualiza só o texto do pStake
             if (isUpdate) {
                  const myPStake = document.getElementById('statUserPStake');
                  if(myPStake) myPStake.textContent = formatPStake(State.userTotalPStake || 0n);
                  return;
             }
             
-            // Carregamento completo do usuário
+            // Carregamento completo do usuário (Navegação inicial ou refresh forçado)
             try {
+                // 1. Carrega dados básicos (Saldo, pStake)
                 await loadUserData();
-                const claimDetails = await calculateClaimDetails();
-                const { totalRewards, netClaimAmount } = claimDetails;
                 
-                // Atualiza Painel de Recompensas
+                const claimDetails = await calculateClaimDetails();
+                const { totalRewards } = claimDetails;
+                
+                // 2. Atualiza Painel de Recompensas
                 const claimPanelEl = document.getElementById('claimable-rewards-panel-content');
                 if (claimPanelEl) {
                     claimPanelEl.innerHTML = `
@@ -777,9 +767,10 @@ export const DashboardPage = {
                 if(myPStake) myPStake.textContent = formatPStake(State.userTotalPStake || 0n);
 
                 startRewardAnimation(totalRewards); 
-                const efficiencyData = await getHighestBoosterBoostFromAPI(); 
-                await renderRewardEfficiencyPanel(efficiencyData);
-                await renderActivityHistory(); 
+                
+                // 3. Carregamento Assíncrono de Dados Secundários (Não bloqueia a UI)
+                getHighestBoosterBoostFromAPI().then(renderRewardEfficiencyPanel);
+                renderActivityHistory(); 
                 
             } catch (e) { console.error(e); }
             

@@ -1,5 +1,5 @@
 // modules/data.js
-// FINAL VERSION: Anti-Throttling Agressivo (Evita erro 429 da Infura)
+// ✅ FINAL VERSION: Anti-Throttling Agressivo + Jitter Backoff + Smart Caching
 
 const ethers = window.ethers;
 
@@ -12,9 +12,14 @@ import { addresses, boosterTiers, ipfsGateway } from '../config.js';
 // CONSTANTES E UTILITÁRIOS
 // ====================================================================
 const API_TIMEOUT_MS = 15000; 
+const CACHE_DURATION_MS = 120000; // 2 minutos de cache para dados de sistema
+
+// Cache em memória para dados de sistema
 let systemDataCache = null;
 let systemDataCacheTime = 0;
-const CACHE_DURATION_MS = 120000; // Cache de 2 minutos para poupar API
+
+// Cache simples para chamadas de contrato imutáveis (ex: URI, Fees estáticas)
+const contractReadCache = new Map();
 
 // Função auxiliar para "dormir" (esperar)
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -52,21 +57,22 @@ export const API_ENDPOINTS = {
 };
 
 // ====================================================================
-// Funções de Segurança e Resiliência (COM RETRY LOGIC)
+// Funções de Segurança e Resiliência (COM RETRY & JITTER)
 // ====================================================================
 
 export const safeBalanceOf = async (contract, address) => {
     try {
         return await contract.balanceOf(address);
     } catch (e) {
-        // Se for erro de limite (429), espera 3 segundos e tenta de novo
-        if (e?.error?.code === 429 || e?.code === 429 || (e.message && e.message.includes("429"))) {
-            console.warn("Rate limited on balanceOf. Retrying in 3s...");
-            await wait(3000);
+        // Verifica Erro 429 (Rate Limit)
+        if (isRateLimitError(e)) {
+            console.warn("⚠️ Rate limited on balanceOf. Retrying in 5s...");
+            await wait(5000);
             try {
                 return await contract.balanceOf(address);
             } catch (retryError) {
-                return 0n; // Se falhar de novo, retorna 0 para não quebrar a tela
+                console.warn("❌ Balance fetch failed after retry. Returning 0n.");
+                return 0n; // Falha segura
             }
         }
         if (e.code === 'BAD_DATA' || e.code === 'CALL_EXCEPTION') {
@@ -76,36 +82,66 @@ export const safeBalanceOf = async (contract, address) => {
     }
 };
 
-// Função Genérica com Retry Inteligente para evitar erro 429
+// Função auxiliar para detectar erro 429 de várias fontes
+function isRateLimitError(e) {
+    return (
+        e?.error?.code === 429 || 
+        e?.code === 429 || 
+        (e.message && (
+            e.message.includes("429") || 
+            e.message.includes("Too Many Requests") || 
+            e.message.includes("compute units") ||
+            e.message.includes("limit reached")
+        ))
+    );
+}
+
+// Função Genérica com Retry Inteligente e Jitter
 export const safeContractCall = async (contract, method, args = [], fallbackValue = 0n, retries = 2) => {
+    // Chave de Cache simples baseada no contrato + método + argumentos
+    // Útil apenas para dados que não mudam a cada segundo dentro da mesma sessão
+    const cacheKey = `${contract.target || contract.address}:${method}:${JSON.stringify(args)}`;
+    
+    // Se for uma chamada "estática" conhecida (ex: getFee, tokenURI), tenta usar cache de memória curto (10s)
+    if (method === 'tokenURI' || method.startsWith('getFee')) {
+        const cached = contractReadCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < 10000)) {
+            return cached.value;
+        }
+    }
+
     try {
         const result = await contract[method](...args);
+        
+        // Salva no cache se for sucesso
+        if (method === 'tokenURI' || method.startsWith('getFee')) {
+            contractReadCache.set(cacheKey, { value: result, timestamp: Date.now() });
+        }
+        
         return result;
     } catch (e) {
-        // DETECÇÃO DO ERRO 429 (MUITAS REQUISIÇÕES)
-        const isRateLimit = 
-            e?.error?.code === 429 || 
-            e?.code === 429 || 
-            (e.message && (e.message.includes("429") || e.message.includes("Too Many Requests") || e.message.includes("compute units")));
-
-        if (isRateLimit && retries > 0) {
-            // AUMENTADO: Espera 5 segundos se tomar bloqueio (Infura precisa de tempo)
-            const delayTime = 5000; 
-            console.warn(`Rate limit hit on ${method}. Retrying in ${delayTime}ms... (${retries} left)`);
+        // DETECÇÃO DO ERRO 429 COM JITTER (Aleatoriedade no tempo de espera)
+        if (isRateLimitError(e) && retries > 0) {
+            // Espera entre 10s e 15s para evitar "thundering herd" (todos tentando de novo ao mesmo tempo)
+            const jitter = Math.floor(Math.random() * 5000); 
+            const delayTime = 10000 + jitter; 
+            
+            console.warn(`⚠️ Rate limit hit on ${method}. Retrying in ${delayTime/1000}s... (${retries} left)`);
             await wait(delayTime);
             return safeContractCall(contract, method, args, fallbackValue, retries - 1);
         }
 
         if (e.code === 'BAD_DATA' || e.code === 'CALL_EXCEPTION') {
-            console.warn(`SafeContractCall (${method}): Falha técnica. Retornando fallback.`);
-            // Retorna objeto vazio se o fallback for objeto, para evitar crash
+            console.warn(`⚠️ SafeContractCall (${method}): Falha técnica/revert. Retornando fallback.`);
+            
+            // Retorna objeto vazio se o fallback for objeto, para evitar crash por referência
             if (typeof fallbackValue === 'object' && fallbackValue !== null && !Array.isArray(fallbackValue) && typeof fallbackValue !== 'bigint') {
                  return { ...fallbackValue };
             }
             return fallbackValue;
         }
         
-        console.error(`SafeContractCall (${method}) unexpected error:`, e);
+        console.error(`❌ SafeContractCall (${method}) unexpected error:`, e);
         return fallbackValue;
     }
 };
@@ -115,7 +151,6 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
 // ====================================================================
 
 export async function loadSystemDataFromAPI() {
-    
     if (!State.systemFees) State.systemFees = {};
     if (!State.systemPStakes) State.systemPStakes = {};
     if (!State.boosterDiscounts) State.boosterDiscounts = {};
@@ -123,13 +158,13 @@ export async function loadSystemDataFromAPI() {
     const now = Date.now();
     // Cache: Se carregou há menos de 2 minutos, usa o cache
     if (systemDataCache && (now - systemDataCacheTime < CACHE_DURATION_MS)) {
-        console.log("Using cached system data.");
+        console.log("♻️ Using cached system data.");
         applySystemDataToState(systemDataCache);
         return true;
     }
 
     try {
-        console.log("Loading system rules from API...");
+        console.log("🌐 Loading system rules from API...");
         const response = await fetchWithTimeout(API_ENDPOINTS.getSystemData, API_TIMEOUT_MS); 
         
         if (!response.ok) {
@@ -142,11 +177,11 @@ export async function loadSystemDataFromAPI() {
         systemDataCache = systemData;
         systemDataCacheTime = now;
         
-        console.log("System rules loaded.");
+        console.log("✅ System rules loaded.");
         return true;
 
     } catch (e) {
-        console.error("CRITICAL Error loading system data from API:", e.message);
+        console.error("❌ CRITICAL Error loading system data from API:", e.message);
         return false;
     }
 }
@@ -174,19 +209,17 @@ export async function loadPublicData() {
     if (!State.publicProvider || !State.bkcTokenContractPublic || !State.delegationManagerContractPublic) return;
 
     try {
-        // MUDANÇA CRÍTICA: Execução Sequencial com pausas
-        // Isso evita enviar 10 requisições no mesmo segundo
-        
+        // SEQUENCIAL COM PAUSAS (Throttling Manual)
         const publicBkc = State.bkcTokenContractPublic;
         const publicDelegation = State.delegationManagerContractPublic;
 
         await safeContractCall(publicBkc, 'totalSupply', [], 0n);
         
-        await wait(200); // Pausa para a Infura respirar
+        await wait(300); // Pausa aumentada para 300ms
         
         await safeContractCall(publicBkc, 'MAX_SUPPLY', [], 0n);
         
-        await wait(200);
+        await wait(300);
         
         await safeContractCall(publicBkc, 'TGE_SUPPLY', [], 0n);
         
@@ -210,12 +243,11 @@ export async function loadUserData() {
     if (!State.isConnected || !State.userAddress) return;
 
     try {
-        // MUDANÇA CRÍTICA: Sequencial para evitar erro 429
-        
+        // SEQUENCIAL ESTRATÉGICO
         const balance = await safeBalanceOf(State.bkcTokenContract, State.userAddress);
         State.currentUserBalance = balance;
 
-        await wait(200); // Pausa
+        await wait(300); 
 
         const delegationsRaw = await safeContractCall(State.delegationManagerContract, 'getDelegationsOf', [State.userAddress], []);
         
@@ -227,12 +259,13 @@ export async function loadUserData() {
             txHash: null 
         }));
         
-        await wait(200); // Pausa
+        await wait(300); 
 
         const totalUserPStake = await safeContractCall(State.delegationManagerContract, 'userTotalPStake', [State.userAddress], 0n);
         State.userTotalPStake = totalUserPStake;
 
         if (State.provider) {
+            // Balanço Nativo (ETH) é rápido, não precisa de tanta pausa
             const nativeBalance = await State.provider.getBalance(State.userAddress);
             State.currentUserNativeBalance = nativeBalance;
         }
@@ -273,6 +306,7 @@ export async function calculateClaimDetails() {
     }
     
     let baseFeeBips = State.systemFees?.CLAIM_REWARD_FEE_BIPS;
+    // Fallback para contrato apenas se API falhar, com cache de leitura
     if (!baseFeeBips) {
          baseFeeBips = await safeContractCall(State.ecosystemManagerContract, 'getFee', ["CLAIM_REWARD_FEE_BIPS"], 50n); 
     }
@@ -324,20 +358,21 @@ export async function getHighestBoosterBoostFromAPI() {
         let imageUrl = tier?.img || '';
         let nftName = tier?.name ? `${tier.name} Booster` : 'Booster NFT';
 
-        // Tenta carregar metadados apenas se necessário e com proteção
-        try {
-            // Usa wait se estiver em loop, mas aqui é chamada pontual
-            const tokenURI = await safeContractCall(State.rewardBoosterContract, 'tokenURI', [bestTokenId], '');
-            if (tokenURI) {
-                const metadataResponse = await fetch(tokenURI.replace("ipfs://", ipfsGateway));
-                if (metadataResponse.ok) {
-                    const metadata = await metadataResponse.json();
-                    imageUrl = metadata.image ? metadata.image.replace("ipfs://", ipfsGateway) : imageUrl;
-                    nftName = metadata.name || nftName;
+        // OTIMIZAÇÃO: TokenURI é pesado. Só carrega se a imagem padrão não existir.
+        if (!imageUrl) {
+            try {
+                const tokenURI = await safeContractCall(State.rewardBoosterContract, 'tokenURI', [bestTokenId], '');
+                if (tokenURI) {
+                    const metadataResponse = await fetch(tokenURI.replace("ipfs://", ipfsGateway));
+                    if (metadataResponse.ok) {
+                        const metadata = await metadataResponse.json();
+                        imageUrl = metadata.image ? metadata.image.replace("ipfs://", ipfsGateway) : imageUrl;
+                        nftName = metadata.name || nftName;
+                    }
                 }
+            } catch (e) {
+                console.warn(`Could not fetch metadata for booster #${bestTokenId}, using fallback.`);
             }
-        } catch (e) {
-            console.warn(`Could not fetch metadata for booster #${bestTokenId}:`, e);
         }
 
         return { highestBoost, boostName: nftName, imageUrl, tokenId: bestTokenId.toString(), efficiency: finalEfficiency };
@@ -357,7 +392,7 @@ export async function loadMyBoostersFromAPI() {
     if (!State.rewardBoosterContract || !State.userAddress) return [];
 
     try {
-        console.log("Loading user boosters from API...");
+        console.log("🚀 Loading user boosters from API...");
         const userAddress = State.userAddress;
         
         // Timeout de 5s para a API
@@ -370,7 +405,7 @@ export async function loadMyBoostersFromAPI() {
         const ownedTokensAPI = await response.json(); 
         
         if (ownedTokensAPI.length === 0) {
-            console.log("No boosters found via API.");
+            console.log("ℹ️ No boosters found via API.");
             State.myBoosters = [];
             return [];
         }
@@ -388,7 +423,7 @@ export async function loadMyBoostersFromAPI() {
         return boosterDetails;
 
     } catch (e) {
-        console.warn("Error loading My Boosters from API (Using empty list):", e.message);
+        console.warn("⚠️ Error loading My Boosters from API (Using empty list):", e.message);
         State.myBoosters = [];
         return []; 
     }

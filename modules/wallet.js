@@ -1,5 +1,5 @@
 // modules/wallet.js
-// ✅ VERSÃO FINAL: Saldo Instantâneo (Cache) + Loop Seguro (60s) + Redução de Ruído
+// ✅ VERSÃO FINAL: Saldo Instantâneo (Cache) + Loop Inteligente (Visibilidade) + Redução de Ruído
 
 import { ethers } from 'https://esm.sh/ethers@6.11.1';
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
@@ -20,10 +20,11 @@ import { loadPublicData, loadUserData } from './data.js';
 import { signIn } from './firebase-auth-service.js';
 
 // ============================================================================
-// GLOBAL STATE
+// GLOBAL STATE & CONSTANTS
 // ============================================================================
 let balancePollingInterval = null;
 let hasForcedInitialDisconnect = false; 
+const POLLING_INTERVAL_MS = 60000; // 60 Segundos
 
 // ============================================================================
 // WEB3MODAL CONFIGURATION
@@ -49,11 +50,11 @@ const ethersConfig = defaultConfig({
     metadata,
     enableEIP6963: true,
     enableInjected: true,
-    enableCoinbase: false, // Desativado para reduzir chamadas extras
+    enableCoinbase: false, // Desativado para reduzir chamadas extras e popups
     rpcUrl: sepoliaRpcUrl,
     defaultChainId: Number(sepoliaChainId),
     enableWeb3Js: false, // Evita conflito com web3.js legado
-    enableEns: false // ✅ Tenta desativar busca de nomes para evitar erro 404
+    enableEns: false // ✅ Desativa busca de nomes ENS para evitar erro 404 e economizar RPC
 });
 
 const web3modal = createWeb3Modal({
@@ -86,6 +87,7 @@ function isValidAddress(addr) {
  * Isso evita o "susto" do saldo zerado enquanto carrega.
  */
 function loadCachedBalance(address) {
+    if (!address) return;
     const cached = localStorage.getItem(`balance_${address.toLowerCase()}`);
     if (cached) {
         try {
@@ -121,10 +123,12 @@ function instantiateContracts(signerOrProvider) {
 }
 
 /**
- * ✅ POLLING LEVE: Consulta apenas o saldo a cada 60 segundos.
+ * ✅ POLLING INTELIGENTE: 
+ * 1. Consulta apenas a cada 60 segundos.
+ * 2. PAUSA se a aba estiver oculta (Economia de Créditos).
  */
 function startBalancePolling() {
-    // Limpa intervalo anterior
+    // Limpeza rigorosa de intervalo anterior
     if (balancePollingInterval) {
         clearInterval(balancePollingInterval);
         balancePollingInterval = null;
@@ -132,12 +136,17 @@ function startBalancePolling() {
 
     if (!State.bkcTokenContractPublic || !State.userAddress) return;
 
-    console.log('Starting balance polling (every 60s)...');
+    console.log(`Starting balance polling (Every ${POLLING_INTERVAL_MS / 1000}s)...`);
     
     let lastBalance = State.currentUserBalance;
 
-    // Intervalo de 60 segundos (1 Minuto)
     balancePollingInterval = setInterval(async () => {
+        // ✅ Verificação de Visibilidade: Se aba oculta, não gasta RPC
+        if (document.hidden) {
+            // console.log("Polling paused (Tab hidden)");
+            return;
+        }
+
         try {
             if (!State.isConnected || !State.userAddress) {
                 clearInterval(balancePollingInterval);
@@ -148,7 +157,7 @@ function startBalancePolling() {
             const newBalance = await State.bkcTokenContractPublic.balanceOf(State.userAddress);
             
             if (newBalance !== lastBalance) {
-                console.log(`Balance update: ${ethers.formatUnits(newBalance, 18)}`);
+                console.log(`💰 Balance update: ${ethers.formatUnits(newBalance, 18)}`);
                 lastBalance = newBalance;
                 State.currentUserBalance = newBalance;
                 
@@ -159,13 +168,20 @@ function startBalancePolling() {
             }
         } catch (error) {
             // Silencia erros de rede no polling para não poluir o console
+            // console.warn("Polling skip due to network");
         }
-    }, 60000); 
+    }, POLLING_INTERVAL_MS); 
 }
 
 async function setupSignerAndLoadData(provider, address) {
     try {
         if (!validateEthereumAddress(address)) throw new Error('INVALID_ADDRESS');
+
+        // Evita reload desnecessário se for o mesmo endereço
+        if (State.userAddress === address && State.signer) {
+            console.log("Wallet re-connected (Same address), skipping heavy reload.");
+            return true;
+        }
 
         State.provider = provider;
         State.signer = await provider.getSigner();
@@ -174,11 +190,12 @@ async function setupSignerAndLoadData(provider, address) {
         // 1. Mostra o cache IMEDIATAMENTE (Sem delay)
         loadCachedBalance(address);
 
-        try { await signIn(State.userAddress); } catch (e) { console.warn('Firebase auth warning:', e); }
+        // Autenticação Firebase (Silenciosa)
+        try { await signIn(State.userAddress); } catch (e) { console.warn('Firebase auth warning:', e.message); }
 
         instantiateContracts(State.signer);
         
-        // 2. Busca o dado real da blockchain IMEDIATAMENTE (Requisição Inicial)
+        // 2. Busca o dado real da blockchain IMEDIATAMENTE (Requisição Inicial Obrigatória)
         await loadUserData(); 
         
         // Atualiza cache com o dado fresco
@@ -186,7 +203,7 @@ async function setupSignerAndLoadData(provider, address) {
             localStorage.setItem(`balance_${address.toLowerCase()}`, State.currentUserBalance.toString());
         }
 
-        // 3. Inicia o Loop Lento (A cada 1 minuto)
+        // 3. Inicia o Loop Lento e Inteligente
         startBalancePolling();
         
         State.isConnected = true;
@@ -204,6 +221,7 @@ async function setupSignerAndLoadData(provider, address) {
 
 export async function initPublicProvider() {
     try {
+        // Provedor Público Estático (Infura/Alchemy via Config)
         State.publicProvider = new ethers.JsonRpcProvider(sepoliaRpcUrl);
 
         if (isValidAddress(addresses.bkcToken))
@@ -213,12 +231,12 @@ export async function initPublicProvider() {
         if (isValidAddress(addresses.faucet))
             State.faucetContractPublic = new ethers.Contract(addresses.faucet, faucetABI, State.publicProvider);
         
-        // Carrega dados globais UMA VEZ no início
+        // Carrega dados globais UMA VEZ no início da aplicação
         await loadPublicData();
         
-        console.log("Public provider initialized.");
+        console.log("✅ Public provider initialized.");
     } catch (e) {
-        console.error("Public provider error:", e);
+        console.error("❌ Public provider error:", e);
     }
 }
 
@@ -226,7 +244,7 @@ export function initWalletSubscriptions(callback) {
     let wasPreviouslyConnected = web3modal.getIsConnected(); 
     let isHandlingChange = false;
 
-    // Limpeza de estado para evitar sessões fantasmas
+    // Limpeza inicial rigorosa para Web3Modal v3+
     if (wasPreviouslyConnected && !hasForcedInitialDisconnect) {
         try { web3modal.disconnect(); } catch (e) {}
         wasPreviouslyConnected = false;
@@ -234,58 +252,73 @@ export function initWalletSubscriptions(callback) {
     }
 
     const handler = async ({ provider, address, chainId, isConnected }) => {
+        // Debounce para evitar chamadas duplas do Web3Modal
         if (isHandlingChange) return;
         isHandlingChange = true;
         
-        if (isConnected) {
-            // Verificação de Rede
-            if (chainId !== Number(sepoliaChainId)) {
-                showToast(`Wrong network. Switch to Sepolia.`, 'error');
-                try {
-                    await provider.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: '0x' + (Number(sepoliaChainId)).toString(16) }],
-                    });
-                } catch (e) {}
-                isHandlingChange = false;
-                return;
-            }
+        try {
+            if (isConnected) {
+                // Verificação de Rede
+                if (chainId !== Number(sepoliaChainId)) {
+                    showToast(`Wrong network. Switch to Sepolia.`, 'error');
+                    try {
+                        await provider.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: '0x' + (Number(sepoliaChainId)).toString(16) }],
+                        });
+                    } catch (e) {}
+                    isHandlingChange = false;
+                    return;
+                }
 
-            const ethersProvider = new ethers.BrowserProvider(provider);
-            State.web3Provider = provider; 
+                const ethersProvider = new ethers.BrowserProvider(provider);
+                State.web3Provider = provider; 
 
-            const success = await setupSignerAndLoadData(ethersProvider, address);
-            
-            if (success) {
-                const isNewConnection = !wasPreviouslyConnected;
-                wasPreviouslyConnected = true;
-                callback({ isConnected: true, address, chainId, isNewConnection });
+                const success = await setupSignerAndLoadData(ethersProvider, address);
+                
+                if (success) {
+                    const isNewConnection = !wasPreviouslyConnected;
+                    wasPreviouslyConnected = true;
+                    callback({ isConnected: true, address, chainId, isNewConnection });
+                } else {
+                    await web3modal.disconnect();
+                }
+
             } else {
-                await web3modal.disconnect();
+                // Desconexão Limpa
+                if (balancePollingInterval) {
+                    clearInterval(balancePollingInterval);
+                    balancePollingInterval = null;
+                }
+                
+                State.isConnected = false;
+                State.userAddress = null;
+                State.signer = null;
+                State.currentUserBalance = 0n;
+                
+                callback({ isConnected: false, wasConnected: wasPreviouslyConnected });
+                wasPreviouslyConnected = false;
             }
-
-        } else {
-            // Desconexão
-            if (balancePollingInterval) clearInterval(balancePollingInterval);
-            State.isConnected = false;
-            State.userAddress = null;
-            State.signer = null;
-            State.currentUserBalance = 0n;
-            
-            callback({ isConnected: false, wasConnected: wasConnected });
-            wasPreviouslyConnected = false;
-            balancePollingInterval = null;
+        } catch (err) {
+            console.error("Wallet subscription error:", err);
+        } finally {
+            // Libera o handler após processar (pequeno delay para garantir)
+            setTimeout(() => { isHandlingChange = false; }, 500);
         }
-        isHandlingChange = false; 
     };
     
     web3modal.subscribeProvider(handler);
+    
+    // Notifica estado inicial desconectado
     callback({ isConnected: false, wasConnected: wasPreviouslyConnected });
 }
 
 export function openConnectModal() { web3modal.open(); }
 
 export async function disconnectWallet() {
-    if (balancePollingInterval) clearInterval(balancePollingInterval);
+    if (balancePollingInterval) {
+        clearInterval(balancePollingInterval);
+        balancePollingInterval = null;
+    }
     await web3modal.disconnect();
 }

@@ -1,9 +1,9 @@
 // config.js
-// FINAL: Configuração da DApp para o Ecossistema Backchain
-// ✅ CORRIGIDO: Evento Delegated com 5 parâmetros
+// ✅ FINAL: Configuração Central da DApp (ABIs, Endereços e Redes)
+// CORRIGIDO: Evento Delegated (5 params) e mappings de Pools
 
 // ============================================================================
-// ENVIRONMENT DETECTION
+// 1. ENVIRONMENT DETECTION
 // ============================================================================
 const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const isProduction = !isDevelopment;
@@ -11,24 +11,25 @@ const isProduction = !isDevelopment;
 console.log(`Environment: ${isDevelopment ? 'DEVELOPMENT' : 'PRODUCTION'}`);
 
 // ============================================================================
-// CONTRACT ADDRESSES (Loaded dynamically)
+// 2. CONTRACT ADDRESSES (Dynamic Loader)
 // ============================================================================
 export const addresses = {};
 
 /**
- * Carrega os endereços do JSON de deploy e mapeia para o objeto addresses.
+ * Carrega os endereços do JSON de deploy.
+ * É vital que o arquivo 'deployment-addresses.json' esteja na raiz do build.
  */
 export async function loadAddresses() {
     try {
         const response = await fetch('./deployment-addresses.json');
         
         if (!response.ok) {
-            throw new Error(`Failed to fetch deployment-addresses.json: ${response.status} ${response.statusText}`);
+            throw new Error(`Failed to fetch deployment-addresses.json: ${response.status}`);
         }
         
         const jsonAddresses = await response.json();
 
-        // Valida endereços essenciais
+        // Validação básica de integridade
         const requiredAddresses = ['bkcToken', 'delegationManager', 'ecosystemManager'];
         const missingAddresses = requiredAddresses.filter(key => !jsonAddresses[key]);
         
@@ -36,7 +37,7 @@ export async function loadAddresses() {
             throw new Error(`Missing required addresses: ${missingAddresses.join(', ')}`);
         }
 
-        // Mapeia endereços
+        // Mapeamento Principal
         addresses.bkcToken = jsonAddresses.bkcToken;
         addresses.delegationManager = jsonAddresses.delegationManager;
         addresses.rewardBoosterNFT = jsonAddresses.rewardBoosterNFT;
@@ -44,7 +45,7 @@ export async function loadAddresses() {
         addresses.decentralizedNotary = jsonAddresses.decentralizedNotary;
         addresses.ecosystemManager = jsonAddresses.ecosystemManager; 
         
-        // Mapeamento de Piscinas AMM
+        // Mapeamento de Piscinas AMM (Store)
         addresses.pool_diamond = jsonAddresses.pool_diamond;
         addresses.pool_platinum = jsonAddresses.pool_platinum;
         addresses.pool_gold = jsonAddresses.pool_gold;
@@ -53,18 +54,19 @@ export async function loadAddresses() {
         addresses.pool_iron = jsonAddresses.pool_iron;
         addresses.pool_crystal = jsonAddresses.pool_crystal;
 
-        // FortunePool renomeado para actionsManager no frontend
+        // FortunePool / ActionsManager
         addresses.actionsManager = jsonAddresses.fortunePool; 
-        addresses.fortunePool = jsonAddresses.fortunePool; // Mantém alias original também
+        addresses.fortunePool = jsonAddresses.fortunePool; 
         
-        // Endereços auxiliares
+        // Endereços Auxiliares
         addresses.bkcDexPoolAddress = jsonAddresses.bkcDexPoolAddress || "#"; 
-        addresses.mainLPPairAddress = jsonAddresses.mainLPPairAddress || "0x...[PLEASE UPDATE AFTER CREATING LP]..."; 
+        addresses.mainLPPairAddress = jsonAddresses.mainLPPairAddress; 
         addresses.miningManager = jsonAddresses.miningManager;
         addresses.oracleWalletAddress = jsonAddresses.oracleWalletAddress;
         addresses.faucet = jsonAddresses.faucet; 
+        addresses.nftLiquidityPoolFactory = jsonAddresses.nftLiquidityPoolFactory;
 
-        console.log("✅ Contract addresses loaded:", addresses);
+        console.log("✅ Contract addresses loaded successfully.");
         return true;
 
     } catch (error) {
@@ -74,31 +76,28 @@ export async function loadAddresses() {
 }
 
 // ============================================================================
-// NETWORK CONFIGURATION (INFURA)
+// 3. NETWORK CONFIGURATION (INFURA)
 // ============================================================================
 
-// Chave da INFURA (Substituindo Alchemy para evitar erro 429)
-const INFURA_KEY = "b5d5edf2b8094bdda25da24a25651af3";
+const INFURA_KEY = "b7abd593f0874499846caf742fb2a615"; // Chave pública dedicada
 
-// 1. WebSocket URL (para listeners e atualizações em tempo real)
+// WebSocket URL (Listeners)
 export const sepoliaWssUrl = `wss://sepolia.infura.io/ws/v3/${INFURA_KEY}`;
 
-// 2. RPC URL (para chamadas de leitura/escrita padrão via HTTP)
+// RPC URL (Leitura/Escrita HTTP)
 export const sepoliaRpcUrl = `https://sepolia.infura.io/v3/${INFURA_KEY}`;
 
 export const sepoliaChainId = 11155111n; // Sepolia ID
 
-// IPFS Gateway
+// IPFS Gateway (Pinata)
 export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/";
 
 // ============================================================================
-// APPLICATION CONSTANTS
+// 4. APPLICATION CONSTANTS
 // ============================================================================
 
-// Faucet amount (100 BKC)
 export const FAUCET_AMOUNT_WEI = 100n * 10n**18n; 
 
-// Booster tiers configuration
 export const boosterTiers = [
     { name: "Diamond", boostBips: 5000, color: "text-cyan-400", img: "https://ipfs.io/ipfs/bafybeign2k73pq5pdicg2v2jdgumavw6kjmc4nremdenzvq27ngtcusv5i", borderColor: "border-cyan-400/50", glowColor: "bg-cyan-500/10" },
     { name: "Platinum", boostBips: 4000, color: "text-gray-300", img: "https://ipfs.io/ipfs/bafybeiag32gp4wssbjbpxjwxewer64fecrtjryhmnhhevgec74p4ltzrau", borderColor: "border-gray-300/50", glowColor: "bg-gray-400/10" },
@@ -110,7 +109,7 @@ export const boosterTiers = [
 ];
 
 // ============================================================================
-// CONTRACT ABIs (AJUSTADOS PARA GLOBAL STAKING)
+// 5. CONTRACT ABIs
 // ============================================================================
 
 export const bkcTokenABI = [
@@ -130,7 +129,6 @@ export const delegationManagerABI = [
     // --- View Functions ---
     "function totalNetworkPStake() view returns (uint256)",
     "function userTotalPStake(address) view returns (uint256)",
-    // Struct atualizada: {amount, unlockTime, lockDuration} (Sem Validator Address)
     "function getDelegationsOf(address _user) view returns (tuple(uint256 amount, uint256 unlockTime, uint256 lockDuration)[])",
     "function pendingRewards(address _user) public view returns (uint256)",
     
@@ -138,16 +136,14 @@ export const delegationManagerABI = [
     "function MIN_LOCK_DURATION() view returns (uint256)",
     "function MAX_LOCK_DURATION() view returns (uint256)",
 
-    // --- Write Functions (Updated Signatures) ---
-    // delegate(amount, duration, boosterId) -> Sem validator address
+    // --- Write Functions ---
     "function delegate(uint256 _totalAmount, uint256 _lockDuration, uint256 _boosterTokenId)",
     "function unstake(uint256 _delegationIndex, uint256 _boosterTokenId)",
     "function forceUnstake(uint256 _delegationIndex, uint256 _boosterTokenId)",
-    // claimReward(boosterId) -> Renomeado de claimDelegatorReward para padronizar ou manter claimDelegatorReward se não mudou nome
     "function claimReward(uint256 _boosterTokenId)",
     
     // --- Events ---
-    // ✅ CORRIGIDO: Adicionado 5º parâmetro 'feeAmount'
+    // ✅ FIXED: 5 Parâmetros para indexação correta
     "event Delegated(address indexed user, uint256 delegationIndex, uint256 amount, uint256 pStakeGenerated, uint256 feeAmount)",
     "event Unstaked(address indexed user, uint256 delegationIndex, uint256 amount, uint256 feePaid)",
     "event RewardClaimed(address indexed user, uint256 amount)"
@@ -174,7 +170,6 @@ export const nftPoolABI = [
     "event NFTSold(address indexed seller, uint256 indexed boostBips, uint256 tokenId, uint256 payout, uint256 taxPaid)"
 ];
 
-// ABI para o FortunePool (ActionsManager)
 export const actionsManagerABI = [ 
     "function participate(uint256 _amount)", 
     "function oracleFeeInWei() view returns (uint256)",
@@ -201,7 +196,6 @@ export const publicSaleABI = [
 ];
 
 export const decentralizedNotaryABI = [
-    // ATUALIZADO: Adicionado feePaid para compatibilidade com Indexer e Contrato
     "event NotarizationEvent(uint256 indexed tokenId, address indexed owner, string indexed documentMetadataHash, uint256 feePaid)",
     "function balanceOf(address owner) view returns (uint256)",
     "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",

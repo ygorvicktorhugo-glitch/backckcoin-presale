@@ -1,18 +1,30 @@
 // pages/FaucetPage.js
+// ✅ VERSÃO FINAL BLINDADA: Anti-Loop, Cache e Proteção contra Erro 429
+
+import { addresses, FAUCET_AMOUNT_WEI } from '../config.js';
+import { State } from '../state.js';
+import { 
+    renderLoading, 
+    renderError, 
+    formatBigNumber, 
+    formatAddress 
+} from '../utils.js';
+import { 
+    safeContractCall, 
+    safeBalanceOf, // ✅ Importante para evitar loop no getBalance
+    loadUserData 
+} from '../modules/data.js';
+import { executeFaucetClaim } from '../modules/transactions.js';
+import { showToast } from '../ui-feedback.js';
 
 const ethers = window.ethers;
 
-import { State } from '../state.js';
-import { addresses, FAUCET_AMOUNT_WEI } from '../config.js';
-import { showToast } from '../ui-feedback.js';
-import { executeFaucetClaim } from '../modules/transactions.js';
-import { formatBigNumber, renderLoading, renderError, renderNoData, formatAddress } from '../utils.js';
-import { safeBalanceOf, safeContractCall } from '../modules/data.js';
-
+// --- Estado Local ---
 let faucetState = {
     ethBalance: null,
     faucetBKCBalance: null,
-    isLoading: false, // Adicionando estado de loading para evitar chamadas múltiplas
+    isLoading: false, 
+    lastFetch: 0 // Cache de tempo
 };
 
 // --- Função Auxiliar: Copiar para Clipboard ---
@@ -23,13 +35,9 @@ function copyToClipboard(text, buttonElement) {
         buttonElement.innerHTML = '<i class="fa-solid fa-check mr-2"></i> Copied!';
         buttonElement.disabled = true;
         setTimeout(() => {
-            if (buttonElement) {
-                // Ensure the button element still exists before updating
-                const buttonToUpdate = document.getElementById(buttonElement.id);
-                if (buttonToUpdate) {
-                    buttonToUpdate.innerHTML = originalHTML;
-                    buttonToUpdate.disabled = false;
-                }
+            if (document.body.contains(buttonElement)) {
+                buttonElement.innerHTML = originalHTML;
+                buttonElement.disabled = false;
             }
         }, 1500);
     }).catch(err => {
@@ -38,16 +46,15 @@ function copyToClipboard(text, buttonElement) {
     });
 }
 
-// --- Função Auxiliar: Renderizar Card de Passo (Genérico) ---
+// --- Função Auxiliar: Renderizar Card de Passo ---
 function renderStepCard({ title, status, icon, contentHTML, actionHTML = '', customClass = '' }) {
-    // Classes de status ajustadas para melhor alinhamento visual
     const statusStyles = {
-        required: { border: 'border-red-500',    bg: 'bg-red-900/30',    text: 'text-red-400',    iconBg: 'bg-red-500/20' },
-        active:   { border: 'border-green-500',   bg: 'bg-green-900/30',   text: 'text-green-400',  iconBg: 'bg-green-500/20' },
-        error:    { border: 'border-amber-500',     bg: 'bg-amber-900/30',    text: 'text-amber-400',    iconBg: 'bg-amber-500/20' },
-        complete: { border: 'border-zinc-700',   bg: 'bg-zinc-800/50',  text: 'text-zinc-400',   iconBg: 'bg-zinc-700/50' }
+        required: { border: 'border-red-500',    bg: 'bg-red-900/30',    text: 'text-red-400',    iconBg: 'bg-red-500/20' },
+        active:   { border: 'border-green-500',   bg: 'bg-green-900/30',   text: 'text-green-400',  iconBg: 'bg-green-500/20' },
+        error:    { border: 'border-amber-500',     bg: 'bg-amber-900/30',    text: 'text-amber-400',    iconBg: 'bg-amber-500/20' },
+        complete: { border: 'border-zinc-700',   bg: 'bg-zinc-800/50',  text: 'text-zinc-400',   iconBg: 'bg-zinc-700/50' }
     };
-    const styles = statusStyles[status] || statusStyles.complete; // Default para 'complete' (cinza)
+    const styles = statusStyles[status] || statusStyles.complete;
 
     return `
         <div class="step-card border ${styles.border}/50 ${styles.bg} rounded-xl shadow-xl hover:shadow-2xl transition-shadow duration-300 mb-6 overflow-hidden ${customClass}">
@@ -65,10 +72,10 @@ function renderStepCard({ title, status, icon, contentHTML, actionHTML = '', cus
     `;
 }
 
-// --- Funções de Componente de Tela ---
+// --- Componentes de Tela ---
 
 function renderWalletInfo(walletAddress, ethBalance) {
-    const ethFormatted = ethBalance ? ethers.formatEther(ethBalance) : '0.00';
+    const ethFormatted = ethBalance !== null ? ethers.formatEther(ethBalance) : '0.00';
     return `
         <div class="bg-sidebar p-4 rounded-xl text-sm mb-6 border border-border-color shadow-lg">
             <p class="text-zinc-400">Your Wallet:</p>
@@ -78,7 +85,6 @@ function renderWalletInfo(walletAddress, ethBalance) {
         </div>
     `;
 }
-
 
 function renderScreen_MissingETH() {
     return `
@@ -112,13 +118,11 @@ function renderScreen_MissingETH() {
     `;
 }
 
-
 function renderScreen_ReadyToClaim() {
-    // FAUCET_AMOUNT_WEI é o valor ajustado de 100 BKC
     const bkcClaimAmountFormatted = formatBigNumber(FAUCET_AMOUNT_WEI);
-    const faucetHasEnoughBKC = faucetState.faucetBKCBalance >= FAUCET_AMOUNT_WEI;
+    const faucetHasEnoughBKC = (faucetState.faucetBKCBalance || 0n) >= FAUCET_AMOUNT_WEI;
 
-    let claimStatus = 'active'; // Default
+    let claimStatus = 'active'; 
     let content = `<p class="text-lg">You are ready to claim ${bkcClaimAmountFormatted.toFixed(2)} $BKC per claim.</p><p class="text-xs text-zinc-400">This action can be performed multiple times to facilitate network testing.</p>`;
     let actionHTML = `
         <button id="claimFaucetBtn" class="w-full font-bold py-3 px-6 rounded-lg text-lg transition-colors shadow-lg hover:shadow-xl bg-green-500 hover:bg-green-600 text-zinc-900">
@@ -175,36 +179,41 @@ async function renderFaucetContent() {
     }
     
     // 2. Verificações de Configuração
-    // Nota: O State.faucetContractPublic é inicializado em wallet.js
     if (!addresses.faucet || addresses.faucet.startsWith('0x...') || !State.faucetContractPublic || !State.bkcTokenContractPublic) {
-        return renderError(container, 'Faucet contract is not configured or instantiated correctly in the dApp.');
+        return container.innerHTML = renderError('Faucet contract is not configured or instantiated correctly in the dApp.');
     }
 
+    // 3. Carregamento dos Dados (Com Cache de Tempo para evitar Loop)
+    const now = Date.now();
+    // Se os dados não existem OU (não está carregando E passou 5s desde a última tentativa)
+    if ((faucetState.ethBalance === null || faucetState.faucetBKCBalance === null) && (!faucetState.isLoading && (now - faucetState.lastFetch > 5000))) {
+        faucetState.isLoading = true;
+        faucetState.lastFetch = now;
+        
+        container.innerHTML = `<div class="max-w-xl mx-auto text-center py-20"><div class="loader inline-block !w-8 !h-8"></div><p class="text-zinc-400 mt-4 text-lg">Loading faucet status...</p></div>`;
+        
+        try {
+            console.log("FAUCET: Fetching data...");
+            
+            // Usamos Promise.all para buscar em paralelo, mas com proteção safeBalanceOf
+            const [ethBal, faucetBal] = await Promise.all([
+                State.provider.getBalance(State.userAddress).catch(() => 0n),
+                safeBalanceOf(State.bkcTokenContractPublic, addresses.faucet)
+            ]);
 
-    // 3. Carregamento dos Dados
-    // Verifica se os dados necessários para o render já foram buscados
-    if (faucetState.ethBalance === null || faucetState.faucetBKCBalance === null) {
-        if (!faucetState.isLoading) {
-            faucetState.isLoading = true;
-            container.innerHTML = `<div class="max-w-xl mx-auto text-center py-20"><div class="loader inline-block !w-8 !h-8"></div><p class="text-zinc-400 mt-4 text-lg">Loading faucet status...</p></div>`;
-            console.log("FAUCET: Starting data fetch...");
-            try {
-                // Usamos a instância pública (State.publicProvider e State.bkcTokenContractPublic) para leitura
-                const [ethBal, faucetBal] = await Promise.all([
-                    State.publicProvider.getBalance(State.userAddress), // Usando publicProvider
-                    safeBalanceOf(State.bkcTokenContractPublic, addresses.faucet) // Usando public contract
-                ]);
-                faucetState.ethBalance = ethBal;
-                faucetState.faucetBKCBalance = faucetBal;
-            } catch (e) {
-                console.error("FAUCET: Critical error during data fetch.", e);
-                return renderError(container, `Could not load faucet data. Check the configured Faucet address on Sepolia.`);
-            }
+            faucetState.ethBalance = ethBal;
+            faucetState.faucetBKCBalance = faucetBal;
             faucetState.isLoading = false;
-        } else {
-            return;
+
+        } catch (e) {
+            console.error("FAUCET: Critical error during data fetch.", e);
+            faucetState.isLoading = false;
+            return container.innerHTML = renderError(`Could not load faucet data. Check connection.`);
         }
     }
+
+    // Se ainda estiver carregando, não desenha nada (o loading já está na tela)
+    if (faucetState.isLoading) return;
 
     // 4. Determinação da Tela (Conectado)
     let screenContent = '';
@@ -235,7 +244,7 @@ async function renderFaucetContent() {
         </div>
     `;
 
-    // 6. Re-adiciona Listeners de Cópia e Claim
+    // 6. Listeners
     const copyBtnElement = document.getElementById('copyAddressBtnStep1');
     if (copyBtnElement && State.userAddress) {
         copyBtnElement.addEventListener('click', (e) => {
@@ -244,50 +253,53 @@ async function renderFaucetContent() {
     }
 
     const claimBtnElement = document.getElementById('claimFaucetBtn');
-    if (claimBtnElement && !claimBtnElement._listenerAttached) {
-         claimBtnElement.addEventListener('click', FaucetPage.claimHandler);
-         claimBtnElement._listenerAttached = true;
+    if (claimBtnElement) {
+         // Remove listener antigo (clonando) para evitar duplicação
+         const newBtn = claimBtnElement.cloneNode(true);
+         claimBtnElement.parentNode.replaceChild(newBtn, claimBtnElement);
+         newBtn.addEventListener('click', FaucetPage.claimHandler);
     }
 }
 
 // --- Objeto Exportado da Página ---
 export const FaucetPage = {
-    async render() {
+    async render(isNewPage) {
         const faucetContainer = document.getElementById('faucet');
         if (!faucetContainer) return;
         
-        // 1. Renderiza o wrapper da página
-        faucetContainer.innerHTML = `<div id="faucet-content-wrapper" class="container mx-auto max-w-7xl py-8"></div>`;
+        // 1. Renderiza o wrapper apenas se não existir
+        if (!faucetContainer.querySelector('#faucet-content-wrapper')) {
+             faucetContainer.innerHTML = `<div id="faucet-content-wrapper" class="container mx-auto max-w-7xl py-8"></div>`;
+        }
 
-        // 2. Reseta o estado apenas se estiver desconectado ou se não houve conexão anterior, 
-        // caso contrário, chamamos renderContent que fará as checagens
-        if (!State.isConnected) {
-            faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false };
+        // 2. Reseta estado se for nova página ou desconectado
+        if (isNewPage || !State.isConnected) {
+            faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false, lastFetch: 0 };
         }
         
-        // 3. Renderiza o conteúdo (que agora fará a busca de dados ou a tela de desconexão)
+        // 3. Renderiza conteúdo
         await renderFaucetContent();
     },
+    
     async claimHandler(e) {
         const claimBtn = e.currentTarget;
         if (claimBtn && !claimBtn.disabled) {
             const success = await executeFaucetClaim(claimBtn);
             if (success) {
-                // Força re-renderização completa após delay para refletir o novo saldo de BKC
                 setTimeout(async () => { 
-                    // Limpa o estado para forçar o recarregamento dos saldos do Faucet
-                    faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false };
-                    await FaucetPage.render(); 
+                    // Força refresh dos dados
+                    faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false, lastFetch: 0 };
+                    await renderFaucetContent(); 
                 }, 2500);
             }
         }
     },
-    update(isConnected) {
+    
+    update() {
         const faucetContainer = document.getElementById('faucet');
-        const isVisible = faucetContainer && !faucetContainer.classList.contains('hidden');
-        if (isVisible) {
-             // Chamado quando o estado da carteira muda (ex: conectou/desconectou)
-             FaucetPage.render();
+        // Só atualiza se a página estiver visível
+        if (faucetContainer && !faucetContainer.classList.contains('hidden')) {
+             renderFaucetContent();
         }
     }
 };

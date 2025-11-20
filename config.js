@@ -1,6 +1,6 @@
 // config.js
 // FINAL: Configuração da DApp para o Ecossistema Backchain
-// ATUALIZADO: Rede Infura + ABI Notário Corrigida
+// ✅ CORRIGIDO: Evento Delegated com 5 parâmetros
 
 // ============================================================================
 // ENVIRONMENT DETECTION
@@ -78,7 +78,7 @@ export async function loadAddresses() {
 // ============================================================================
 
 // Chave da INFURA (Substituindo Alchemy para evitar erro 429)
-const INFURA_KEY = "27ead728568f4f38b80b360d1c4e43b8";
+const INFURA_KEY = "b5d5edf2b8094bdda25da24a25651af3";
 
 // 1. WebSocket URL (para listeners e atualizações em tempo real)
 export const sepoliaWssUrl = `wss://sepolia.infura.io/ws/v3/${INFURA_KEY}`;
@@ -147,7 +147,8 @@ export const delegationManagerABI = [
     "function claimReward(uint256 _boosterTokenId)",
     
     // --- Events ---
-    "event Delegated(address indexed user, uint256 delegationIndex, uint256 amount, uint256 pStakeGenerated)",
+    // ✅ CORRIGIDO: Adicionado 5º parâmetro 'feeAmount'
+    "event Delegated(address indexed user, uint256 delegationIndex, uint256 amount, uint256 pStakeGenerated, uint256 feeAmount)",
     "event Unstaked(address indexed user, uint256 delegationIndex, uint256 amount, uint256 feePaid)",
     "event RewardClaimed(address indexed user, uint256 amount)"
 ];

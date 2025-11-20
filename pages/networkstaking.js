@@ -1,322 +1,451 @@
 // pages/networkstaking.js
+// ✅ VERSÃO FINAL BLINDADA: Cache de Dados + Anti-Loop + UI Otimizada
+
 const ethers = window.ethers;
 
 import { State } from '../state.js';
 import { DOMElements } from '../dom-elements.js';
-import { loadUserData, loadPublicData, safeContractCall } from '../modules/data.js';
-import { executeDelegation } from '../modules/transactions.js'; 
-import { formatBigNumber, formatAddress, formatPStake, renderLoading, renderError, renderNoData } from '../utils.js'; 
-import { openModal, showToast, closeModal } from '../ui-feedback.js';
-import { addresses } from '../config.js';
+import { 
+    formatBigNumber, 
+    formatPStake, 
+    renderLoading, 
+    renderError,
+    renderNoData,
+    renderPaginatedList
+} from '../utils.js';
+import { 
+    loadPublicData, 
+    loadUserData, 
+    calculateUserTotalRewards 
+} from '../modules/data.js';
+import { 
+    executeDelegation, 
+    executeUnstake, 
+    executeForceUnstake, 
+    executeUniversalClaim 
+} from '../modules/transactions.js';
+import { showToast, startCountdownTimers, openModal, closeModal } from '../ui-feedback.js';
 
-// --- CONSTANTES ---
-const ONE_DAY_IN_SECONDS = 86400;
-let EarnPageListenersAttached = false; 
-let initialDataLoaded = false; // Flag para prevenir loop de recarregamento
+// --- Estado Local ---
+let isStakingLoading = false;
+let lastStakingFetch = 0; // Cache de tempo
+let delegationCurrentPage = 1;
 
-function setAmountUtil(elementId, percentage) {
-    const input = document.getElementById(elementId);
-    if (State.currentUserBalance !== null && typeof State.currentUserBalance !== 'undefined' && input) {
-        const percentageBips = BigInt(Math.floor(percentage * 10000));
-        const amount = (State.currentUserBalance * percentageBips) / 10000n;
-        input.value = ethers.formatUnits(amount, 18);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-}
-window.setDelegateAmount = (p) => setAmountUtil('delegateAmountInput', p);
+// =========================================================================
+// 1. RENDERIZAÇÃO VISUAL
+// =========================================================================
 
-// --- LÓGICA DO MODAL DE DELEGAÇÃO (Global) ---
-
-function openDelegateModal() {
-    if (!State.isConnected) return showToast("Please connect your wallet first.", "error");
-    
-    const balanceNum = formatBigNumber(State.currentUserBalance || 0n);
-    const balanceLocaleString = balanceNum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-    const minLockDays = 1; 
-    const maxLockDays = 3650;
-    const defaultLockDays = 3650; // Set default to max lock duration
-
-    // --- Fee Simulation (This would be loaded from EcosystemManager) ---
-    const DELEGATION_FEE_BIPS = 50; // Example: 0.50% fee (50 BIPS)
-    const feePercentage = DELEGATION_FEE_BIPS / 100;
-    
-    const content = `
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-xl font-bold text-white">Delegate to Global Pool</h3>
-            <button class="closeModalBtn text-zinc-400 hover:text-white text-2xl">&times;</button>
-        </div>
-
-        <div class="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 mb-6 flex items-start gap-3">
-            <i class="fa-solid fa-layer-group text-purple-400 mt-1"></i>
-            <div class="text-sm text-zinc-300">
-                <p class="font-semibold text-purple-300 mb-1">🔥 Maximum Rewards, Maximum pStake!</p>
-                <p>Delegate for the maximum period (${maxLockDays} days) for the highest pStake yield.</p>
-            </div>
-        </div>
-
-        <div class="flex justify-between text-sm text-zinc-400 mb-2">
-            <span>Amount to Delegate</span>
-            <span>Balance: <span class="font-bold text-white cursor-pointer hover:text-amber-400" onclick="window.setDelegateAmount(1.0)">${balanceLocaleString} $BKC</span></span>
-        </div>
-        
-        <div class="relative mb-6">
-            <input type="number" id="delegateAmountInput" placeholder="0.00" step="any" min="0" class="form-input w-full bg-zinc-900 border border-zinc-700 rounded p-3 text-white focus:outline-none focus:border-amber-500 text-lg font-mono">
-            <div class="absolute right-2 top-2 flex gap-1">
-                <button class="bg-zinc-700 hover:bg-zinc-600 text-xs px-2 py-1 rounded transition-colors set-delegate-perc" data-perc="25">25%</button>
-                <button class="bg-zinc-700 hover:bg-zinc-600 text-xs px-2 py-1 rounded transition-colors set-delegate-perc" data-perc="50">50%</button>
-                <button class="bg-zinc-700 hover:bg-zinc-600 text-xs px-2 py-1 rounded transition-colors set-delegate-perc" data-perc="100">Max</button>
-            </div>
-        </div>
-
-        <div class="mb-4">
-            <label for="delegateDurationSlider" class="flex justify-between text-sm font-medium text-zinc-300 mb-2">
-                <span>Lock Duration</span>
-                <span id="delegateDurationDisplay" class="font-bold text-amber-400">${defaultLockDays} days</span>
-            </label>
-            <input type="range" id="delegateDurationSlider" min="${minLockDays}" max="${maxLockDays}" value="${defaultLockDays}" class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
-            <div class="flex justify-between text-xs text-zinc-500 mt-2">
-                <span>1 day</span>
-                <span class="text-amber-500/70">Longer lock = More pStake = More Rewards</span>
-                <span>10 years</span>
-            </div>
-             <p id="durationWarning" class="text-xs text-red-400 bg-red-900/10 border border-red-400/30 p-2 rounded-md mt-3 hidden">
-                <i class="fa-solid fa-triangle-exclamation mr-1"></i> 
-                <strong>Warning:</strong> Reducing the lock time will drastically lower your <strong>pStake</strong>, resulting in <strong>significantly smaller rewards</strong>.
-             </p>
-        </div>
-
-        <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 space-y-2 text-sm mb-6">
-            <div class="flex justify-between"><span class="text-zinc-400">Delegated Amount (Gross):</span><span id="delegateGrossAmount" class="font-mono text-white">0.0000 $BKC</span></div>
-            <div class="flex justify-between border-t border-zinc-700 pt-2 text-yellow-400/80">
-                <span class="text-zinc-400">Staking Fee (${feePercentage}%):</span>
-                <span id="delegateFeeAmount" class="font-mono">0.0000 $BKC</span>
-            </div>
-            <div class="flex justify-between border-t border-zinc-700 pt-2"><span class="text-zinc-400">Net Staked Amount:</span><span id="delegateNetAmount" class="font-mono text-white">0.0000 $BKC</span></div>
-             <div class="flex justify-between items-center border-t border-zinc-700 pt-2">
-                <span class="text-zinc-400">Estimated pStake Power:</span>
-                <span id="delegateEstimatedPStake" class="font-bold text-xl text-purple-400 font-mono">0</span>
-            </div>
-            <p class="text-xs text-zinc-500 text-right mt-1">pStake determines your share of block rewards.</p>
-        </div>
-
-        <button id="confirmDelegateBtn" class="w-full bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-4 rounded-lg transition-all btn-disabled shadow-lg hover:shadow-amber-500/20" disabled>
-            Confirm Delegation
-        </button>
-    `;
-    openModal(content);
-
-    const amountInput = document.getElementById('delegateAmountInput');
-    const durationSlider = document.getElementById('delegateDurationSlider');
-    const durationDisplay = document.getElementById('delegateDurationDisplay');
-    const grossAmountEl = document.getElementById('delegateGrossAmount');
-    const feeAmountEl = document.getElementById('delegateFeeAmount');
-    const netAmountEl = document.getElementById('delegateNetAmount');
-    const pStakeEl = document.getElementById('delegateEstimatedPStake');
-    const confirmBtn = document.getElementById('confirmDelegateBtn');
-    const durationWarning = document.getElementById('durationWarning');
-
-    function updateDelegatePreview() {
-        const amountStr = amountInput.value || "0";
-        const durationDays = parseInt(durationSlider.value, 10);
-        let amount = 0n; // Gross Amount in Wei
-        try {
-            amount = ethers.parseUnits(amountStr, 18);
-            if (amount < 0n) amount = 0n;
-        } catch { amount = 0n; }
-        
-        const balanceBigInt = State.currentUserBalance || 0n;
-        
-        // --- FEE CALCULATION ---
-        const feeAmountWei = (amount * BigInt(DELEGATION_FEE_BIPS)) / 10000n;
-        const netAmountWei = amount - feeAmountWei;
-        
-        if (amount > 0n && amount <= balanceBigInt) {
-            confirmBtn.disabled = false;
-            confirmBtn.classList.remove('btn-disabled', 'opacity-50', 'cursor-not-allowed');
-        } else {
-            confirmBtn.disabled = true;
-            confirmBtn.classList.add('btn-disabled', 'opacity-50', 'cursor-not-allowed');
-        }
-        
-        if (amount > balanceBigInt) amountInput.classList.add('border-red-500');
-        else amountInput.classList.remove('border-red-500');
-
-        // --- UI UPDATES ---
-        durationDisplay.textContent = `${durationDays} days`;
-        
-        // Warning logic
-        if (durationDays < maxLockDays) {
-            durationWarning.classList.remove('hidden');
-        } else {
-            durationWarning.classList.add('hidden');
-        }
-        
-        grossAmountEl.textContent = `${formatBigNumber(amount).toFixed(4)} $BKC`;
-        feeAmountEl.textContent = `${formatBigNumber(feeAmountWei).toFixed(4)} $BKC`;
-        netAmountEl.textContent = `${formatBigNumber(netAmountWei).toFixed(4)} $BKC`;
-
-
-        // pStake = (Net Amount * Duration) / 10^18 
-        const pStake = (netAmountWei * BigInt(durationDays)) / (10n ** 18n);
-        pStakeEl.textContent = formatPStake(pStake);
-    }
-
-    amountInput.addEventListener('input', updateDelegatePreview);
-    durationSlider.addEventListener('input', updateDelegatePreview);
-    
-    document.querySelectorAll('.set-delegate-perc').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const perc = parseInt(btn.dataset.perc, 10);
-            const balanceBigInt = State.currentUserBalance || 0n;
-            const newAmount = (balanceBigInt * BigInt(perc)) / 100n;
-            amountInput.value = ethers.formatUnits(newAmount, 18);
-            updateDelegatePreview();
-        });
-    });
-
-    confirmBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const amountStr = amountInput.value;
-        const durationDays = durationSlider.value;
-        
-        if (!amountStr || parseFloat(amountStr) <= 0) return showToast('Invalid amount.', "error");
-        
-        // Use the gross amount for the transaction call
-        const totalAmount = ethers.parseEther(amountStr);
-        const durationSeconds = parseInt(durationDays) * ONE_DAY_IN_SECONDS;
-        
-        const originalText = confirmBtn.innerHTML;
-        confirmBtn.innerHTML = '<div class="loader inline-block mr-2"></div> Processing...';
-        confirmBtn.disabled = true;
-
-        const success = await executeDelegation(totalAmount, durationSeconds, 0, confirmBtn); 
-        
-        if (success) {
-            closeModal(); 
-            await loadUserData(); 
-            // showToast removed here because executeDelegation already displays it.
-            await EarnPage.render(true);
-        } else {
-            confirmBtn.innerHTML = originalText;
-            confirmBtn.disabled = false;
-        }
-    });
-    updateDelegatePreview();
-}
-
-// --- RENDERIZAÇÃO ---
-
-function renderStakingOverview() {
-    const container = DOMElements.earn.querySelector('#staking-overview-container');
+function renderEarnLayout() {
+    const container = document.getElementById('mine');
     if (!container) return;
     
-    const totalStaked = State.totalNetworkPStake || 0n;
-    const myPStake = State.userTotalPStake || 0n;
-    const myShare = totalStaked > 0n ? (Number(myPStake * 10000n / totalStaked) / 100).toFixed(4) : "0.00";
+    // Se já existe o conteúdo principal, não recria para evitar piscar
+    if (container.querySelector('#earn-main-content')) return;
 
     container.innerHTML = `
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="bg-sidebar border border-border-color rounded-xl p-6 relative overflow-hidden">
-                 <div class="absolute top-0 right-0 p-4 opacity-10">
-                    <i class="fa-solid fa-globe text-6xl text-purple-500"></i>
-                 </div>
-                 <p class="text-zinc-400 text-sm">Total Network pStake</p>
-                 <p class="text-3xl font-bold text-white mt-1">${formatPStake(totalStaked)}</p>
-                 <p class="text-xs text-zinc-500 mt-2">Global consensus power</p>
-            </div>
-
-            <div class="bg-sidebar border border-border-color rounded-xl p-6 relative overflow-hidden">
-                 <div class="absolute top-0 right-0 p-4 opacity-10">
-                    <i class="fa-solid fa-user-astronaut text-6xl text-amber-500"></i>
-                 </div>
-                 <p class="text-zinc-400 text-sm">Your pStake Share</p>
-                 <p class="text-3xl font-bold text-amber-400 mt-1">${myShare}%</p>
-                 <p class="text-xs text-zinc-500 mt-2">Of total block rewards</p>
-            </div>
-        </div>
-
-        <div class="bg-sidebar border border-border-color rounded-xl p-8 text-center max-w-3xl mx-auto">
-            <div class="inline-block p-4 bg-purple-500/10 rounded-full mb-6">
-                <i class="fa-solid fa-layer-group text-5xl text-purple-400"></i>
-            </div>
-            <h2 class="text-2xl font-bold text-white mb-3">Start Mining (Delegation)</h2>
-            <p class="text-zinc-400 mb-8">
-                Delegate your $BKC to the Global Consensus Pool to earn passive rewards. 
-                <br>Lock your tokens for longer periods to increase your <strong>pStake</strong> (Protocol Stake) and earn a larger share of the ecosystem fees.
-            </p>
+        <div id="earn-main-content" class="container mx-auto max-w-7xl py-8 px-4">
             
-            ${!State.isConnected ? 
-                `<button onclick="window.openConnectModal()" class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-8 rounded-lg text-lg transition-all shadow-lg hover:shadow-amber-500/20">
-                    <i class="fa-solid fa-plug mr-2"></i> Connect Wallet to Stake
-                </button>` :
-                `<button id="startStakingBtn" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold py-4 px-10 rounded-lg text-xl transition-all shadow-xl hover:shadow-purple-500/30 transform hover:-translate-y-1">
-                    <i class="fa-solid fa-coins mr-2"></i> Stake Now
-                </button>`
-            }
+            <div class="mb-10 text-center md:text-left">
+                <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 mb-2">
+                    Network Staking
+                </h1>
+                <p class="text-zinc-400 text-lg max-w-2xl">
+                    Delegate your $BKC to secure the network and earn passive rewards. 
+                    Longer lock periods generate more <span class="text-purple-400 font-bold">pStake</span> and higher APY.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                <div class="bg-zinc-900/50 border border-zinc-700 p-6 rounded-2xl shadow-lg relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <i class="fa-solid fa-globe text-6xl text-purple-500"></i>
+                    </div>
+                    <p class="text-zinc-400 text-sm font-bold uppercase tracking-wider">Total Network Staked</p>
+                    <p class="text-3xl font-mono text-white mt-2" id="earn-total-network-pstake">--</p>
+                </div>
+
+                <div class="bg-zinc-900/50 border border-zinc-700 p-6 rounded-2xl shadow-lg relative overflow-hidden group">
+                     <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <i class="fa-solid fa-user-shield text-6xl text-blue-500"></i>
+                    </div>
+                    <p class="text-zinc-400 text-sm font-bold uppercase tracking-wider">My Total pStake</p>
+                    <p class="text-3xl font-mono text-white mt-2" id="earn-my-pstake">--</p>
+                </div>
+
+                <div class="bg-zinc-900/50 border border-zinc-700 p-6 rounded-2xl shadow-lg relative overflow-hidden group">
+                     <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <i class="fa-solid fa-gift text-6xl text-amber-500"></i>
+                    </div>
+                    <p class="text-zinc-400 text-sm font-bold uppercase tracking-wider">Claimable Rewards</p>
+                    <div class="flex items-center gap-3 mt-2">
+                        <p class="text-3xl font-mono text-amber-400" id="earn-my-rewards">--</p>
+                        <button id="earn-claim-btn" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-bold py-1.5 px-3 rounded-lg border border-amber-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Claim
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                <div class="lg:col-span-5">
+                    <div class="bg-sidebar border border-border-color rounded-2xl p-6 shadow-xl sticky top-24">
+                        <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                            <i class="fa-solid fa-plus-circle text-purple-400"></i> New Delegation
+                        </h2>
+
+                        <div class="space-y-6">
+                            <div>
+                                <label class="block text-sm font-medium text-zinc-300 mb-2">Amount to Stake ($BKC)</label>
+                                <div class="relative">
+                                    <input type="number" id="staking-amount-input" placeholder="0.00" class="w-full bg-zinc-900 border border-zinc-700 rounded-xl p-4 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors font-mono">
+                                    <div class="absolute right-2 top-2 flex gap-1">
+                                        <button class="stake-perc-btn text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white px-2 py-2 rounded transition-colors" data-perc="25">25%</button>
+                                        <button class="stake-perc-btn text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white px-2 py-2 rounded transition-colors" data-perc="50">50%</button>
+                                        <button class="stake-perc-btn text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white px-2 py-2 rounded transition-colors" data-perc="100">Max</button>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-zinc-500 mt-2 text-right">Available: <span id="staking-balance-display" class="text-white">--</span> $BKC</p>
+                            </div>
+
+                            <div>
+                                <label class="flex justify-between text-sm font-medium text-zinc-300 mb-2">
+                                    <span>Lock Duration</span>
+                                    <span id="staking-duration-display" class="text-purple-400 font-bold">365 days</span>
+                                </label>
+                                <input type="range" id="staking-duration-slider" min="1" max="3650" value="365" class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-500">
+                                <div class="flex justify-between text-xs text-zinc-500 mt-2">
+                                    <span>1 Day</span>
+                                    <span>10 Years</span>
+                                </div>
+                            </div>
+
+                            <div class="bg-zinc-900/50 rounded-xl p-4 space-y-2 border border-zinc-800">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-zinc-400">Staking Fee (0.5%):</span>
+                                    <span class="text-white font-mono" id="staking-fee-display">0.00</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-zinc-400">Net Staked:</span>
+                                    <span class="text-white font-mono" id="staking-net-display">0.00</span>
+                                </div>
+                                <div class="border-t border-zinc-800 pt-2 flex justify-between items-center">
+                                    <span class="text-zinc-400 text-sm">Projected pStake:</span>
+                                    <span class="text-purple-400 font-bold text-lg font-mono" id="staking-pstake-display">0</span>
+                                </div>
+                            </div>
+
+                            <button id="confirm-stake-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:transform-none">
+                                Confirm Delegation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-7">
+                    <div class="bg-sidebar border border-border-color rounded-2xl p-6 shadow-xl min-h-[500px]">
+                        <h2 class="text-xl font-bold text-white mb-6 flex items-center justify-between">
+                            <span class="flex items-center gap-2"><i class="fa-solid fa-list-ul text-zinc-400"></i> Active Delegations</span>
+                            <button id="refresh-delegations-btn" class="text-sm text-blue-400 hover:text-blue-300"><i class="fa-solid fa-rotate"></i></button>
+                        </h2>
+                        
+                        <div id="my-delegations-container" class="space-y-4">
+                             </div>
+                    </div>
+                </div>
+
+            </div>
         </div>
     `;
-}
-
-function setupEarnPageListeners() {
-    if (EarnPageListenersAttached) return;
     
-    DOMElements.earn.addEventListener('click', async (e) => {
-        const target = e.target.closest('button');
-        if (!target) return;
-        
-        if (target.id === 'startStakingBtn') {
-            e.preventDefault();
-            openDelegateModal();
-        }
-    });
-
-    EarnPageListenersAttached = true;
+    setupStakingListeners();
 }
 
-// --- OBJETO PRINCIPAL DA PÁGINA (EarnPage) ---
+// =========================================================================
+// 2. LÓGICA DE DADOS (SAFE)
+// =========================================================================
+
+async function updateStakingData(forceRefresh = false) {
+    if (!State.isConnected) {
+        resetStakingUI();
+        return;
+    }
+
+    const now = Date.now();
+    // 🕒 Cache de 1 minuto para dados gerais, a menos que forçado
+    // O loadUserData já tem sua própria proteção interna, mas essa protege a lógica de UI
+    if (!forceRefresh && isStakingLoading && (now - lastStakingFetch < 60000)) return;
+    
+    isStakingLoading = true;
+    lastStakingFetch = now;
+
+    try {
+        // 1. Dados Públicos
+        if (!State.totalNetworkPStake || State.totalNetworkPStake === 0n) {
+            await loadPublicData(); 
+        }
+        const netPStakeEl = document.getElementById('earn-total-network-pstake');
+        if(netPStakeEl) netPStakeEl.textContent = formatPStake(State.totalNetworkPStake);
+
+        // 2. Dados do Usuário
+        if (State.currentUserBalance === 0n) await loadUserData(); 
+        
+        const balDisplay = document.getElementById('staking-balance-display');
+        const myPStakeDisplay = document.getElementById('earn-my-pstake');
+        
+        if(balDisplay) balDisplay.textContent = formatBigNumber(State.currentUserBalance).toFixed(2);
+        if(myPStakeDisplay) myPStakeDisplay.textContent = formatPStake(State.userTotalPStake);
+
+        // 3. Recompensas (Claimable)
+        const { stakingRewards, minerRewards } = await calculateUserTotalRewards();
+        const totalRewards = stakingRewards + minerRewards;
+        
+        const rewardsEl = document.getElementById('earn-my-rewards');
+        const claimBtn = document.getElementById('earn-claim-btn');
+        
+        if (rewardsEl) rewardsEl.textContent = `${formatBigNumber(totalRewards).toFixed(4)}`;
+        
+        if (claimBtn) {
+            if (totalRewards > 0n) {
+                claimBtn.disabled = false;
+                claimBtn.onclick = () => handleClaimRewards(stakingRewards, minerRewards, claimBtn);
+            } else {
+                claimBtn.disabled = true;
+            }
+        }
+
+        // 4. Lista de Delegações
+        renderDelegationsList();
+
+    } catch (error) {
+        console.error("Staking Data Error:", error);
+    } finally {
+        isStakingLoading = false;
+    }
+}
+
+function resetStakingUI() {
+    const setTxt = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt; };
+    setTxt('earn-total-network-pstake', '--');
+    setTxt('earn-my-pstake', '--');
+    setTxt('earn-my-rewards', '--');
+    setTxt('staking-balance-display', '--');
+    
+    const container = document.getElementById('my-delegations-container');
+    if(container) container.innerHTML = renderNoData("Connect wallet to view delegations.");
+}
+
+// =========================================================================
+// 3. LISTA DE DELEGAÇÕES
+// =========================================================================
+
+function renderDelegationsList() {
+    const container = document.getElementById('my-delegations-container');
+    if (!container) return;
+
+    const delegations = State.userDelegations || [];
+
+    if (delegations.length === 0) {
+        container.innerHTML = renderNoData("You have no active delegations.");
+        return;
+    }
+
+    renderPaginatedList(
+        delegations, 
+        container, 
+        (d) => {
+            const amountFormatted = formatBigNumber(d.amount).toFixed(2);
+            const pStake = calculatePStake(d.amount, d.lockDuration);
+            
+            const unlockTimestamp = Number(d.unlockTime);
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            const isLocked = unlockTimestamp > nowSeconds;
+            const unlockDate = new Date(unlockTimestamp * 1000).toLocaleDateString();
+
+            return `
+                <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 delegation-card">
+                    <div class="text-center sm:text-left">
+                        <p class="text-white font-bold text-lg">${amountFormatted} <span class="text-zinc-500 text-sm">$BKC</span></p>
+                        <p class="text-purple-400 text-sm font-mono">${formatPStake(pStake)} pStake</p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <div class="countdown-timer text-sm font-mono text-zinc-300 bg-zinc-800 px-3 py-1 rounded-md" data-unlock-time="${unlockTimestamp}" data-index="${d.index}">
+                            ${isLocked ? 'Calculating...' : '<span class="text-green-400">Unlocked</span>'}
+                        </div>
+                        <p class="text-xs text-zinc-600 mt-1">Unlock: ${unlockDate}</p>
+                    </div>
+
+                    <div class="flex gap-2">
+                        ${isLocked ? 
+                            `<button class="bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/30 p-2 rounded-lg transition-colors text-xs force-unstake-btn" data-index="${d.index}" title="Force Unstake (Penalty Applies)">
+                                <i class="fa-solid fa-lock"></i> Force
+                            </button>` : ''
+                        }
+                        <button class="${isLocked ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 text-zinc-900'} font-bold py-2 px-4 rounded-lg text-sm transition-colors unstake-btn" 
+                                data-index="${d.index}" ${isLocked ? 'disabled' : ''}>
+                            Unstake
+                        </button>
+                    </div>
+                </div>
+            `;
+        },
+        5, // Itens por página
+        delegationCurrentPage,
+        (newPage) => { delegationCurrentPage = newPage; renderDelegationsList(); }
+    );
+
+    const timers = container.querySelectorAll('.countdown-timer');
+    if (timers.length > 0) startCountdownTimers(Array.from(timers));
+
+    container.querySelectorAll('.unstake-btn').forEach(btn => {
+        btn.addEventListener('click', () => handleUnstake(btn.dataset.index, false));
+    });
+    container.querySelectorAll('.force-unstake-btn').forEach(btn => {
+        btn.addEventListener('click', () => handleUnstake(btn.dataset.index, true));
+    });
+}
+
+function calculatePStake(amount, duration) {
+    try {
+        const amountBig = BigInt(amount);
+        const durationBig = BigInt(duration);
+        const daySeconds = 86400n;
+        const divisor = 10n**18n;
+        return (amountBig * (durationBig / daySeconds)) / divisor;
+    } catch { return 0n; }
+}
+
+// =========================================================================
+// 4. INTERAÇÃO (LISTENERS & HANDLERS)
+// =========================================================================
+
+function setupStakingListeners() {
+    const amountInput = document.getElementById('staking-amount-input');
+    const durationSlider = document.getElementById('staking-duration-slider');
+    const confirmBtn = document.getElementById('confirm-stake-btn');
+    const refreshBtn = document.getElementById('refresh-delegations-btn');
+
+    const updateSimulation = () => {
+        const amountVal = amountInput.value;
+        const durationVal = durationSlider.value;
+        document.getElementById('staking-duration-display').textContent = `${durationVal} days`;
+
+        if (!amountVal || amountVal <= 0) {
+            document.getElementById('staking-fee-display').textContent = "0.00";
+            document.getElementById('staking-net-display').textContent = "0.00";
+            document.getElementById('staking-pstake-display').textContent = "0";
+            confirmBtn.disabled = true;
+            return;
+        }
+
+        try {
+            const amountWei = ethers.parseUnits(amountVal, 18);
+            // Simulação de Fee (0.5%)
+            const feeWei = (amountWei * 50n) / 10000n;
+            const netWei = amountWei - feeWei;
+            
+            // Simulação de pStake
+            const pStake = calculatePStake(netWei, durationVal * 86400);
+
+            document.getElementById('staking-fee-display').textContent = formatBigNumber(feeWei).toFixed(4);
+            document.getElementById('staking-net-display').textContent = formatBigNumber(netWei).toFixed(4);
+            document.getElementById('staking-pstake-display').textContent = formatPStake(pStake);
+            
+            if (amountWei > State.currentUserBalance) {
+                confirmBtn.disabled = true;
+                amountInput.classList.add('border-red-500');
+            } else {
+                confirmBtn.disabled = false;
+                amountInput.classList.remove('border-red-500');
+            }
+        } catch (e) {
+            confirmBtn.disabled = true;
+        }
+    };
+
+    if(amountInput && durationSlider) {
+        amountInput.addEventListener('input', updateSimulation);
+        durationSlider.addEventListener('input', updateSimulation);
+        
+        document.querySelectorAll('.stake-perc-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const perc = parseInt(btn.dataset.perc);
+                const bal = State.currentUserBalance || 0n;
+                const amount = (bal * BigInt(perc)) / 100n;
+                amountInput.value = ethers.formatUnits(amount, 18);
+                updateSimulation();
+            });
+        });
+
+        confirmBtn.addEventListener('click', async () => {
+            const amountWei = ethers.parseUnits(amountInput.value, 18);
+            const durationSec = parseInt(durationSlider.value) * 86400;
+            
+            confirmBtn.innerHTML = `<div class="loader inline-block mr-2"></div> Sending...`;
+            confirmBtn.disabled = true;
+
+            const success = await executeDelegation(amountWei, durationSec, 0, confirmBtn);
+            
+            if (success) {
+                amountInput.value = "";
+                updateSimulation();
+                updateStakingData(true); 
+            } else {
+                confirmBtn.innerHTML = "Confirm Delegation";
+                confirmBtn.disabled = false;
+            }
+        });
+    }
+
+    if(refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            const icon = refreshBtn.querySelector('i');
+            icon.classList.add('fa-spin');
+            updateStakingData(true).then(() => icon.classList.remove('fa-spin'));
+        });
+    }
+}
+
+async function handleUnstake(index, isForce) {
+    const success = isForce 
+        ? await executeForceUnstake(Number(index))
+        : await executeUnstake(Number(index));
+    
+    if (success) updateStakingData(true);
+}
+
+async function handleClaimRewards(stakingRewards, minerRewards, btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<div class="loader inline-block"></div>`;
+    const success = await executeUniversalClaim(stakingRewards, minerRewards, btn);
+    if (success) {
+        showToast("Rewards claimed!", "success");
+        updateStakingData(true);
+    } else {
+        btn.disabled = false;
+        btn.innerHTML = "Claim";
+    }
+}
+
+// =========================================================================
+// 5. EXPORTAÇÃO
+// =========================================================================
 
 export const EarnPage = {
-    async render(isUpdate = false) {
-        console.log(`EarnPage.render (isUpdate: ${isUpdate})`);
+    async render(isNewPage) {
+        renderEarnLayout();
         
-        // Renderiza a estrutura básica e o loading
-        DOMElements.earn.innerHTML = `
-            <div class="container max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-                <div class="flex items-center gap-4 mb-8">
-                    <h1 class="text-3xl font-bold text-white">Staking Pool</h1>
-                    <span class="bg-green-500/10 text-green-400 text-xs px-2 py-1 rounded border border-green-500/20">Live</span>
-                </div>
-                
-                <div id="staking-overview-container">
-                     ${renderLoading()}
-                </div>
-            </div>
-        `;
-
-        setupEarnPageListeners();
-        
-        try {
-            // CORREÇÃO CRÍTICA: A busca de dados pesada deve ocorrer APENAS na primeira carga.
-            // O isUpdate: false persistente está quebrando o fluxo, por isso usamos initialDataLoaded.
-            if (!initialDataLoaded) { 
-                await Promise.all([
-                    loadPublicData(),
-                    State.isConnected ? loadUserData() : Promise.resolve()
-                ]);
-                initialDataLoaded = true; // Marca como carregado
-            }
-            
-            // Se estiver conectado, sempre faz uma atualização leve para garantir que os saldos estejam atualizados.
-            // O loadUserData precisa ser otimizado internamente (em data.js) para não refazer buscas caras.
-            else if (State.isConnected) {
-                await loadUserData();
-            }
-            
-            renderStakingOverview();
-        } catch (e) {
-            console.error("Error loading EarnPage data", e);
-            const container = DOMElements.earn.querySelector('#staking-overview-container');
-            if(container) container.innerHTML = renderError("Failed to load staking data.");
+        if (State.isConnected) {
+            // Se for navegação nova, carrega. Se não, respeita o cache
+            await updateStakingData(isNewPage); 
+        } else {
+            resetStakingUI();
         }
+    },
+    
+    update() {
+        // Chamado pelo State Observer
+        updateStakingData();
     }
 };

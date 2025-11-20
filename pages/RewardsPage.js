@@ -1,4 +1,5 @@
 // pages/RewardsPage.js
+// ✅ FINAL VERSION: Anti-Loop Protection + Efficient Rendering
 
 const ethers = window.ethers;
 
@@ -18,6 +19,10 @@ import {
     renderError 
 } from '../utils.js';
 
+// --- Local State for Anti-Loop ---
+let lastRewardsFetch = 0;
+let isRewardsLoading = false;
+
 // --- FUNÇÕES DE RENDERIZAÇÃO PRINCIPAL ---
 
 /**
@@ -31,12 +36,14 @@ async function renderClaimPanel() {
 
     if (!State.isConnected) {
         rewardsPanel.classList.add('hidden');
+        el.innerHTML = renderNoData("Connect your wallet to view rewards.");
         return;
     }
     
     rewardsPanel.classList.remove('hidden');
     
-    renderLoading(el); 
+    // Only show loading if data is likely stale or missing
+    if(!State.userTotalPStake) el.innerHTML = renderLoading(); 
 
     try {
         // 1. Calcular Detalhes da Reivindicação (Net/Fee)
@@ -115,56 +122,93 @@ async function renderClaimPanel() {
         `;
 
         // Adicionar listener de Claim
-        document.getElementById('claimAllRewardsBtn')?.addEventListener('click', async (e) => {
-            const btn = e.currentTarget;
-            const { stakingRewards, minerRewards } = totalGrossRewards;
-            const success = await executeUniversalClaim(stakingRewards, minerRewards, btn);
-            if (success) {
-                await RewardsPage.render(true);
-            }
-        });
+        const claimBtn = document.getElementById('claimAllRewardsBtn');
+        if (claimBtn) {
+             // Remove old listener (clone method)
+             const newBtn = claimBtn.cloneNode(true);
+             claimBtn.parentNode.replaceChild(newBtn, claimBtn);
+             
+             newBtn.addEventListener('click', async (e) => {
+                const btn = e.currentTarget;
+                const { stakingRewards, minerRewards } = totalGrossRewards;
+                const success = await executeUniversalClaim(stakingRewards, minerRewards, btn);
+                if (success) {
+                    // Force refresh ignoring cache
+                    lastRewardsFetch = 0; 
+                    await RewardsPage.render(true);
+                }
+            });
+        }
 
     } catch (error) {
         console.error("Error rendering rewards panel:", error);
-        renderError(el, "Failed to load rewards data.");
+        el.innerHTML = renderError("Failed to load rewards data. Please try again.");
     }
 }
 
 
 export const RewardsPage = {
-    hasInitializedListeners: false, 
-
-    async render(isUpdate = false) {
+    async render(isNewPage) {
         const contentWrapper = document.getElementById('rewards');
         if (!contentWrapper) return;
         
-        contentWrapper.innerHTML = `
-            <h1 class="text-2xl md:text-3xl font-bold mb-8">My Rewards Overview</h1>
+        // 1. Render Layout (if needed)
+        if (contentWrapper.innerHTML.trim() === '' || isNewPage) {
+            contentWrapper.innerHTML = `
+                <h1 class="text-2xl md:text-3xl font-bold mb-8">My Rewards Overview</h1>
 
-            <div id="claimable-rewards-panel" class="mb-10 p-1 bg-gradient-to-br from-amber-500/20 to-purple-500/20 rounded-2xl">
-                <div class="bg-sidebar border border-border-color rounded-xl p-6 md:p-8 shadow-2xl">
-                    <h2 class="text-xl font-bold mb-6 text-amber-300 flex items-center gap-2">
-                        <i class="fa-solid fa-sack-dollar"></i> Available Rewards
-                    </h2>
-                    <div id="rewards-details-content">
-                        ${State.isConnected ? renderLoading() : renderNoData("Connect your wallet to view rewards.")}
+                <div id="claimable-rewards-panel" class="mb-10 p-1 bg-gradient-to-br from-amber-500/20 to-purple-500/20 rounded-2xl">
+                    <div class="bg-sidebar border border-border-color rounded-xl p-6 md:p-8 shadow-2xl">
+                        <h2 class="text-xl font-bold mb-6 text-amber-300 flex items-center gap-2">
+                            <i class="fa-solid fa-sack-dollar"></i> Available Rewards
+                        </h2>
+                        <div id="rewards-details-content">
+                            ${renderLoading()}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="opacity-70 hover:opacity-100 transition-opacity">
-                <h2 class="text-lg font-bold mb-4 text-zinc-400">Legacy Features</h2>
-                <div id="certificates-list-container" class="p-6 bg-sidebar/30 border border-dashed border-zinc-700 rounded-xl text-center">
-                    <i class="fa-solid fa-clock-rotate-left text-3xl text-zinc-600 mb-3"></i>
-                    <h3 class="text-base font-semibold text-zinc-500">Vesting Certificates (Deprecated)</h3>
-                    <p class="text-sm text-zinc-600 mt-1">This feature has been consolidated into the Global Staking Pool.</p>
+                <div class="opacity-70 hover:opacity-100 transition-opacity">
+                    <h2 class="text-lg font-bold mb-4 text-zinc-400">Legacy Features</h2>
+                    <div id="certificates-list-container" class="p-6 bg-sidebar/30 border border-dashed border-zinc-700 rounded-xl text-center">
+                        <i class="fa-solid fa-clock-rotate-left text-3xl text-zinc-600 mb-3"></i>
+                        <h3 class="text-base font-semibold text-zinc-500">Vesting Certificates (Deprecated)</h3>
+                        <p class="text-sm text-zinc-600 mt-1">This feature has been consolidated into the Global Staking Pool.</p>
+                    </div>
                 </div>
-            </div>
-        `;
-
-        if (State.isConnected) {
-            await loadUserData(); 
-            await renderClaimPanel();
+            `;
         }
+
+        // 2. Load Data (Throttled)
+        if (State.isConnected) {
+            const now = Date.now();
+            // Anti-Loop: Only fetch if new page, forced update, or cache expired (> 60s)
+            if (isNewPage || (!isRewardsLoading && (now - lastRewardsFetch > 60000))) {
+                isRewardsLoading = true;
+                lastRewardsFetch = now;
+                
+                try {
+                    // loadUserData handles its own throttling internally in data.js
+                    await loadUserData(); 
+                    await renderClaimPanel();
+                } catch (e) {
+                    console.error("Rewards Page Load Error:", e);
+                } finally {
+                    isRewardsLoading = false;
+                }
+            } else {
+                // If cached, just ensure panel is rendered with existing State data
+                 await renderClaimPanel();
+            }
+        } else {
+            // Disconnected state
+            const el = document.getElementById('rewards-details-content');
+            if(el) el.innerHTML = renderNoData("Connect your wallet to view rewards.");
+        }
+    },
+    
+    update() {
+        // Called by wallet state changes
+        RewardsPage.render(true);
     }
 };

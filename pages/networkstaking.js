@@ -1,5 +1,5 @@
 // pages/networkstaking.js
-// ✅ VERSÃO REDESENHADA: Foco em pStake Máximo (UX "Diamond Hands")
+// ✅ VERSÃO FINAL V4.0: Staking Estratégico (Modal) + Update Otimizado
 
 const ethers = window.ethers;
 
@@ -16,7 +16,8 @@ import {
 import { 
     loadPublicData, 
     loadUserData, 
-    calculateUserTotalRewards 
+    calculateUserTotalRewards,
+    loadUserDelegations 
 } from '../modules/data.js';
 import { 
     executeDelegation, 
@@ -31,7 +32,7 @@ let isStakingLoading = false;
 let lastStakingFetch = 0;
 let delegationCurrentPage = 1;
 
-// Estado da NOVA UX
+// Estado da NOVA UX (em Dias)
 let currentStakingDuration = 3650; // Padrão: 10 Anos (Max pStake)
 
 // =========================================================================
@@ -122,7 +123,7 @@ function renderEarnLayout() {
                         </div>
                         
                         <div id="my-delegations-container" class="space-y-3">
-                             ${renderLoading()}
+                            ${renderLoading()}
                         </div>
                     </div>
                 </div>
@@ -194,17 +195,22 @@ async function updateStakingData(forceRefresh = false) {
     }
 
     const now = Date.now();
+    // Cache de 1 minuto para dados globais, mas sempre permite refresh da UI
     if (!forceRefresh && isStakingLoading && (now - lastStakingFetch < 60000)) return;
     
     isStakingLoading = true;
     lastStakingFetch = now;
 
     try {
-        if (!State.totalNetworkPStake || State.totalNetworkPStake === 0n) await loadPublicData(); 
-        const netPStakeEl = document.getElementById('earn-total-network-pstake');
-        if(netPStakeEl) netPStakeEl.textContent = formatPStake(State.totalNetworkPStake);
+        // Carrega dados do usuário (saldo, pStake) forçando refresh se necessário
+        await loadUserData(forceRefresh); 
+        await loadUserDelegations(forceRefresh); // Carrega a lista de delegações
 
-        if (State.currentUserBalance === 0n) await loadUserData(); 
+        const netPStakeEl = document.getElementById('earn-total-network-pstake');
+        // A rede total PStake é carregada via loadPublicData (Disparado no app.js/wallet.js)
+        if(netPStakeEl) netPStakeEl.textContent = formatPStake(State.totalNetworkPStake || 0n);
+
+        // Atualiza Cards
         const balDisplay = document.getElementById('staking-balance-display');
         const myPStakeDisplay = document.getElementById('earn-my-pstake');
         
@@ -229,6 +235,7 @@ async function updateStakingData(forceRefresh = false) {
         }
 
         renderDelegationsList();
+        updateSimulation(); // Recalcula simulação na tela para garantir que o net/pStake esteja correto
 
     } catch (error) {
         console.error("Staking Data Error:", error);
@@ -271,8 +278,8 @@ function renderDelegationsList() {
             const unlockTimestamp = Number(d.unlockTime);
             const nowSeconds = Math.floor(Date.now() / 1000);
             const isLocked = unlockTimestamp > nowSeconds;
-            const unlockDate = new Date(unlockTimestamp * 1000).toLocaleDateString();
-
+            // Dica: use a função startCountdownTimers no final para ativar o timer
+            
             return `
                 <div class="glass-panel p-4 flex flex-col sm:flex-row justify-between items-center gap-4 border border-zinc-800">
                     <div class="flex items-center gap-4 w-full sm:w-auto">
@@ -326,7 +333,8 @@ function calculatePStake(amount, duration) {
         const amountBig = BigInt(amount);
         const durationBig = BigInt(duration);
         const daySeconds = 86400n;
-        const divisor = 10n**18n;
+        const divisor = 10n**18n; // Divisor para normalizar o pStake
+        // Cálculo: (Valor Staked * Duração em Dias) / Divisor
         return (amountBig * (durationBig / daySeconds)) / divisor;
     } catch { return 0n; }
 }
@@ -340,7 +348,6 @@ function setupStakingListeners() {
     const confirmBtn = document.getElementById('confirm-stake-btn');
     const refreshBtn = document.getElementById('refresh-delegations-btn');
     
-    // Modal Elements
     const modal = document.getElementById('duration-modal');
     const openModalBtn = document.getElementById('open-duration-modal');
     const closeModalBtn = document.getElementById('close-duration-modal');
@@ -348,12 +355,9 @@ function setupStakingListeners() {
     const modalSlider = document.getElementById('staking-duration-slider');
     const modalDisplay = document.getElementById('modal-duration-display');
     const warningBox = document.getElementById('duration-warning');
-
-    // Badge Elements
     const strategyBadge = document.getElementById('strategy-badge');
-    const strategyName = document.getElementById('strategy-name');
 
-    // --- FUNÇÃO DE SIMULAÇÃO PRINCIPAL ---
+    // --- FUNÇÃO DE SIMULAÇÃO PRINCIPAL (Recalcula tudo) ---
     const updateSimulation = () => {
         const amountVal = amountInput.value;
         
@@ -366,12 +370,12 @@ function setupStakingListeners() {
 
         try {
             const amountWei = ethers.parseUnits(amountVal, 18);
-            // Fee 0.5%
-            const feeWei = (amountWei * 50n) / 10000n;
+            
+            const DELEGATION_FEE_BIPS = 0n; // Set in Hub, but use 0 here or fetch
+            const feeWei = (amountWei * DELEGATION_FEE_BIPS) / 10000n;
             const netWei = amountWei - feeWei;
             
-            // pStake com Duração Atual (Global)
-            const durationSeconds = currentStakingDuration * 86400;
+            const durationSeconds = BigInt(currentStakingDuration) * 86400n;
             const pStake = calculatePStake(netWei, durationSeconds);
 
             document.getElementById('staking-net-display').textContent = formatBigNumber(netWei).toFixed(4);
@@ -396,11 +400,10 @@ function setupStakingListeners() {
         
         modalDisplay.textContent = `${days} Days (${years} Years)`;
         
-        // Lógica de Aviso se < 10 anos
         if (days < 3600) {
             warningBox.classList.remove('hidden');
-            modalDisplay.classList.remove('text-purple-400');
             modalDisplay.classList.add('text-amber-400');
+            modalDisplay.classList.remove('text-purple-400');
         } else {
             warningBox.classList.add('hidden');
             modalDisplay.classList.add('text-purple-400');
@@ -411,16 +414,18 @@ function setupStakingListeners() {
     const applyStrategy = () => {
         currentStakingDuration = parseInt(modalSlider.value);
         
-        // Atualiza Badge na tela principal
-        if (currentStakingDuration >= 3600) {
-            strategyBadge.className = "inline-flex items-center gap-2 bg-purple-500/10 text-purple-300 px-3 py-1 rounded border border-purple-500/20";
-            strategyBadge.innerHTML = `<i class="fa-solid fa-gem"></i> <span class="font-bold text-sm">Diamond Hands (${(currentStakingDuration/365).toFixed(0)}Y)</span>`;
-        } else {
-            strategyBadge.className = "inline-flex items-center gap-2 bg-amber-500/10 text-amber-300 px-3 py-1 rounded border border-amber-500/20";
-            strategyBadge.innerHTML = `<i class="fa-solid fa-clock"></i> <span class="font-bold text-sm">Custom (${currentStakingDuration} Days)</span>`;
-        }
+        // Atualiza Badge
+        const durationName = currentStakingDuration >= 3600 
+            ? `Diamond Hands (${(currentStakingDuration/365).toFixed(0)}Y)`
+            : `Custom (${currentStakingDuration} Days)`;
 
-        // Fecha modal com animação
+        strategyBadge.className = currentStakingDuration >= 3600
+            ? "inline-flex items-center gap-2 bg-purple-500/10 text-purple-300 px-3 py-1 rounded border border-purple-500/20"
+            : "inline-flex items-center gap-2 bg-amber-500/10 text-amber-300 px-3 py-1 rounded border border-amber-500/20";
+            
+        strategyBadge.innerHTML = `<i class="fa-solid ${currentStakingDuration >= 3600 ? 'fa-gem' : 'fa-clock'}"></i> <span class="font-bold text-sm">${durationName}</span>`;
+
+        // Fecha modal
         modal.classList.add('opacity-0');
         modal.querySelector('div').classList.add('scale-95');
         setTimeout(() => modal.classList.add('hidden'), 300);
@@ -428,16 +433,13 @@ function setupStakingListeners() {
         updateSimulation(); // Recalcula pStake
     };
 
+    // --- Modal Event Setup ---
     if (openModalBtn) {
         openModalBtn.addEventListener('click', () => {
-            modalSlider.value = currentStakingDuration; // Sync slider
+            modalSlider.value = currentStakingDuration;
             updateModalUI();
             modal.classList.remove('hidden');
-            // Pequeno delay para animação CSS funcionar
-            setTimeout(() => {
-                modal.classList.remove('opacity-0');
-                modal.querySelector('div').classList.remove('scale-95');
-            }, 10);
+            setTimeout(() => { modal.classList.remove('opacity-0'); modal.querySelector('div').classList.remove('scale-95'); }, 10);
         });
         
         closeModalBtn.addEventListener('click', () => {
@@ -450,7 +452,7 @@ function setupStakingListeners() {
         applyStrategyBtn.addEventListener('click', applyStrategy);
     }
 
-    // --- MAIN INPUT LISTENERS ---
+    // --- Main Input Event Setup ---
     if(amountInput) {
         amountInput.addEventListener('input', updateSimulation);
         
@@ -466,17 +468,19 @@ function setupStakingListeners() {
 
         confirmBtn.addEventListener('click', async () => {
             const amountWei = ethers.parseUnits(amountInput.value, 18);
-            const durationSec = currentStakingDuration * 86400; // Usa o estado global
+            // Duração é enviada em segundos
+            const durationSec = BigInt(currentStakingDuration) * 86400n; 
             
             confirmBtn.innerHTML = `<div class="loader inline-block mr-2"></div> Sending...`;
             confirmBtn.disabled = true;
 
+            // Transação: executeDelegation(amount, durationSec, boosterId, btn)
             const success = await executeDelegation(amountWei, durationSec, 0, confirmBtn);
             
             if (success) {
                 amountInput.value = "";
                 updateSimulation();
-                updateStakingData(true); 
+                updateStakingData(true); // FORÇA REFRESH APÓS SUCESSO
             } else {
                 confirmBtn.innerHTML = `Delegate Now <i class="fa-solid fa-arrow-right ml-2"></i>`;
                 confirmBtn.disabled = false;
@@ -484,10 +488,12 @@ function setupStakingListeners() {
         });
     }
 
+    // --- Refresh Button ---
     if(refreshBtn) {
         refreshBtn.addEventListener('click', () => {
             const icon = refreshBtn.querySelector('i');
             icon.classList.add('fa-spin');
+            // FORÇA REFRESH DE TODOS OS DADOS APÓS O BOTÃO SER CLICADO
             updateStakingData(true).then(() => icon.classList.remove('fa-spin'));
         });
     }
@@ -523,13 +529,15 @@ export const EarnPage = {
         renderEarnLayout();
         
         if (State.isConnected) {
+            // Se for nova página, força o refresh inicial para pegar o pStake total da rede
             await updateStakingData(isNewPage); 
         } else {
             resetStakingUI();
         }
     },
     
-    update() {
+    update(isConnected) {
+        // Chamado via app.js para update leve de dados.
         updateStakingData();
     }
 };

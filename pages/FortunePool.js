@@ -1,267 +1,469 @@
 // pages/FortunePool.js
-// ✅ VERSÃO CORRIGIDA: Polling Robusto (Destrava a UI)
+// ✅ VERSÃO FINAL V8.0: Wizard Interativo (Passo a Passo) + Correção de Endereço
 
 import { State } from '../state.js';
-import { loadUserData, safeContractCall } from '../modules/data.js';
-import { formatBigNumber, formatPStake } from '../utils.js';
-import { showToast, openModal, closeModal } from '../ui-feedback.js';
+import { loadUserData, safeContractCall, API_ENDPOINTS } from '../modules/data.js';
+import { formatBigNumber } from '../utils.js';
+import { showToast } from '../ui-feedback.js';
 import { addresses } from '../config.js';
 
 const ethers = window.ethers;
 
 // --- ESTADO DO JOGO ---
 let gameState = {
+    step: 0, // 0=Intro, 1=Tier1, 2=Tier2, 3=Tier3, 4=Betting
     isSpinning: false,
     gameId: 0,
     pollInterval: null,
     spinInterval: null,
     
+    guesses: [0, 0, 0], // [Tier1, Tier2, Tier3]
+    isCumulative: false,
+    
     currentLevel: 1,
     currentXP: 0,
     xpPerLevel: 1000,
-    totalActivations: 0,
-    achievements: [
-        { id: 'first-win', name: 'Lucky Miner', desc: 'Win your first prize.', unlocked: false },
-        { id: 'veteran', name: 'The Veteran', desc: 'Play 50 times.', unlocked: false, target: 50 },
-        { id: 'high-roller', name: 'High Roller', desc: 'Commit over 1000 BKC.', unlocked: false }
-    ]
+    totalActivations: 0
 };
 
-// Carrega Estado Local
+// Load Local Data
 try {
-    const local = localStorage.getItem('bkc_fortune_data_v5');
+    const local = localStorage.getItem('bkc_fortune_data_v8');
     if (local) {
         const parsed = JSON.parse(local);
         gameState.currentLevel = parsed.currentLevel || 1;
         gameState.currentXP = parsed.currentXP || 0;
         gameState.totalActivations = parsed.totalActivations || 0;
-        gameState.achievements = parsed.achievements || gameState.achievements;
     }
 } catch (e) {}
 
 function saveProgress() {
-    localStorage.setItem('bkc_fortune_data_v5', JSON.stringify({
+    localStorage.setItem('bkc_fortune_data_v8', JSON.stringify({
         currentLevel: gameState.currentLevel,
         currentXP: gameState.currentXP,
-        totalActivations: gameState.totalActivations,
-        achievements: gameState.achievements
+        totalActivations: gameState.totalActivations
     }));
     updateGamificationUI();
 }
 
 // ============================================
-// 1. VISUAL (SLOT MACHINE)
+// 1. RENDERIZAÇÃO DINÂMICA (WIZARD)
 // ============================================
 
-function startSlotAnimation() {
-    const slots = [
-        document.getElementById('slot-1'),
-        document.getElementById('slot-2'),
-        document.getElementById('slot-3')
-    ];
-    if (!slots[0]) return;
+function renderStep() {
+    const container = document.getElementById('game-interaction-area');
+    if (!container) return;
+
+    container.classList.remove('animate-fadeIn');
+    void container.offsetWidth; // Trigger reflow
+    container.classList.add('animate-fadeIn');
+
+    // --- STEP 0: INTRO ---
+    if (gameState.step === 0) {
+        container.innerHTML = `
+            <div class="text-center py-6">
+                <h2 class="text-2xl font-bold text-white mb-2">Choose your Destiny</h2>
+                <p class="text-zinc-400 text-sm mb-8">Predict the Oracle's numbers to win up to 100x.</p>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto">
+                    <button id="btn-random-all" class="bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 p-6 rounded-xl border border-white/10 shadow-lg group transition-all hover:-translate-y-1">
+                        <div class="text-4xl mb-2 group-hover:scale-110 transition-transform">🎲</div>
+                        <h3 class="font-bold text-white">Quick Random</h3>
+                        <p class="text-[10px] text-purple-200 mt-1">Let the universe decide</p>
+                    </button>
+
+                    <button id="btn-manual-pick" class="bg-zinc-800 hover:bg-zinc-700 p-6 rounded-xl border border-zinc-600 hover:border-amber-500 shadow-lg group transition-all hover:-translate-y-1">
+                        <div class="text-4xl mb-2 group-hover:scale-110 transition-transform">👆</div>
+                        <h3 class="font-bold text-white">Manual Pick</h3>
+                        <p class="text-[10px] text-zinc-400 mt-1">Select your lucky numbers</p>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('btn-random-all').onclick = () => {
+            gameState.guesses = [
+                Math.floor(Math.random() * 3) + 1,
+                Math.floor(Math.random() * 10) + 1,
+                Math.floor(Math.random() * 100) + 1
+            ];
+            gameState.step = 4; // Pula para aposta
+            renderStep();
+        };
+        document.getElementById('btn-manual-pick').onclick = () => {
+            gameState.step = 1;
+            renderStep();
+        };
+    }
+
+    // --- STEP 1: BRONZE TIER (1-3) ---
+    else if (gameState.step === 1) {
+        container.innerHTML = `
+            <div class="text-center">
+                <div class="text-amber-500 text-xs font-bold tracking-widest uppercase mb-2">Step 1 of 3</div>
+                <h2 class="text-xl font-bold text-white mb-6">Pick the <span class="text-amber-500">Bronze</span> Number</h2>
+                
+                <div class="flex justify-center gap-4 mb-8">
+                    ${[1, 2, 3].map(num => `
+                        <button class="w-20 h-24 bg-zinc-800 border-2 border-zinc-700 hover:border-amber-500 rounded-xl text-3xl font-black text-white hover:bg-zinc-700 transition-all hover:-translate-y-1 shadow-lg step-pick-btn" data-val="${num}">
+                            ${num}
+                        </button>
+                    `).join('')}
+                </div>
+                <p class="text-xs text-zinc-500">1 in 3 Chance • 3x Reward</p>
+            </div>
+        `;
+        attachStepListeners(1);
+    }
+
+    // --- STEP 2: SILVER TIER (1-10) ---
+    else if (gameState.step === 2) {
+        container.innerHTML = `
+            <div class="text-center">
+                <div class="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Step 2 of 3</div>
+                <h2 class="text-xl font-bold text-white mb-6">Pick the <span class="text-gray-300">Silver</span> Number</h2>
+                
+                <div class="grid grid-cols-5 gap-3 max-w-xs mx-auto mb-8">
+                    ${Array.from({length: 10}, (_, i) => i + 1).map(num => `
+                        <button class="aspect-square bg-zinc-800 border border-zinc-700 hover:border-gray-300 rounded-lg text-lg font-bold text-white hover:bg-zinc-700 transition-all step-pick-btn" data-val="${num}">
+                            ${num}
+                        </button>
+                    `).join('')}
+                </div>
+                <p class="text-xs text-zinc-500">1 in 10 Chance • 10x Reward</p>
+            </div>
+        `;
+        attachStepListeners(2);
+    }
+
+    // --- STEP 3: MASTER TIER (1-100) ---
+    else if (gameState.step === 3) {
+        container.innerHTML = `
+            <div class="text-center">
+                <div class="text-yellow-400 text-xs font-bold tracking-widest uppercase mb-2">Final Step</div>
+                <h2 class="text-xl font-bold text-white mb-6">Pick the <span class="text-yellow-400">Master Prize</span></h2>
+                
+                <div class="max-w-xs mx-auto mb-8 relative">
+                    <input type="number" id="master-input" min="1" max="100" class="w-full bg-black/50 border-2 border-yellow-500/50 rounded-2xl text-center text-5xl font-black text-white py-6 outline-none focus:border-yellow-400 transition-colors" placeholder="?">
+                    <p class="text-xs text-zinc-400 mt-2">Type a number between 1 - 100</p>
+                    
+                    <button id="random-master" class="mt-4 text-yellow-500 text-xs font-bold uppercase hover:text-white flex items-center justify-center gap-2 mx-auto">
+                        <i class="fa-solid fa-shuffle"></i> Pick Random
+                    </button>
+                </div>
+                
+                <button id="confirm-master" class="bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-8 rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    CONFIRM SELECTION
+                </button>
+            </div>
+        `;
+        
+        const input = document.getElementById('master-input');
+        const btn = document.getElementById('confirm-master');
+        
+        input.oninput = () => {
+            let val = parseInt(input.value);
+            if (val > 100) input.value = 100;
+            if (val < 1 && input.value !== "") input.value = 1;
+            btn.disabled = !input.value;
+        };
+
+        document.getElementById('random-master').onclick = () => {
+            input.value = Math.floor(Math.random() * 100) + 1;
+            btn.disabled = false;
+        };
+
+        btn.onclick = () => {
+            gameState.guesses[2] = parseInt(input.value);
+            gameState.step = 4;
+            renderStep();
+        };
+    }
+
+    // --- STEP 4: BETTING (FINAL) ---
+    else if (gameState.step === 4) {
+        renderBettingScreen(container);
+    }
+}
+
+function attachStepListeners(stepIndex) {
+    document.querySelectorAll('.step-pick-btn').forEach(btn => {
+        btn.onclick = () => {
+            const val = parseInt(btn.dataset.val);
+            gameState.guesses[stepIndex - 1] = val;
+            gameState.step++;
+            renderStep();
+        };
+    });
+}
+
+function renderBettingScreen(container) {
+    container.innerHTML = `
+        <div class="text-center">
+            <div class="flex justify-between items-center mb-6 bg-zinc-800/50 rounded-xl p-2">
+                <button onclick="FortunePoolPage.reset()" class="text-xs text-zinc-500 hover:text-white px-3"><i class="fa-solid fa-arrow-left"></i> Reset Picks</button>
+                <div class="flex gap-2">
+                    <div class="w-8 h-8 rounded bg-amber-900/30 border border-amber-500/50 flex items-center justify-center text-amber-500 font-bold text-sm">${gameState.guesses[0]}</div>
+                    <div class="w-8 h-8 rounded bg-gray-800/50 border border-gray-500/50 flex items-center justify-center text-gray-300 font-bold text-sm">${gameState.guesses[1]}</div>
+                    <div class="w-8 h-8 rounded bg-yellow-900/30 border border-yellow-500/50 flex items-center justify-center text-yellow-400 font-bold text-sm">${gameState.guesses[2]}</div>
+                </div>
+            </div>
+
+            <div id="slot-display-area" class="hidden mb-6">
+                <div class="grid grid-cols-3 gap-2">
+                    <div id="res-slot-1" class="bg-zinc-900 rounded-lg p-4 text-2xl font-mono font-bold text-zinc-500">?</div>
+                    <div id="res-slot-2" class="bg-zinc-900 rounded-lg p-4 text-2xl font-mono font-bold text-zinc-500">?</div>
+                    <div id="res-slot-3" class="bg-zinc-900 rounded-lg p-4 text-2xl font-mono font-bold text-zinc-500">?</div>
+                </div>
+            </div>
+
+            <div id="bet-controls">
+                <h3 class="text-white font-bold mb-4">Place your Bet</h3>
+                
+                <div class="bg-black/60 p-2 rounded-xl border border-zinc-700/50 mb-4 flex items-center gap-2">
+                    <input type="number" id="commitInput" class="w-full bg-transparent p-3 text-white font-mono text-xl font-bold outline-none placeholder-zinc-700 text-center" placeholder="Amount">
+                    <span class="text-zinc-500 font-bold pr-4">BKC</span>
+                </div>
+
+                <div class="flex justify-center gap-2 mb-6">
+                    <button class="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1 rounded transition" onclick="document.getElementById('commitInput').value=10; handleInput()">10</button>
+                    <button class="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1 rounded transition" onclick="document.getElementById('commitInput').value=50; handleInput()">50</button>
+                    <button class="text-xs bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1 rounded transition" onclick="document.getElementById('commitInput').value=100; handleInput()">100</button>
+                </div>
+
+                <div class="flex justify-center mb-6">
+                    <div class="bg-zinc-900 p-1 rounded-lg flex items-center gap-3 border border-zinc-700 cursor-pointer" onclick="toggleMode()">
+                        <div class="w-10 h-6 bg-zinc-700 rounded-full relative transition-colors duration-300" id="modeToggleBg">
+                            <div class="w-4 h-4 bg-white rounded-full absolute top-1 left-1 transition-transform duration-300" id="modeToggleCircle"></div>
+                        </div>
+                        <span id="modeLabel" class="text-xs text-zinc-400 font-bold">Standard Mode (1x Fee)</span>
+                    </div>
+                </div>
+
+                <button id="activateButton" class="w-full bg-zinc-700 text-zinc-400 font-bold py-4 rounded-xl cursor-not-allowed transition-all" disabled>
+                    ENTER AMOUNT
+                </button>
+            </div>
+            
+            <div id="game-status-msg" class="mt-4 text-sm font-bold text-amber-400 hidden"></div>
+        </div>
+    `;
+
+    document.getElementById('commitInput').addEventListener('input', handleInput);
+    document.getElementById('activateButton').addEventListener('click', executePurchase);
+}
+
+// --- HELPERS INTERNOS ---
+
+function handleInput() {
+    const input = document.getElementById('commitInput');
+    const btn = document.getElementById('activateButton');
+    const val = parseFloat(input.value);
+
+    if (val > 0) {
+        btn.disabled = false;
+        btn.className = "w-full bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-black font-black py-4 rounded-xl shadow-lg shadow-amber-900/20 transform transition hover:-translate-y-0.5 text-lg tracking-wide";
+        btn.innerHTML = `SPIN & WIN <i class="fa-solid fa-play ml-2"></i>`;
+    } else {
+        btn.disabled = true;
+        btn.className = "w-full bg-zinc-700 text-zinc-400 font-bold py-4 rounded-xl cursor-not-allowed";
+        btn.innerHTML = "ENTER AMOUNT";
+    }
+}
+
+function toggleMode() {
+    gameState.isCumulative = !gameState.isCumulative;
+    const bg = document.getElementById('modeToggleBg');
+    const circle = document.getElementById('modeToggleCircle');
+    const label = document.getElementById('modeLabel');
+
+    if (gameState.isCumulative) {
+        bg.classList.remove('bg-zinc-700'); bg.classList.add('bg-purple-600');
+        circle.style.transform = 'translateX(16px)';
+        label.innerHTML = '<span class="text-purple-400">Cumulative Mode (5x Fee)</span>';
+    } else {
+        bg.classList.remove('bg-purple-600'); bg.classList.add('bg-zinc-700');
+        circle.style.transform = 'translateX(0px)';
+        label.innerHTML = '<span class="text-zinc-400">Standard Mode (1x Fee)</span>';
+    }
+    FortunePoolPage.checkReqs();
+}
+
+// ============================================
+// 2. LÓGICA DE JOGO (ANIMAÇÃO & ORACLE)
+// ============================================
+
+function startResultAnimation() {
+    const display = document.getElementById('slot-display-area');
+    const controls = document.getElementById('bet-controls');
+    const msg = document.getElementById('game-status-msg');
+    
+    if(display) display.classList.remove('hidden');
+    if(controls) controls.classList.add('opacity-50', 'pointer-events-none');
+    if(msg) { msg.classList.remove('hidden'); msg.innerText = "ORACLE IS ROLLING..."; }
 
     gameState.isSpinning = true;
-    slots.forEach(s => {
-        s.classList.add('spinning');
-        s.classList.remove('win');
-    });
-
+    
     if (gameState.spinInterval) clearInterval(gameState.spinInterval);
     gameState.spinInterval = setInterval(() => {
-        slots.forEach(slot => {
-            const max = parseInt(slot.dataset.max);
-            slot.querySelector('.slot-value').innerText = Math.floor(Math.random() * max) + 1;
-        });
+        const s1 = document.getElementById('res-slot-1');
+        const s2 = document.getElementById('res-slot-2');
+        const s3 = document.getElementById('res-slot-3');
+        if(s1) {
+            s1.innerText = Math.floor(Math.random() * 3) + 1;
+            s2.innerText = Math.floor(Math.random() * 10) + 1;
+            s3.innerText = Math.floor(Math.random() * 100) + 1;
+        }
     }, 80);
 }
 
-function stopSlotAnimation(rolls, prizeWon) {
-    if (gameState.spinInterval) clearInterval(gameState.spinInterval);
-    if (gameState.pollInterval) clearInterval(gameState.pollInterval);
-    
+function stopResultAnimation(rolls, prizeWon) {
+    clearInterval(gameState.spinInterval);
+    clearInterval(gameState.pollInterval);
     gameState.isSpinning = false;
-    const slots = [
-        document.getElementById('slot-1'),
-        document.getElementById('slot-2'),
-        document.getElementById('slot-3')
+
+    const els = [
+        document.getElementById('res-slot-1'),
+        document.getElementById('res-slot-2'),
+        document.getElementById('res-slot-3')
     ];
 
-    if (!slots[0]) return;
+    if(!els[0]) return;
 
-    // Parada Sequencial
-    rolls.forEach((val, index) => {
+    rolls.forEach((val, idx) => {
         setTimeout(() => {
-            const slot = slots[index];
-            if(slot) {
-                slot.classList.remove('spinning');
-                const valDisplay = slot.querySelector('.slot-value');
-                valDisplay.innerText = val;
-                if (val == 1) slot.classList.add('win');
+            const el = els[idx];
+            el.innerText = val;
+            
+            // Verifica Vitória Localmente
+            if (val === gameState.guesses[idx]) {
+                el.classList.remove('bg-zinc-900', 'text-zinc-500');
+                el.classList.add('bg-green-500', 'text-white', 'shadow-lg', 'scale-110');
+            } else {
+                el.classList.remove('text-zinc-500');
+                el.classList.add('text-red-400');
             }
-        }, index * 600);
+        }, idx * 600);
     });
 
     setTimeout(() => {
-        finalizeGameRound(prizeWon, rolls);
-    }, 2200);
-}
+        const msg = document.getElementById('game-status-msg');
+        const prizeFloat = parseFloat(formatBigNumber(BigInt(prizeWon)));
+        
+        if (prizeWon > 0n) {
+            msg.innerHTML = `<span class="text-green-400 text-xl">🎉 YOU WON ${prizeFloat.toFixed(2)} BKC!</span>`;
+            showToast(`WINNER! +${prizeFloat} BKC`, "success");
+            addXP(200);
+        } else {
+            msg.innerHTML = `<span class="text-zinc-400">No match this time. Try again!</span>`;
+            addXP(20);
+        }
 
-function finalizeGameRound(prizeWon, rolls) {
-    const resultDisplay = document.getElementById('resultDisplay');
-    const activateBtn = document.getElementById('activateButton');
-    const prizeFloat = parseFloat(formatBigNumber(prizeWon));
+        // Reset UI após 3s
+        setTimeout(() => {
+            const controls = document.getElementById('bet-controls');
+            if(controls) controls.classList.remove('opacity-50', 'pointer-events-none');
+            const btn = document.getElementById('activateButton');
+            if(btn) {
+                btn.disabled = false;
+                btn.innerHTML = `PLAY AGAIN <i class="fa-solid fa-rotate-right ml-2"></i>`;
+                btn.classList.remove('cursor-not-allowed');
+            }
+            FortunePoolPage.loadHistory();
+            loadUserData(true);
+        }, 3000);
 
-    if (prizeWon > 0n) {
-        resultDisplay.innerHTML = `<h3 class="text-green-400 text-2xl animate-bounce font-black">🎉 YOU WON ${prizeFloat.toFixed(2)} BKC!</h3>`;
-        showToast(`WINNER! +${prizeFloat.toFixed(2)} BKC`, "success");
-        addXP(150);
-        checkAchievements(prizeWon);
-    } else {
-        resultDisplay.innerHTML = `<h3 class="text-zinc-500 font-bold">No match. Try again!</h3>`;
-        addXP(20);
-    }
-    
-    if(activateBtn) {
-        activateBtn.disabled = false;
-        activateBtn.innerHTML = "PLAY AGAIN";
-        activateBtn.classList.remove('cursor-not-allowed', 'opacity-50');
-    }
-    
-    gameState.totalActivations++;
-    saveProgress();
-    loadUserData(); 
-    FortunePoolPage.loadPoolBalance();
+    }, 2000);
 }
 
 // ============================================
-// 2. MONITORAMENTO (POLLING ROBUSTO)
+// 3. TRANSAÇÃO
 // ============================================
+
+async function executePurchase() {
+    if (!State.isConnected) return showToast("Connect wallet first.", "error");
+    const input = document.getElementById('commitInput');
+    const amount = parseFloat(input?.value) || 0;
+    if (amount <= 0) return;
+
+    const amountWei = ethers.parseEther(amount.toString());
+    if (amountWei > State.currentUserBalance) return showToast("Insufficient Balance.", "error");
+
+    // Oracle Fee
+    let fee = State.systemData?.oracleFeeInWei ? BigInt(State.systemData.oracleFeeInWei) : 0n;
+    if (gameState.isCumulative) fee = fee * 5n;
+
+    const btn = document.getElementById('activateButton');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="loader inline-block"></div> WAITING...';
+
+    try {
+        // Approve
+        const allowance = await State.bkcTokenContract.allowance(State.userAddress, addresses.fortunePool);
+        if (allowance < amountWei) {
+            const tx = await State.bkcTokenContract.approve(addresses.fortunePool, amountWei);
+            await tx.wait();
+        }
+
+        // Play
+        const tx = await State.actionsManagerContract.participate(
+            amountWei,
+            gameState.guesses,
+            gameState.isCumulative,
+            { value: fee }
+        );
+        
+        btn.innerHTML = "MINING...";
+        await tx.wait();
+
+        // Animation & Polling
+        startResultAnimation();
+        
+        const currentCounter = await safeContractCall(State.actionsManagerContract, 'gameCounter', [], 0, 2, true);
+        checkGameResultLoop(Number(currentCounter));
+
+    } catch (e) {
+        console.error(e);
+        showToast("Transaction failed.", "error");
+        btn.disabled = false;
+        btn.innerHTML = "TRY AGAIN";
+    }
+}
 
 async function checkGameResultLoop(gameId) {
-    if (!gameId || gameId <= 0) return; 
-
     let attempts = 0;
     if (gameState.pollInterval) clearInterval(gameState.pollInterval);
 
-    // Verifica a cada 4 segundos se o contrato já tem o resultado gravado
     gameState.pollInterval = setInterval(async () => {
         attempts++;
-        if (attempts > 40) { // ~3 minutos
+        if (attempts > 60) {
             clearInterval(gameState.pollInterval);
-            showToast("Oracle delayed. Check history.", "info");
-            if(gameState.isSpinning) {
-                stopSlotAnimation([0, 0, 0], 0n); // Para forçado
-            }
+            showToast("Oracle slow. Check history.", "info");
+            stopResultAnimation([0,0,0], 0n);
             return;
         }
 
         try {
-            // Chama gameResults(gameId) no contrato
-            const result = await safeContractCall(State.actionsManagerContract, 'gameResults', [gameId], null);
-            
-            // O contrato retorna [roll1, roll2, roll3]
-            // Se rolls[0] for diferente de 0, o jogo acabou.
-            if (result && result.length === 3) {
-                const r1 = Number(result[0]);
-                const r2 = Number(result[1]);
-                const r3 = Number(result[2]);
-
-                if (r1 !== 0) {
-                    // BINGO! Resultado encontrado.
-                    clearInterval(gameState.pollInterval);
-                    
-                    const rolls = [r1, r2, r3];
-                    
-                    // Calcula prêmio localmente para feedback visual imediato
-                    // (A blockchain já pagou, isso é só para mostrar na tela)
-                    // Regra: Se qualquer dado for 1, ganhou algo.
-                    let visualPrize = 0n;
-                    if (r1 === 1 || r2 === 1 || r3 === 1) {
-                        visualPrize = 1n; // Valor simbólico > 0 para ativar efeito de vitória
-                    }
-                    
-                    if (gameState.isSpinning) {
-                        stopSlotAnimation(rolls, visualPrize);
-                    }
-                }
+            const result = await safeContractCall(State.actionsManagerContract, 'gameResults', [gameId], null, 2, true);
+            if (result && result.length === 3 && Number(result[0]) !== 0) {
+                clearInterval(gameState.pollInterval);
+                
+                let visualPrize = 0n;
+                let wins = 0;
+                if (Number(result[0]) === gameState.guesses[0]) wins++;
+                if (Number(result[1]) === gameState.guesses[1]) wins++;
+                if (Number(result[2]) === gameState.guesses[2]) wins++;
+                
+                if (wins > 0) visualPrize = 1n; // Trigger win effect
+                
+                stopResultAnimation([Number(result[0]), Number(result[1]), Number(result[2])], visualPrize);
             }
-        } catch (e) { }
-    }, 4000);
+        } catch (e) {}
+    }, 3000);
 }
 
 // ============================================
-// 3. TRANSAÇÃO (PLAY)
-// ============================================
-
-async function executePurchase() {
-    if (gameState.isSpinning) return;
-    if (!State.isConnected) return showToast("Connect wallet first.", "error");
-
-    const commitInput = document.getElementById('commitInput'); 
-    const activateButton = document.getElementById('activateButton'); 
-    const amount = parseFloat(commitInput?.value) || 0;
-
-    if (amount <= 0) return showToast("Enter amount.", "error");
-    const amountWei = ethers.parseEther(amount.toString());
-
-    if (amountWei > State.currentUserBalance) return showToast("Insufficient BKC.", "error");
-
-    // Check Oracle Fee
-    let ethBal = 0n;
-    try { ethBal = await State.provider.getBalance(State.userAddress); } catch(e){}
-    const oracleFeeWei = State.systemData?.oracleFeeInWei ? BigInt(State.systemData.oracleFeeInWei) : 0n;
-    
-    if (oracleFeeWei > 0n && ethBal < oracleFeeWei) {
-        return showToast(`Insufficient ETH for Fee.`, "error");
-    }
-
-    // UI Loading
-    activateButton.disabled = true;
-    activateButton.innerHTML = '<div class="loader inline-block"></div> SENDING...';
-    activateButton.classList.add('cursor-not-allowed', 'opacity-50');
-    document.getElementById('resultDisplay').innerHTML = `<h3 class="text-blue-400 animate-pulse">Sending...</h3>`;
-
-    try {
-        // 1. Aprovação
-        const allowance = await State.bkcTokenContract.allowance(State.userAddress, addresses.fortunePool);
-        if (allowance < amountWei) {
-            const txApprove = await State.bkcTokenContract.approve(addresses.fortunePool, amountWei);
-            await txApprove.wait();
-        }
-
-        // 2. Jogar
-        const tx = await State.actionsManagerContract.participate(amountWei, { value: oracleFeeWei });
-        document.getElementById('resultDisplay').innerHTML = `<h3 class="text-amber-400 animate-pulse">Confirming...</h3>`;
-        
-        await tx.wait(); // Espera mineração
-
-        // 3. Inicia Jogo
-        startSlotAnimation();
-        activateButton.innerHTML = "ORACLE IS THINKING...";
-        document.getElementById('resultDisplay').innerHTML = `<h3 class="text-amber-400 animate-pulse">Waiting for Oracle...</h3>`;
-        
-        // 4. Determina GameID para monitorar
-        // Pega o contador global. O jogo atual é o último (ou último - 1 dependendo da concorrência)
-        // Vamos monitorar o contador atual
-        const currentGameCounter = await safeContractCall(State.actionsManagerContract, 'gameCounter', [], 0);
-        gameState.gameId = Number(currentGameCounter); 
-        
-        checkGameResultLoop(gameState.gameId);
-
-    } catch (error) {
-        console.error(error);
-        showToast("Transaction failed", "error");
-        activateButton.disabled = false;
-        activateButton.innerHTML = "SPIN & WIN ►";
-        activateButton.classList.remove('cursor-not-allowed', 'opacity-50');
-        document.getElementById('resultDisplay').innerHTML = `<h3>Ready to Play</h3>`;
-        gameState.isSpinning = false;
-    }
-}
-
-// ============================================
-// 4. UI & HELPERS
+// 4. GAMIFICATION & EXPORT
 // ============================================
 
 function updateGamificationUI() {
@@ -274,167 +476,117 @@ function updateGamificationUI() {
     }
 }
 
-function addXP(amount) {
-    gameState.currentXP += amount;
-    if (gameState.currentXP >= gameState.xpPerLevel) {
-         gameState.currentLevel++;
-         gameState.currentXP -= gameState.xpPerLevel; 
-         showToast(`LEVEL UP! Level ${gameState.currentLevel}!`, "success");
-    }
-    saveProgress();
-}
-
-function checkAchievements(prizeWon) {
-    let newAch = false;
-    const ach1 = gameState.achievements.find(a => a.id === 'first-win');
-    if (ach1 && !ach1.unlocked && prizeWon > 0n) { ach1.unlocked = true; newAch = true; showToast("Achievement: Lucky Miner!", "success"); }
-    if (newAch) saveProgress();
-}
-
-function showAchievements() {
-    const unlocked = gameState.achievements.filter(a => a.unlocked).length;
-    const html = `
-        <div class="bg-zinc-900 p-6 rounded-xl max-w-md mx-auto border border-zinc-700 shadow-2xl">
-            <h3 class="text-xl font-bold text-amber-400 mb-4 flex items-center gap-2"><i class="fa-solid fa-trophy"></i> Achievements</h3>
-            <p class="text-xs text-zinc-500 mb-4">Unlocked: ${unlocked}/${gameState.achievements.length}</p>
-            <div class="space-y-3">
-                ${gameState.achievements.map(a => `
-                    <div class="flex items-center gap-3 p-3 rounded-lg ${a.unlocked ? 'bg-amber-900/20 border border-amber-500/30' : 'bg-zinc-800 opacity-60'}">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center bg-black/50">
-                             <i class="fa-solid ${a.unlocked ? 'fa-medal text-amber-400' : 'fa-lock text-zinc-600'} text-lg"></i>
-                        </div>
-                        <div>
-                            <h4 class="text-white font-bold text-sm">${a.name}</h4>
-                            <p class="text-[10px] text-zinc-400">${a.desc}</p>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            <button class="mt-6 w-full bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-bold py-3 rounded-lg transition-colors" onclick="document.getElementById('achievementsModal').classList.remove('active')">Close</button>
-        </div>
-    `;
-    const modal = document.getElementById('achievementsModal');
-    if(modal) {
-        modal.innerHTML = html;
-        modal.classList.add('active');
-    }
-}
-
 export const FortunePoolPage = {
+    reset: () => {
+        gameState.step = 0;
+        gameState.guesses = [0,0,0];
+        renderStep();
+    },
+
     loadPoolBalance: async () => {
         if (!State.actionsManagerContractPublic) return;
         try {
-            const balance = await safeContractCall(State.actionsManagerContractPublic, 'prizePoolBalance', [], 0n);
+            const balance = await safeContractCall(State.actionsManagerContractPublic, 'prizePoolBalance', [], 0n, 2, true);
             const el = document.getElementById('totalPool');
             if (el) el.innerText = formatBigNumber(balance).toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' BKC';
         } catch {}
     },
-    
+
+    checkReqs: async () => {
+        if(!State.isConnected) return;
+        let fee = State.systemData?.oracleFeeInWei ? BigInt(State.systemData.oracleFeeInWei) : 0n;
+        if (gameState.isCumulative) fee = fee * 5n;
+        const el = document.getElementById('oracleFeeStatus');
+        if(el) el.innerText = `FEE: ${ethers.formatEther(fee)} ETH`;
+    },
+
+    loadHistory: async () => {
+        const list = document.getElementById('gameHistoryList');
+        if(!list || !State.isConnected) return;
+        try {
+            const res = await fetch(`${API_ENDPOINTS.getHistory}/${State.userAddress}`);
+            const data = await res.json();
+            const games = data.filter(a => a.type === 'GameResult' || a.type === 'GameRequested');
+            
+            // Processamento simplificado para tabela
+            const uniqueGames = [];
+            const ids = new Set();
+            
+            for (const g of games) {
+                const id = g.details.gameId;
+                if(!ids.has(id)) {
+                    ids.add(id);
+                    uniqueGames.push({
+                        id, 
+                        win: g.type === 'GameResult' ? g.details.isWin : false,
+                        amount: g.details.amount || '0',
+                        time: g.timestamp
+                    });
+                }
+            }
+
+            list.innerHTML = uniqueGames.slice(0,5).map(g => `
+                <tr class="border-b border-zinc-800/50">
+                    <td class="py-2 text-zinc-500 text-xs">#${g.id}</td>
+                    <td class="text-center"><span class="${g.win ? 'text-green-400' : 'text-red-400'} font-bold text-xs">${g.win ? 'WIN' : 'LOSS'}</span></td>
+                    <td class="text-right text-white text-xs">${formatBigNumber(BigInt(g.amount)).toFixed(2)}</td>
+                </tr>
+            `).join('');
+        } catch {}
+    },
+
     render(isActive) {
         if (!isActive) return;
         const container = document.getElementById('actions');
         
+        // Debug Address
+        console.log("Fortune Pool Address:", addresses.fortunePool);
+        if (!addresses.fortunePool) {
+            container.innerHTML = `<div class="text-center text-red-500 mt-10">Error: Fortune Pool address not found in config.</div>`;
+            return;
+        }
+
         container.innerHTML = `
-            <div class="fortune-pool-wrapper text-center max-w-2xl mx-auto py-8 animate-fadeIn">
-                <header class="mb-8 flex justify-between items-end border-b border-zinc-800 pb-4"> 
-                    <div class="text-left">
-                        <h1 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-600 mb-1 italic">FORTUNE POOL</h1>
+            <div class="fortune-pool-wrapper max-w-2xl mx-auto py-8 animate-fadeIn">
+                <header class="flex justify-between items-end border-b border-zinc-800 pb-4 mb-6">
+                    <div>
+                        <h1 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-600 italic">FORTUNE POOL</h1>
                         <div class="text-xs text-zinc-500 font-mono">PRIZE POOL: <span id="totalPool" class="text-green-400 font-bold">Loading...</span></div>
                     </div>
                     <div class="text-right">
                         <div class="text-xs font-bold text-amber-500">LVL <span id="currentLevel">1</span></div>
                         <div class="w-32 h-2 bg-zinc-800 rounded-full mt-1 overflow-hidden">
-                            <div id="progressFill" class="h-full bg-gradient-to-r from-amber-600 to-yellow-400 w-0 transition-all duration-500"></div>
+                            <div id="progressFill" class="h-full bg-amber-500 w-0"></div>
                         </div>
                     </div>
                 </header>
 
-                <div class="bg-zinc-900/80 border border-zinc-700/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent opacity-50"></div>
-
-                    <div class="slot-machine-container mb-8">
-                        <div class="slot-window" id="slot-1" data-max="3">
-                            <div class="slot-value">?</div>
-                            <span class="slot-label text-[10px] mt-2 text-zinc-500 font-bold uppercase tracking-wider">33% Win</span>
+                <div class="bg-black/40 border border-zinc-800 p-6 rounded-3xl shadow-2xl relative overflow-hidden min-h-[400px] flex flex-col justify-center">
+                    <div id="game-interaction-area">
                         </div>
-                        <div class="slot-window" id="slot-2" data-max="10">
-                            <div class="slot-value">?</div>
-                            <span class="slot-label text-[10px] mt-2 text-zinc-500 font-bold uppercase tracking-wider">10% Win</span>
-                        </div>
-                        <div class="slot-window" id="slot-3" data-max="100">
-                            <div class="slot-value">?</div>
-                            <span class="slot-label text-[10px] mt-2 text-zinc-500 font-bold uppercase tracking-wider">1% Win</span>
-                        </div>
-                    </div>
-                    
-                    <div id="resultDisplay" class="h-12 mb-6 flex items-center justify-center transition-all">
-                        <h3 class="text-zinc-400 uppercase tracking-widest text-sm font-bold">Ready to Play</h3>
-                    </div>
-
-                    <div class="bg-black/40 p-2 rounded-xl border border-zinc-800/50 mb-6 flex items-center gap-2">
-                        <div class="flex-1 relative">
-                            <input type="number" id="commitInput" class="w-full bg-transparent p-3 pl-4 text-white font-mono text-xl font-bold outline-none placeholder-zinc-700" placeholder="0.00">
-                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xs font-bold">BKC</span>
-                        </div>
-                        <div class="flex gap-1 pr-1">
-                            <button class="quick-bet text-[10px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded transition-colors" onclick="document.getElementById('commitInput').value=10">10</button>
-                            <button class="quick-bet text-[10px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded transition-colors" onclick="document.getElementById('commitInput').value=100">100</button>
-                        </div>
-                    </div>
-
-                    <button id="activateButton" class="w-full bg-gradient-to-b from-amber-400 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-black font-black py-4 rounded-xl shadow-lg shadow-amber-900/20 transform transition hover:-translate-y-0.5 text-lg flex items-center justify-center gap-2 tracking-wide">
-                        SPIN & WIN <i class="fa-solid fa-play"></i>
-                    </button>
-                    
-                    <div class="mt-6 flex justify-between text-[10px] text-zinc-500 font-mono uppercase px-2">
-                         <span id="pstakeStatus">Checking pStake...</span>
-                         <span id="oracleFeeStatus">Oracle Fee: ...</span>
-                    </div>
-
                 </div>
 
-                <div class="mt-8 flex justify-center gap-6">
-                     <button class="text-zinc-500 hover:text-white text-xs flex items-center gap-2 transition-colors" onclick="document.getElementById('rulesModal').classList.add('active')"><i class="fa-solid fa-circle-info"></i> Rules</button>
-                     <button class="text-zinc-500 hover:text-white text-xs flex items-center gap-2 transition-colors" id="achievementsBtn"><i class="fa-solid fa-trophy"></i> Awards</button>
+                <div class="flex justify-between text-[10px] text-zinc-500 font-mono mt-4 px-4">
+                    <span>Status: Operational</span>
+                    <span id="oracleFeeStatus">Fee: ...</span>
                 </div>
-                
-                <div id="achievementsModal" class="modal fixed inset-0 z-50 hidden bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"></div>
-                
-                <div id="rulesModal" class="modal fixed inset-0 z-50 hidden bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div class="bg-zinc-900 border border-zinc-700 p-6 rounded-xl max-w-sm w-full relative shadow-2xl">
-                        <button class="absolute top-4 right-4 text-zinc-500 hover:text-white" onclick="document.getElementById('rulesModal').classList.remove('active')"><i class="fa-solid fa-xmark"></i></button>
-                        <h3 class="font-bold text-white mb-4 text-lg flex items-center gap-2"><i class="fa-solid fa-book-open text-amber-500"></i> Game Rules</h3>
-                        <ul class="list-disc pl-5 text-zinc-400 text-sm space-y-3 leading-relaxed">
-                            <li>Oracle rolls 3 independent dice.</li>
-                            <li><strong>Dice 1 (33%):</strong> Rolls 1-3. If 1, you win 3x.</li>
-                            <li><strong>Dice 2 (10%):</strong> Rolls 1-10. If 1, you win 10x.</li>
-                            <li><strong>Dice 3 (1%):</strong> Rolls 1-100. If 1, you win 100x.</li>
-                        </ul>
+
+                <div class="mt-8">
+                    <h4 class="text-zinc-500 text-xs font-bold uppercase mb-2 ml-2">Recent Activity</h4>
+                    <div class="bg-zinc-900/50 rounded-xl overflow-hidden">
+                        <table class="w-full">
+                            <tbody id="gameHistoryList"></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         `;
 
-        const btn = document.getElementById('activateButton');
-        if (btn) btn.addEventListener('click', executePurchase);
-        document.getElementById('achievementsBtn').addEventListener('click', () => this.showAchievements());
-
+        gameState.step = 0;
+        renderStep();
         this.loadPoolBalance();
         this.checkReqs();
+        this.loadHistory();
         updateGamificationUI();
-    },
-
-    async checkReqs() {
-        if(!State.isConnected) return;
-        const fee = State.systemData?.oracleFeeInWei || 0n;
-        document.getElementById('oracleFeeStatus').innerText = `FEE: ${ethers.formatEther(fee)} ETH`;
-        
-        const [_, pStakeReq] = await safeContractCall(State.ecosystemManagerContract, 'getServiceRequirements', ["FORTUNE_POOL_SERVICE"], [0n, 0n]);
-        const hasPStake = State.userTotalPStake >= pStakeReq;
-        
-        const psEl = document.getElementById('pstakeStatus');
-        if(psEl) {
-            psEl.innerHTML = hasPStake ? '<span class="text-green-500">PSTAKE ACTIVE</span>' : '<span class="text-red-500">LOW PSTAKE</span>';
-        }
     }
 };

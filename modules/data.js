@@ -1,5 +1,5 @@
 // js/modules/data.js
-// ✅ VERSÃO FINAL OTIMIZADA: Lazy Loading (Carregamento sob demanda por página)
+// ✅ VERSÃO FINAL V4.0: Real-Time Data + Optimistic UI Support + Cache Bypass
 
 const ethers = window.ethers;
 
@@ -11,13 +11,14 @@ import { addresses, boosterTiers, rentalManagerABI } from '../config.js';
 // ====================================================================
 const API_TIMEOUT_MS = 8000; 
 const CACHE_DURATION_MS = 60000; // 1 minuto cache sistema
-const USER_DATA_CACHE_MS = 10000; // 10 segundos cache usuário
-const CONTRACT_READ_CACHE_MS = 10000; // 10 segundos cache RPC
+const USER_DATA_CACHE_MS = 10000; // 10 segundos cache usuário (Normal)
+const CONTRACT_READ_CACHE_MS = 10000; // 10 segundos cache RPC (Normal)
 
 let systemDataCache = null;
 let systemDataCacheTime = 0;
 let lastBoosterFetchTime = 0; 
 
+// Mapa de Cache RPC
 const contractReadCache = new Map(); 
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -46,7 +47,7 @@ export const API_ENDPOINTS = {
 };
 
 // ====================================================================
-// SAFETY FUNCTIONS (Retry & Jitter & CACHE)
+// SAFETY FUNCTIONS (Retry & Jitter & CACHE BYPASS)
 // ====================================================================
 
 function isRateLimitError(e) {
@@ -56,7 +57,11 @@ function isRateLimitError(e) {
     );
 }
 
-export const safeContractCall = async (contract, method, args = [], fallbackValue = 0n, retries = 2) => {
+/**
+ * Wrapper seguro para chamadas de contrato com Cache e Retry.
+ * @param {boolean} forceRefresh - Se true, ignora o cache e busca na blockchain.
+ */
+export const safeContractCall = async (contract, method, args = [], fallbackValue = 0n, retries = 2, forceRefresh = false) => {
     if (!contract) return fallbackValue;
     
     const contractAddr = contract.target || contract.address;
@@ -71,7 +76,8 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
         'userTotalPStake', 'pendingRewards', 'isRented', 'getRental'
     ];
     
-    if (cacheableMethods.includes(method)) {
+    // 1. Verifica Cache (Apenas se NÃO for refresh forçado)
+    if (!forceRefresh && cacheableMethods.includes(method)) {
         const cached = contractReadCache.get(cacheKey);
         if (cached && (now - cached.timestamp < CONTRACT_READ_CACHE_MS)) {
             return cached.value;
@@ -80,6 +86,8 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
 
     try {
         const result = await contract[method](...args);
+        
+        // 2. Atualiza Cache (Sempre)
         if (cacheableMethods.includes(method)) {
             contractReadCache.set(cacheKey, { value: result, timestamp: now });
         }
@@ -91,17 +99,14 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
             const delayTime = 1500 + jitter; 
             console.warn(`Rate limit (${method}). Retrying in ${delayTime}ms...`);
             await wait(delayTime);
-            return safeContractCall(contract, method, args, fallbackValue, retries - 1);
-        }
-        // Erros silenciosos esperados
-        if (e.code !== 'BAD_DATA' && e.code !== 'CALL_EXCEPTION') {
-             // console.warn(`SafeCall Error (${method}):`, e.code || e.message);
+            return safeContractCall(contract, method, args, fallbackValue, retries - 1, forceRefresh);
         }
         return fallbackValue;
     }
 };
 
-export const safeBalanceOf = async (contract, address) => safeContractCall(contract, 'balanceOf', [address], 0n);
+export const safeBalanceOf = async (contract, address, forceRefresh = false) => 
+    safeContractCall(contract, 'balanceOf', [address], 0n, 2, forceRefresh);
 
 // ====================================================================
 // 1. GLOBAL DATA LOADING (Leve - Apenas Header/Footer)
@@ -157,7 +162,6 @@ export async function loadPublicData() {
     if (!State.publicProvider || !State.bkcTokenContractPublic) return;
 
     // ✅ OTIMIZAÇÃO: Carrega APENAS dados globais essenciais (Supply e Config)
-    // O resto (Rental, Stake) será carregado pelas páginas específicas
     await Promise.allSettled([
         safeContractCall(State.bkcTokenContractPublic, 'totalSupply', [], 0n),
         loadSystemDataFromAPI()
@@ -168,12 +172,12 @@ export async function loadPublicData() {
 // 2. USER BASIC DATA (Leve - Apenas Saldo e Booster Ativo)
 // ====================================================================
 
-export async function loadUserData() {
+export async function loadUserData(forceRefresh = false) {
     if (!State.isConnected || !State.userAddress) return;
 
     try {
-        // 1. Saldo (Essencial para Header)
-        const balance = await safeBalanceOf(State.bkcTokenContract, State.userAddress);
+        // 1. Saldo (Refresh Forçado suportado)
+        const balance = await safeBalanceOf(State.bkcTokenContract, State.userAddress, forceRefresh);
         State.currentUserBalance = balance;
 
         if (State.provider) {
@@ -181,13 +185,19 @@ export async function loadUserData() {
             State.currentUserNativeBalance = nativeBalance;
         }
 
-        // 2. Booster (Essencial para cálculo de taxas em qualquer página)
-        // Mas NÃO carrega histórico ou aluguéis aqui.
-        await loadMyBoostersFromAPI();
+        // 2. Booster (API com Bypass de Cache)
+        await loadMyBoostersFromAPI(forceRefresh);
         
-        // 3. pStake do Usuário (Essencial para acesso a páginas)
+        // 3. pStake do Usuário (Refresh Forçado suportado)
         if (State.delegationManagerContract) {
-             const totalUserPStake = await safeContractCall(State.delegationManagerContract, 'userTotalPStake', [State.userAddress], 0n);
+             const totalUserPStake = await safeContractCall(
+                 State.delegationManagerContract, 
+                 'userTotalPStake', 
+                 [State.userAddress], 
+                 0n, 
+                 2, 
+                 forceRefresh
+             );
              State.userTotalPStake = totalUserPStake;
         }
 
@@ -198,12 +208,18 @@ export async function loadUserData() {
 // 3. PÁGINA ESPECÍFICA: STAKING (Delegações)
 // ====================================================================
 
-// Chamada apenas pelo 'pages/networkstaking.js'
-export async function loadUserDelegations() {
+export async function loadUserDelegations(forceRefresh = false) {
     if (!State.isConnected || !State.delegationManagerContract) return [];
     
     try {
-        const delegationsRaw = await safeContractCall(State.delegationManagerContract, 'getDelegationsOf', [State.userAddress], []);
+        const delegationsRaw = await safeContractCall(
+            State.delegationManagerContract, 
+            'getDelegationsOf', 
+            [State.userAddress], 
+            [], 
+            2, 
+            forceRefresh
+        );
         State.userDelegations = delegationsRaw.map((d, index) => ({
             amount: d[0], unlockTime: d[1], lockDuration: d[2], index
         }));
@@ -218,8 +234,7 @@ export async function loadUserDelegations() {
 // 4. PÁGINA ESPECÍFICA: RENTAL MARKET (AirBNFT)
 // ====================================================================
 
-// Chamada apenas pelo 'pages/RentalPage.js'
-export async function loadRentalListings() {
+export async function loadRentalListings(forceRefresh = false) {
     if (!State.publicProvider || !addresses.rentalManager) {
         State.rentalListings = [];
         return [];
@@ -228,19 +243,21 @@ export async function loadRentalListings() {
     const rentalContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.publicProvider);
     
     try {
-        const listedIds = await safeContractCall(rentalContract, 'getAllListedTokenIds', [], []);
+        // Pega IDs da Blockchain (RPC) - Suporta refresh forçado
+        const listedIds = await safeContractCall(rentalContract, 'getAllListedTokenIds', [], [], 2, forceRefresh);
+        
         if (!listedIds || listedIds.length === 0) {
             State.rentalListings = [];
             return [];
         }
 
-        // Otimização: Carrega detalhes em paralelo limitado
-        const listingsToFetch = listedIds.slice(0, 50); // Paginação implícita
+        // Paginação implícita para não travar UI
+        const listingsToFetch = listedIds.slice(0, 50); 
         
         const listingsPromises = listingsToFetch.map(async (tokenId) => {
-            const listing = await safeContractCall(rentalContract, 'getListing', [tokenId], null);
+            const listing = await safeContractCall(rentalContract, 'getListing', [tokenId], null, 2, forceRefresh);
             if (listing && listing.isActive) {
-                const isRented = await safeContractCall(rentalContract, 'isRented', [tokenId], false);
+                const isRented = await safeContractCall(rentalContract, 'isRented', [tokenId], false, 2, forceRefresh);
                 if (!isRented) {
                     const boostInfo = await getBoosterInfo(tokenId); 
                     return {
@@ -269,8 +286,7 @@ export async function loadRentalListings() {
     }
 }
 
-// Chamada apenas pelo 'pages/RentalPage.js'
-export async function loadUserRentals() {
+export async function loadUserRentals(forceRefresh = false) {
     if (!State.userAddress || !addresses.rentalManager) {
         State.myRentals = [];
         return [];
@@ -279,13 +295,11 @@ export async function loadUserRentals() {
     const rentalContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.publicProvider);
     
     try {
-        // Em produção real, usaríamos um indexer para isso, mas aqui filtramos a lista
-        // Para otimizar, confiamos que o DashboardPage.js já carrega o essencial
-        const listedIds = await safeContractCall(rentalContract, 'getAllListedTokenIds', [], []);
+        const listedIds = await safeContractCall(rentalContract, 'getAllListedTokenIds', [], [], 2, forceRefresh);
         const myRentals = [];
         
         for (const tokenId of listedIds) {
-            const rental = await safeContractCall(rentalContract, 'getRental', [tokenId], null);
+            const rental = await safeContractCall(rentalContract, 'getRental', [tokenId], null, 2, forceRefresh);
             if (rental && rental.tenant.toLowerCase() === State.userAddress.toLowerCase()) {
                 const nowSec = Math.floor(Date.now() / 1000);
                 if (BigInt(rental.endTime) > BigInt(nowSec)) {
@@ -310,7 +324,7 @@ export async function loadUserRentals() {
 }
 
 // ====================================================================
-// HELPER: BOOSTER INFO (Usado por Rental e Dashboard)
+// HELPER: BOOSTER INFO
 // ====================================================================
 
 async function getBoosterInfo(tokenId) {
@@ -331,7 +345,7 @@ async function getBoosterInfo(tokenId) {
         
         const tier = boosterTiers.find(t => t.boostBips === Number(boostBips));
         if (tier) {
-            img = tier.img; // Usa imagem local do config se disponível
+            img = tier.img; 
             name = tier.name;
         } 
         
@@ -342,7 +356,7 @@ async function getBoosterInfo(tokenId) {
 }
 
 // ====================================================================
-// SHARED: REWARDS CALCULATION (Usado por Dashboard e Staking)
+// SHARED: REWARDS CALCULATION
 // ====================================================================
 
 export async function calculateUserTotalRewards() {
@@ -400,7 +414,6 @@ export async function getHighestBoosterBoostFromAPI() {
         }
     }
     
-    // Check Rentals only if needed (Lazy check)
     if (State.myRentals && State.myRentals.length > 0) {
         const highestRented = State.myRentals.reduce((max, r) => r.boostBips > max.boostBips ? r : max, State.myRentals[0]);
         if (highestRented.boostBips > maxBoost) {
@@ -423,8 +436,10 @@ export async function getHighestBoosterBoostFromAPI() {
     };
 }
 
-export async function loadMyBoostersFromAPI() {
-    if (State.myBoosters && State.myBoosters.length > 0) {
+// 🛡️ API Fetch with Fallback (Stale-While-Revalidate)
+export async function loadMyBoostersFromAPI(forceRefresh = false) {
+    // Se temos dados em cache e NÃO é refresh forçado, retorna cache
+    if (!forceRefresh && State.myBoosters && State.myBoosters.length > 0) {
         if (Date.now() - lastBoosterFetchTime < USER_DATA_CACHE_MS) return State.myBoosters;
     }
     
@@ -443,5 +458,8 @@ export async function loadMyBoostersFromAPI() {
         State.myBoosters = boosterDetails;
         lastBoosterFetchTime = Date.now(); 
         return boosterDetails;
-    } catch (e) { return State.myBoosters || []; }
+    } catch (e) { 
+        // Em caso de erro, retorna o que tem no State (Fallback)
+        return State.myBoosters || []; 
+    }
 }

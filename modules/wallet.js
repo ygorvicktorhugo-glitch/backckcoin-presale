@@ -1,5 +1,5 @@
 // modules/wallet.js
-// ✅ VERSÃO FINAL UX: Auto-Reconnect (F5) + Polling Rápido
+// ✅ VERSÃO FINAL V4.0: Auto-Reconnect + Polling Adaptativo + Rate Limit Safe
 
 import { ethers } from 'https://esm.sh/ethers@6.11.1';
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
@@ -24,7 +24,11 @@ import { signIn } from './firebase-auth-service.js';
 // GLOBAL STATE & CONSTANTS
 // ============================================================================
 let balancePollingInterval = null;
-const POLLING_INTERVAL_MS = 4000; // 4 Segundos (Rápido)
+
+// Configuração Adaptativa
+let CURRENT_POLLING_MS = 5000; // Começa em 5s
+const FAST_POLLING_MS = 5000;
+const SLOW_POLLING_MS = 30000; // 30s se houver erro ou inatividade
 
 // ============================================================================
 // WEB3MODAL CONFIGURATION
@@ -83,6 +87,7 @@ function isValidAddress(addr) {
     return addr && addr !== ethers.ZeroAddress && !addr.startsWith('0x...');
 }
 
+// Carrega saldo do Cache LocalStorage para UI instantânea
 function loadCachedBalance(address) {
     if (!address) return;
     const cached = localStorage.getItem(`balance_${address.toLowerCase()}`);
@@ -91,7 +96,7 @@ function loadCachedBalance(address) {
             const balanceBigInt = BigInt(cached);
             State.currentUserBalance = balanceBigInt;
             if (window.updateUIState) window.updateUIState();
-            console.log("⚡ Cached balance loaded.");
+            // console.log("⚡ Cached balance loaded.");
         } catch (e) { console.warn("Cache invalid"); }
     }
 }
@@ -114,7 +119,6 @@ function instantiateContracts(signerOrProvider) {
             State.ecosystemManagerContract = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, signerOrProvider);
         if (isValidAddress(addresses.decentralizedNotary))
             State.decentralizedNotaryContract = new ethers.Contract(addresses.decentralizedNotary, decentralizedNotaryABI, signerOrProvider);
-        // [NEW] Rental Manager
         if (isValidAddress(addresses.rentalManager))
             State.rentalManagerContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, signerOrProvider);
             
@@ -123,6 +127,7 @@ function instantiateContracts(signerOrProvider) {
     }
 }
 
+// 🛡️ Lógica de Polling Inteligente (Anti-Spam RPC)
 function startBalancePolling() {
     if (balancePollingInterval) {
         clearInterval(balancePollingInterval);
@@ -131,12 +136,13 @@ function startBalancePolling() {
 
     if (!State.bkcTokenContractPublic || !State.userAddress) return;
 
-    console.log(`🚀 Polling balance every ${POLLING_INTERVAL_MS / 1000}s`);
+    // console.log(`🚀 Polling balance every ${CURRENT_POLLING_MS / 1000}s`);
     checkBalance(); // Executa imediatamente
-    balancePollingInterval = setInterval(checkBalance, POLLING_INTERVAL_MS); 
+    balancePollingInterval = setInterval(checkBalance, CURRENT_POLLING_MS); 
 }
 
 async function checkBalance() {
+    // 1. Se a aba não está visível, não gasta RPC
     if (document.hidden) return;
 
     try {
@@ -147,12 +153,28 @@ async function checkBalance() {
 
         const newBalance = await State.bkcTokenContractPublic.balanceOf(State.userAddress);
         
-        if (newBalance !== State.currentUserBalance || State.currentUserBalance === 0n) {
+        // Só atualiza se mudou
+        if (newBalance !== State.currentUserBalance) {
             State.currentUserBalance = newBalance;
             localStorage.setItem(`balance_${State.userAddress.toLowerCase()}`, newBalance.toString());
             if (window.updateUIState) window.updateUIState(true);
+            
+            // Se estava lento, volta a ficar rápido pois houve atividade
+            if (CURRENT_POLLING_MS !== FAST_POLLING_MS) {
+                CURRENT_POLLING_MS = FAST_POLLING_MS;
+                startBalancePolling(); 
+            }
         }
-    } catch (error) { /* Silent catch */ }
+    } catch (error) {
+        // 2. Se der erro 429 (Too Many Requests), desacelera automaticamente
+        if (error.code === 429 || (error.message && error.message.includes("429"))) {
+            console.warn("⚠️ RPC Rate Limit. Desacelerando polling para 30s...");
+            if (CURRENT_POLLING_MS !== SLOW_POLLING_MS) {
+                CURRENT_POLLING_MS = SLOW_POLLING_MS;
+                startBalancePolling();
+            }
+        }
+    }
 }
 
 async function setupSignerAndLoadData(provider, address) {
@@ -168,13 +190,15 @@ async function setupSignerAndLoadData(provider, address) {
         State.signer = await provider.getSigner();
         State.userAddress = address;
 
+        // UI Instantânea via Cache
         loadCachedBalance(address);
 
-        // Login Firebase silencioso
-        try { await signIn(State.userAddress); } catch (e) { console.warn('Auth warning:', e.message); }
+        // Login Firebase silencioso (Não bloqueia o fluxo)
+        try { signIn(State.userAddress); } catch (e) { console.warn('Auth warning:', e.message); }
 
         instantiateContracts(State.signer);
         
+        // Carregamento de dados críticos via RPC
         await loadUserData(); 
         
         if (State.currentUserBalance) {
@@ -208,6 +232,7 @@ export async function initPublicProvider() {
         if (isValidAddress(addresses.rentalManager))
             State.rentalManagerContractPublic = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.publicProvider);
         
+        // Carrega dados públicos (Supply, etc) em background
         loadPublicData().then(() => {
              if (window.updateUIState) window.updateUIState();
         });
@@ -220,17 +245,17 @@ export async function initPublicProvider() {
 
 /**
  * Inicializa os ouvintes do Web3Modal.
- * Agora inclui lógica de RECONEXÃO AUTOMÁTICA ao carregar a página.
+ * Inclui lógica de RECONEXÃO AUTOMÁTICA robusta (F5).
  */
 export function initWalletSubscriptions(callback) {
     
-    // 1. Verifica imediatamente se já existe uma conexão ativa no Web3Modal
+    // 1. Verifica imediatamente se já existe uma conexão ativa no Web3Modal (LocalStorage)
     if (web3modal.getIsConnected()) {
         const address = web3modal.getAddress();
         const walletProvider = web3modal.getWalletProvider();
         
         if (address && walletProvider) {
-            console.log("🔄 Auto-reconnecting session...");
+            // console.log("🔄 Auto-reconnecting session...");
             const ethersProvider = new ethers.BrowserProvider(walletProvider);
             State.web3Provider = walletProvider;
             
@@ -246,7 +271,7 @@ export function initWalletSubscriptions(callback) {
     let isHandlingChange = false;
 
     const handler = async ({ provider, address, chainId, isConnected }) => {
-        if (isHandlingChange) return; // Debounce
+        if (isHandlingChange) return; // Debounce para evitar duplicação
         isHandlingChange = true;
         
         try {

@@ -10,7 +10,7 @@ import { LogDescription, Log, ContractTransactionReceipt, BaseContract } from "e
 // ######################################################################
 
 const DEPLOY_DELAY_MS = 2000;
-const CHUNK_SIZE = 150; // Tamanho do lote para mintagem de NFTs e adição de liquidez
+const CHUNK_SIZE = 150; 
 const CHUNK_SIZE_BIGINT = BigInt(CHUNK_SIZE);
 
 // Quantidade de NFTs para injetar na liquidez inicial por Tier
@@ -27,9 +27,13 @@ const MANUAL_LIQUIDITY_MINT_COUNT = [
 const FORTUNE_POOL_ORACLE_FEE_ETH = "0.001"; 
 const FORTUNE_POOL_LIQUIDITY_TOTAL = ethers.parseEther("1000000"); // 1M BKC
 
-// Configuração do Jogo do Tigre (Fortune Pool)
+// --- [CALIBRAÇÃO V2] TIGER GAME ---
+// Base: 10000 BIPS = 1x (100%)
+// Tier 1 (33%): Paga 3x (30000 BIPS)
+// Tier 2 (10%): Paga 10x (100000 BIPS)
+// Tier 3 (1%): Paga 100x (1000000 BIPS)
 const FORTUNE_POOL_TIERS = [
-    { poolId: 1, multiplierBips: 10000n, chanceDenominator: 3n }, 
+    { poolId: 1, multiplierBips: 30000n, chanceDenominator: 3n }, 
     { poolId: 2, multiplierBips: 100000n, chanceDenominator: 10n }, 
     { poolId: 3, multiplierBips: 1000000n, chanceDenominator: 100n } 
 ];
@@ -37,7 +41,7 @@ const FORTUNE_POOL_TIERS = [
 // Liquidez de BKC para parear com os NFTs (2M BKC por Pool)
 const LIQUIDITY_BKC_AMOUNT_PER_POOL = ethers.parseEther("2000000"); 
 
-// --- ATUALIZADO: TIERS SINCRONIZADOS ("BEST SYSTEM") ---
+// Tiers Sincronizados
 const ALL_TIERS = [
   { tierId: 0, name: "Diamond", boostBips: 7000n, metadata: "diamond_booster.json" }, // 70%
   { tierId: 1, name: "Platinum", boostBips: 6000n, metadata: "platinum_booster.json" }, // 60%
@@ -83,13 +87,11 @@ async function sendTransactionWithRetries(txFunction: () => Promise<any>, descri
     } catch (error: any) {
       const errorMessage = error.message || JSON.stringify(error);
       
-      // Tratamento de erros conhecidos para não falhar o script desnecessariamente
       if (errorMessage.includes("already") || errorMessage.includes("Already")) {
              console.log(`   ⚠️ Nota: Ação já realizada anteriormente (${description}). Continuando...`);
              return null;
       }
 
-      // Erros de rede ou nonce
       if ((errorMessage.includes("nonce") || errorMessage.includes("replacement fee") || errorMessage.includes("network")) && i < retries - 1) {
         const waitTime = 5000 * (i + 1);
         console.warn(`   ⚠️ Erro temporário (${description}). Tentativa ${i + 1}/${retries}. Aguardando ${waitTime/1000}s...`);
@@ -97,7 +99,6 @@ async function sendTransactionWithRetries(txFunction: () => Promise<any>, descri
       } else if (errorMessage.includes("ReentrancyGuard: reentrant call")) {
         throw new Error(`❌ FALHA (${description}): Erro de ReentrancyGuard.`);
       } else {
-        // Log detalhado para debug
         console.error(`❌ FALHA (${description}): ${errorMessage}`);
         if (i === retries - 1) throw new Error(`A transação falhou após ${retries} tentativas: ${errorMessage}`);
       }
@@ -153,7 +154,6 @@ async function getOrCreateSpoke(
     const { ethers, upgrades } = hre;
     const [deployer] = await ethers.getSigners();
 
-    // Verifica se o endereço existe e tem código (não é uma EOA vazia ou endereço inválido)
     if (addresses[key] && addresses[key].startsWith("0x")) {
         const code = await ethers.provider.getCode(addresses[key]);
         if (code !== "0x") {
@@ -164,7 +164,7 @@ async function getOrCreateSpoke(
     } 
     
     console.log(`   🔨 Implantando ${contractName}...`);
-    const ContractFactory = await ethers.getContractFactory(contractPath.split(":")[1] || contractName); // Lida com "Path:ContractName"
+    const ContractFactory = await ethers.getContractFactory(contractPath.split(":")[1] || contractName);
     const instance = await upgrades.deployProxy(ContractFactory, initializerArgs, { kind: "uups" });
     await instance.waitForDeployment();
     const addr = await instance.getAddress();
@@ -190,9 +190,8 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   }
   const addresses: { [key: string]: string } = JSON.parse(fs.readFileSync(addressesFilePath, "utf8"));
 
-  // Verifica se o Rental Manager foi implantado no passo 1
   if (!addresses.rentalManager) {
-      console.warn("⚠️ AVISO: Endereço 'rentalManager' não encontrado. Verifique se o script 1 foi executado corretamente.");
+      console.warn("⚠️ AVISO: Endereço 'rentalManager' não encontrado.");
   }
 
   const { ecosystemManager, rewardBoosterNFT, publicSale, oracleWalletAddress } = addresses;
@@ -209,9 +208,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
   let fortunePoolInstance: any;
   
   try {
-    // ##############################################################
-    // ### PARTE 1: CONSTRUÇÃO (IMPLANTAR CONTRATOS QUE FALTAM) ###
-    // ##############################################################
     console.log("\n=== PARTE 1: CONSTRUÇÃO DA INFRAESTRUTURA ===");
     
     bkcTokenInstance = await ethers.getContractAt("BKCToken", addresses.bkcToken, deployer);
@@ -228,7 +224,7 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     const currentTreasury = await hub.getTreasuryAddress();
     const currentBooster = await hub.getBoosterAddress();
     const currentBKC = await hub.getBKCTokenAddress();
-    addresses.treasuryWallet = currentTreasury; // Cache para uso local
+    addresses.treasuryWallet = currentTreasury; 
 
     // Verifica se precisa atualizar endereços no Hub
     const currentMMInHub = await hub.getMiningManagerAddress();
@@ -298,12 +294,9 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         factoryInstance = await ethers.getContractAt("NFTLiquidityPoolFactory", factoryAddress, deployer);
     }
     
-    // ##############################################################
-    // ### PARTE 2: AUTORIZAÇÕES E PERMISSÕES (CRÍTICO) ###
-    // ##############################################################
     console.log("\n=== PARTE 2: ASSINANDO CONTRATOS & PERMISSÕES ===");
 
-    // Atualiza Hub novamente com novos endereços (Notary, Fortune, Factory) se necessário
+    // Atualiza Hub novamente se necessário
     const notaryInHubCheck = await hub.getDecentralizedNotaryAddress();
     const fortuneInHubCheck = await hub.getFortunePoolAddress();
     
@@ -324,32 +317,20 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     const mm = miningManagerInstance;
     
     // Autorizações de Mineração (Core)
-    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("TIGER_GAME_SERVICE"), addresses.fortunePool), 
-        "AUTH: Jogo do Tigre (PoP)"
-    );
-    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("NOTARY_SERVICE"), addresses.decentralizedNotary), 
-        "AUTH: Cartório (PoP)"
-    );
+    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("TIGER_GAME_SERVICE"), addresses.fortunePool), "AUTH: Jogo do Tigre (PoP)");
+    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("NOTARY_SERVICE"), addresses.decentralizedNotary), "AUTH: Cartório (PoP)");
     
     // Autorizações Staking
-    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("UNSTAKE_FEE_BIPS"), addresses.delegationManager), 
-        "AUTH: Taxa de Unstake"
-    );
-    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("FORCE_UNSTAKE_PENALTY_BIPS"), addresses.delegationManager), 
-        "AUTH: Penalidade Unstake Forçado"
-    );
-    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("CLAIM_REWARD_FEE_BIPS"), addresses.delegationManager), 
-        "AUTH: Taxa Resgate Lucros"
-    );
-    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("DELEGATION_FEE_BIPS"), addresses.delegationManager), 
-        "AUTH: Taxa Entrada Stake"
-    ); 
+    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("UNSTAKE_FEE_BIPS"), addresses.delegationManager), "AUTH: Taxa de Unstake");
+    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("FORCE_UNSTAKE_PENALTY_BIPS"), addresses.delegationManager), "AUTH: Penalidade Unstake Forçado");
+    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("CLAIM_REWARD_FEE_BIPS"), addresses.delegationManager), "AUTH: Taxa Resgate Lucros");
+    await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("DELEGATION_FEE_BIPS"), addresses.delegationManager), "AUTH: Taxa Entrada Stake"); 
 
     // --- AUTORIZAÇÃO DO RENTAL MARKET (AirBNFT) ---
     if (addresses.rentalManager && addresses.rentalManager.startsWith("0x")) {
         console.log("   + Autorizando RentalManager para Mineração...");
         await sendTransactionWithRetries(() => mm.setAuthorizedMiner(
-            ethers.id("RENTAL_MARKET_TAX_BIPS"), // Chave de taxa definida no contrato
+            ethers.id("RENTAL_MARKET_TAX_BIPS"), 
             addresses.rentalManager
         ), "AUTH: Rental Market (PoP)");
     }
@@ -358,32 +339,20 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     const currentOwner = await bkcTokenInstance.owner(); 
     if (currentOwner.toLowerCase() === deployer.address.toLowerCase()) {
         console.log("\n⚠️ ATENÇÃO: Passando controle da 'Impressora'...");
-        await sendTransactionWithRetries(() => bkcTokenInstance.transferOwnership(addresses.miningManager), 
-            "SEGURANÇA: Controle do BKC -> MiningManager"
-        );
+        await sendTransactionWithRetries(() => bkcTokenInstance.transferOwnership(addresses.miningManager), "SEGURANÇA: Controle do BKC -> MiningManager");
         console.log(`   ✅ Sistema Autônomo ativado.`);
-    } else {
-        console.log(`   ⏩ Sistema já é autônomo (Token Owner correto).`);
     }
     
-    // TGE Mint (Mint Inicial)
-    // Verifica se já foi mintado antes de tentar
+    // TGE Mint
     try {
         const treasuryBalance = await bkcTokenInstance.balanceOf(addresses.treasuryWallet);
-        // Heurística: Se o tesouro já tem um saldo grande, assumimos que o TGE ocorreu
         if (treasuryBalance > 0n) {
-             console.log("   ⏩ TGE provavelmente já realizado (Saldo no Tesouro). Pulando mint.");
+             console.log("   ⏩ TGE provavelmente já realizado. Pulando mint.");
         } else {
-             await sendTransactionWithRetries(() => 
-                miningManagerInstance.initialTgeMint(addresses.miningManager, TGE_SUPPLY_AMOUNT), 
-                "GÊNESE: Mint Inicial (TGE)"
-            );
+             await sendTransactionWithRetries(() => miningManagerInstance.initialTgeMint(addresses.miningManager, TGE_SUPPLY_AMOUNT), "GÊNESE: Mint Inicial");
         }
     } catch (e: any) {
-        if (e.message.includes("TGE already minted") || e.message.includes("reverted")) { 
-            console.log("   ⏩ Gênese já realizada (Erro de contrato)."); 
-        }
-        else { throw e; }
+        if (!e.message.includes("TGE already minted")) throw e;
     }
     
     // Distribuição de Fundos
@@ -393,94 +362,73 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
 
     if (mmBalance > 0n) {
         console.log(`   Distribuindo fundos iniciais...`);
-        await sendTransactionWithRetries(() => 
-            miningManagerInstance.transferTokensFromGuardian(deployer.address, totalLiquidityForDeployer), 
-            "DISTRIBUIÇÃO: Liquidez Pools/Jogos"
-        );
-        await sendTransactionWithRetries(() => 
-            miningManagerInstance.transferTokensFromGuardian(deployer.address, remainingForAirdrop), 
-            "DISTRIBUIÇÃO: Tesouraria/Airdrop"
-        );
-    } else {
-         console.log("   ⏩ Distribuição já concluída.");
+        await sendTransactionWithRetries(() => miningManagerInstance.transferTokensFromGuardian(deployer.address, totalLiquidityForDeployer), "DISTRIBUIÇÃO: Liquidez Pools/Jogos");
+        await sendTransactionWithRetries(() => miningManagerInstance.transferTokensFromGuardian(deployer.address, remainingForAirdrop), "DISTRIBUIÇÃO: Tesouraria/Airdrop");
     }
     
     // Configuração Oráculo
     try {
         const currentOracle = await fortunePoolInstance.oracleAddress();
         if(currentOracle.toLowerCase() !== addresses.oracleWalletAddress.toLowerCase()) {
-             await sendTransactionWithRetries(() => fortunePoolInstance.setOracleAddress(addresses.oracleWalletAddress), 
-                "CONFIG: Endereço Oráculo"
-            );
+             await sendTransactionWithRetries(() => fortunePoolInstance.setOracleAddress(addresses.oracleWalletAddress), "CONFIG: Endereço Oráculo");
         }
         
         const currentOracleFee = await fortunePoolInstance.oracleFeeInWei();
         const targetFee = ethers.parseEther(FORTUNE_POOL_ORACLE_FEE_ETH);
         if(currentOracleFee !== targetFee) {
-             await sendTransactionWithRetries(() => fortunePoolInstance.setOracleFee(targetFee), 
-                "CONFIG: Taxa Oráculo"
-            );
+             await sendTransactionWithRetries(() => fortunePoolInstance.setOracleFee(targetFee), "CONFIG: Taxa Oráculo");
         }
-    } catch (e: any) { console.warn(`   ⚠️ Erro ao configurar Oráculo: ${e.message}`); }
+    } catch (e: any) { console.warn(`   ⚠️ Erro Oráculo: ${e.message}`); }
 
 
-    // ##############################################################
-    // ### PARTE 3: APLICANDO REGRAS ECONÔMICAS ###
-    // ##############################################################
     console.log("\n=== PARTE 3: APLICANDO REGRAS ECONÔMICAS ===");
 
     try {
+        // [CRÍTICO] Calibração do Fortune Pool (3x, 10x, 100x)
         for (const tier of FORTUNE_POOL_TIERS) {
-            // Tenta definir, se falhar assume que já está setado (otimização)
             await sendTransactionWithRetries(() => fortunePoolInstance.setPrizeTier(tier.poolId, tier.chanceDenominator, tier.multiplierBips), 
                 `JOGO: Configurando Tier ${tier.poolId}`
             );
         }
-    } catch (e) { console.warn("Pulando configuração de tiers do Fortune (Erro não crítico)"); }
+    } catch (e) { console.warn("Erro ao configurar tiers (pode já estar setado)."); }
 
-    // Tenta ler o rules-config.json se existir
+    // Tenta ler o rules-config.json
     try {
         const configPath = path.join(__dirname, "../rules-config.json");
         if (fs.existsSync(configPath)) {
             const RULES = JSON.parse(fs.readFileSync(configPath, "utf8"));
             
-            // Core Services
             await setServiceFee(hub, "NOTARY_SERVICE", ethers.parseEther(RULES.serviceFees.NOTARY_SERVICE));
             await setPStake(hub, "NOTARY_SERVICE", BigInt(RULES.pStakeMinimums.NOTARY_SERVICE));
             
-            await setServiceFee(hub, "FORTUNE_POOL_SERVICE", ethers.parseEther(RULES.serviceFees.FORTUNE_POOL_SERVICE));
-            await setPStake(hub, "FORTUNE_POOL_SERVICE", BigInt(RULES.pStakeMinimums.FORTUNE_POOL_SERVICE));
+            await setServiceFee(hub, "TIGER_GAME_SERVICE", ethers.parseEther(RULES.serviceFees.FORTUNE_POOL_SERVICE));
+            await setPStake(hub, "TIGER_GAME_SERVICE", BigInt(RULES.pStakeMinimums.FORTUNE_POOL_SERVICE));
 
             await setServiceFee(hub, "NFT_POOL_ACCESS", ethers.parseEther(RULES.serviceFees.NFT_POOL_ACCESS));
             await setPStake(hub, "NFT_POOL_ACCESS", BigInt(RULES.pStakeMinimums.NFT_POOL_ACCESS));
 
-            // Staking Fees
             await setServiceFee(hub, "DELEGATION_FEE_BIPS", BigInt(RULES.stakingFees.DELEGATION_FEE_BIPS));
             await setServiceFee(hub, "UNSTAKE_FEE_BIPS", BigInt(RULES.stakingFees.UNSTAKE_FEE_BIPS));
             await setServiceFee(hub, "FORCE_UNSTAKE_PENALTY_BIPS", BigInt(RULES.stakingFees.FORCE_UNSTAKE_PENALTY_BIPS));
             await setServiceFee(hub, "CLAIM_REWARD_FEE_BIPS", BigInt(RULES.stakingFees.CLAIM_REWARD_FEE_BIPS));
 
-            // Rental Market (Fallback seguro)
             if (RULES.rentalFees) {
                  await setServiceFee(hub, "RENTAL_MARKET_TAX_BIPS", BigInt(RULES.rentalFees.TAX_BIPS));
                  await setPStake(hub, "RENTAL_MARKET_ACCESS", BigInt(RULES.rentalFees.PSTAKE_MIN));
             }
 
-            // AMM Tax
             await setServiceFee(hub, "NFT_POOL_BUY_TAX_BIPS", BigInt(RULES.ammTaxFees.NFT_POOL_BUY_TAX_BIPS));
             await setServiceFee(hub, "NFT_POOL_SELL_TAX_BIPS", BigInt(RULES.ammTaxFees.NFT_POOL_SELL_TAX_BIPS));
             
-            // Distributions
             const md = RULES.miningDistribution;
             await setMiningDistributionBips(hub, "TREASURY", BigInt(md.TREASURY));
-            // Validator Pool removido/mesclado, ajuste conforme seu contrato MiningManager
             await setMiningDistributionBips(hub, "DELEGATOR_POOL", BigInt(md.DELEGATOR_POOL));
 
             const fd = RULES.feeDistribution;
             await setFeeDistributionBips(hub, "TREASURY", BigInt(fd.TREASURY));
             await setFeeDistributionBips(hub, "DELEGATOR_POOL", BigInt(fd.DELEGATOR_POOL));
         } else {
-             console.log("   ℹ️ rules-config.json não encontrado. Pulando configurações finas.");
+             console.log("   ℹ️ rules-config.json não encontrado.");
         }
 
     } catch (e: any) { 
@@ -488,29 +436,18 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
     }
 
 
-    // ##############################################################
-    // ### PARTE 4: SEMEAR ECOSSISTEMA (LIQUIDEZ) ###
-    // ##############################################################
     console.log("\n=== PARTE 4: INJETANDO LIQUIDEZ NOS SISTEMAS ===");
 
-    // Abastecer Jogo do Tigre
+    // Abastecer Jogo
     const fpBalance = await bkcTokenInstance.balanceOf(addresses.fortunePool);
     if (fpBalance < FORTUNE_POOL_LIQUIDITY_TOTAL) {
         console.log(`\n4.1. Abastecendo FortunePool...`);
-        await sendTransactionWithRetries(() => 
-            bkcTokenInstance.approve(addresses.fortunePool, FORTUNE_POOL_LIQUIDITY_TOTAL), 
-            "BANCO: Aprovando envio Fortune"
-        );
-        await sendTransactionWithRetries(() => fortunePoolInstance.topUpPool(FORTUNE_POOL_LIQUIDITY_TOTAL), 
-            "BANCO: Depositando 1M BKC"
-        );
-    } else {
-        console.log(`   ⏩ Fortune já abastecido.`);
+        await sendTransactionWithRetries(() => bkcTokenInstance.approve(addresses.fortunePool, FORTUNE_POOL_LIQUIDITY_TOTAL), "BANCO: Aprovando envio Fortune");
+        await sendTransactionWithRetries(() => fortunePoolInstance.topUpPool(FORTUNE_POOL_LIQUIDITY_TOTAL), "BANCO: Depositando 1M BKC");
     }
 
     // Criar Pools de NFT
     console.log("\n4.2. Criando Mercados de NFT (Pools)...");
-
     const rewardBoosterNFT = await ethers.getContractAt("RewardBoosterNFT", addresses.rewardBoosterNFT, deployer);
     const factoryInstanceLoaded = await ethers.getContractAt("NFTLiquidityPoolFactory", addresses.nftLiquidityPoolFactory, deployer);
 
@@ -518,54 +455,34 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
         const tier = ALL_TIERS[i];
         const initialMintAmount = MANUAL_LIQUIDITY_MINT_COUNT[i]; 
 
-        console.log(`\n   --- Tier: ${tier.name} (ID ${tier.tierId}) | Boost: ${tier.boostBips} ---`);
+        console.log(`\n   --- Tier: ${tier.name} ---`);
 
         const poolKey = `pool_${tier.name.toLowerCase()}`;
         let poolAddress = addresses[poolKey];
 
-        // Buscar ou Criar Pool
         if (!poolAddress || !poolAddress.startsWith('0x')) {
-            console.log(`      Buscando Pool...`);
+            console.log(`      Criando novo Pool...`);
+            await sendTransactionWithRetries(() => factoryInstanceLoaded.deployPool(tier.boostBips), `FÁBRICA: Criando Pool ${tier.name}`);
             poolAddress = await factoryInstanceLoaded.getPoolAddress(tier.boostBips);
-            
-            if (poolAddress === ethers.ZeroAddress) {
-                console.log(`      Criando novo Pool...`);
-                await sendTransactionWithRetries(() => factoryInstanceLoaded.deployPool(tier.boostBips), 
-                    `FÁBRICA: Criando Pool ${tier.name}`
-                );
-                poolAddress = await factoryInstanceLoaded.getPoolAddress(tier.boostBips);
-            }
             updateAddressJSON(poolKey, poolAddress);
-            console.log(`      📍 Pool: ${poolAddress}`);
-        } else {
-             console.log(`      📍 Pool (Cache): ${poolAddress}`);
         }
         
         const poolInstance = await ethers.getContractAt("NFTLiquidityPool", poolAddress, deployer);
         const poolInfo = await poolInstance.getPoolInfo();
         
         if (poolInfo.nftCount > 0n) { 
-            console.log(`      ⏩ Mercado com liquidez. Pulando mint.`); 
+            console.log(`      ⏩ Mercado com liquidez.`); 
             continue; 
         }
 
-        console.log(`      Autorizando Pool no MiningManager...`);
         try {
-            // Usando try-catch pois pode já estar autorizado
-            await sendTransactionWithRetries(() => 
-                mm.setAuthorizedMiner(ethers.id("NFT_POOL_BUY_TAX_BIPS"), poolAddress), 
-                `AUTH: Pool ${tier.name} (Compra)`
-            );
-            await sendTransactionWithRetries(() => 
-                mm.setAuthorizedMiner(ethers.id("NFT_POOL_SELL_TAX_BIPS"), poolAddress), 
-                `AUTH: Pool ${tier.name} (Venda)`
-            );
+            await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("NFT_POOL_BUY_TAX_BIPS"), poolAddress), `AUTH: Pool ${tier.name} (Compra)`);
+            await sendTransactionWithRetries(() => mm.setAuthorizedMiner(ethers.id("NFT_POOL_SELL_TAX_BIPS"), poolAddress), `AUTH: Pool ${tier.name} (Venda)`);
         } catch(e) {}
 
         console.log(`      Fabricando ${initialMintAmount} NFTs...`);
         const allPoolTokenIds: string[] = [];
         
-        // Lógica de Mintagem em Lotes (Chunking)
         for (let j = 0n; j < initialMintAmount; j += CHUNK_SIZE_BIGINT) {
             const remaining = initialMintAmount - j;
             const amountToMint = remaining < CHUNK_SIZE_BIGINT ? remaining : CHUNK_SIZE_BIGINT;
@@ -575,7 +492,6 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
                 `MINT: Lote de ${amountToMint}`
             );
             
-            // Captura IDs dos eventos para adicionar ao pool
             if(tx) {
                  const logs = (tx.logs || []) as Log[];
                  const ids = logs.map((log: Log) => { try { return rewardBoosterNFT.interface.parseLog(log as any); } catch { return null; } })
@@ -585,38 +501,25 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
             }
         }
         
-        // Adicionar Liquidez
         if (allPoolTokenIds.length > 0) {
             await sendTransactionWithRetries(() => bkcTokenInstance.approve(poolAddress, LIQUIDITY_BKC_AMOUNT_PER_POOL), `BANCO: Aprovando BKC`);
             await sendTransactionWithRetries(() => rewardBoosterNFT.setApprovalForAll(poolAddress, true), `ESTOQUE: Aprovando NFTs`);
 
-            console.log(`      Inaugurando mercado...`);
             let isFirstChunk = true;
-            // Adiciona liquidez também em lotes para evitar estouro de gás
             for (let k = 0; k < allPoolTokenIds.length; k += CHUNK_SIZE) {
                 const chunk = allPoolTokenIds.slice(k, k + CHUNK_SIZE);
                 if (isFirstChunk) {
-                    await sendTransactionWithRetries(() => 
-                        poolInstance.addInitialLiquidity(chunk, LIQUIDITY_BKC_AMOUNT_PER_POOL), 
-                        `MERCADO: Liquidez Inicial`
-                    );
+                    await sendTransactionWithRetries(() => poolInstance.addInitialLiquidity(chunk, LIQUIDITY_BKC_AMOUNT_PER_POOL), `MERCADO: Liquidez Inicial`);
                     isFirstChunk = false;
                 } else {
-                    await sendTransactionWithRetries(() => poolInstance.addMoreNFTsToPool(chunk), 
-                        `MERCADO: +Estoque`
-                    );
+                    await sendTransactionWithRetries(() => poolInstance.addMoreNFTsToPool(chunk), `MERCADO: +Estoque`);
                 }
             }
             await sendTransactionWithRetries(() => rewardBoosterNFT.setApprovalForAll(poolAddress, false), `SEGURANÇA: Revogando permissões`);
-            console.log(`      ✅ Mercado ${tier.name} ABERTO!`);
         }
     }
     
-    // ##############################################################
-    // ### PARTE 5: STAKE INICIAL ###
-    // ##############################################################
     console.log("\n=== PARTE 5: GENESIS STAKE ===");
-
     const dm = delegationManagerInstance;
     const totalPStake = await dm.totalNetworkPStake();
     
@@ -624,13 +527,9 @@ export async function runScript(hre: HardhatRuntimeEnvironment) {
          console.log(`   ⏩ Rede já possui validadores.`);
     } else {
          console.log(`   Realizando Genesis Stake...`);
-         await sendTransactionWithRetries(() => bkcTokenInstance.approve(addresses.delegationManager, INITIAL_STAKE_AMOUNT), 
-            `BANCO: Aprovando Stake`
-         );
+         await sendTransactionWithRetries(() => bkcTokenInstance.approve(addresses.delegationManager, INITIAL_STAKE_AMOUNT), `BANCO: Aprovando Stake`);
          const lockDurationSeconds = BigInt(INITIAL_STAKE_DURATION * 24 * 3600);
-         await sendTransactionWithRetries(() => dm.delegate(INITIAL_STAKE_AMOUNT, lockDurationSeconds, 0), 
-            "STAKING: Genesis Validador Criado"
-         );
+         await sendTransactionWithRetries(() => dm.delegate(INITIAL_STAKE_AMOUNT, lockDurationSeconds, 0), "STAKING: Genesis Validador Criado");
          console.log(`   ✅ Rede Segura!`);
     }
 

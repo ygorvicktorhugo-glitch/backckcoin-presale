@@ -1,5 +1,5 @@
 // js/modules/transactions.js
-// ✅ VERSÃO FINAL DAPP: Transações Completas (Core + Rental Market + Utilitários)
+// ✅ VERSÃO FINAL V4.0: Optimistic UI + Sync Robusto + Tratamento de Erro Humanizado
 
 const ethers = window.ethers;
 
@@ -19,11 +19,7 @@ const BIPS_DENOMINATOR = 10000n;
 
 /**
  * Generic wrapper to execute a transaction and provide UI feedback.
- * @param {Promise} txPromise - The promise returned by the contract function call.
- * @param {string} successMessage - Message to show on success.
- * @param {string} failMessage - Message to show on failure.
- * @param {HTMLElement} btnElement - The button element to show loading/disabled states.
- * @returns {Promise<boolean>} - True if successful, false otherwise.
+ * NOW WITH OPTIMISTIC UPDATES V4.0
  */
 async function executeTransaction(txPromise, successMessage, failMessage, btnElement) {
     if (!btnElement) {
@@ -38,35 +34,55 @@ async function executeTransaction(txPromise, successMessage, failMessage, btnEle
 
     try {
         const tx = await txPromise;
-        if (btnElement) btnElement.innerHTML = '<div class="loader inline-block mr-2"></div> Confirming...';
-        showToast('Submitting transaction...', 'info');
         
+        if (btnElement) btnElement.innerHTML = '<div class="loader inline-block mr-2"></div> Confirming...';
+        showToast('Submitting transaction to blockchain...', 'info');
+        
+        // Aguarda a confirmação do bloco
         const receipt = await tx.wait();
+        
         showToast(successMessage, 'success', receipt.hash);
 
-        // General data refresh sequence
+        // --- OPTIMISTIC UPDATE V4 ---
+        // 1. Atualização Imediata (Tenta ler o novo estado na hora)
+        await loadUserData(); 
+        
+        // Se for operação de Rental, atualiza a lista visualmente já
+        if (window.location.hash.includes('rental') || window.location.hash.includes('dashboard')) {
+             await loadRentalListings(); 
+        }
+        
+        // 2. Atualização de Segurança (3s depois para garantir propagação RPC e Indexer)
         setTimeout(async () => {
+            console.log("🔄 Sync Check (Safety Update)...");
             await loadUserData();
-            await loadRentalListings(); // Specific refresh for rental market
-        }, 1500); 
+            if (typeof loadRentalListings === 'function') await loadRentalListings();
+            
+            // Força renderização da UI se disponível
+            if (window.updateUIState) window.updateUIState(true);
+        }, 3000);
 
         return true;
     } catch (e) {
         console.error("Transaction Error:", e);
         let reason = 'Transaction rejected or failed.';
 
+        // Extração profunda do erro
         if (e.reason) reason = e.reason;
         else if (e.data && e.data.message) reason = e.data.message;
         else if (e.message) reason = e.message;
 
-        if (e.code === 'ACTION_REJECTED') reason = 'Transaction rejected by user.';
-        if (e.code === 'INSUFFICIENT_FUNDS') reason = 'Insufficient ETH for gas fees.';
-
-        // Custom error mapping for clearer feedback
-        if (reason.includes("Notary: Insufficient pStake")) reason = "You don't meet the minimum pStake requirement.";
-        if (reason.includes("Fee transfer failed") || reason.includes("insufficient allowance")) reason = "Insufficient BKC allowance or balance.";
+        // Mapeamento de Erros Humanizado
+        if (e.code === 'ACTION_REJECTED') reason = 'You rejected the transaction in your wallet.';
+        if (e.code === 'INSUFFICIENT_FUNDS') reason = 'You do not have enough ETH (Sepolia) for gas fees.';
+        
+        // Erros de Contrato Específicos
+        if (reason.includes("Notary: Insufficient pStake")) reason = "Minimum pStake requirement not met.";
+        if (reason.includes("Fee transfer failed") || reason.includes("insufficient allowance")) reason = "Insufficient BKC balance or allowance.";
         if (reason.includes("NP: No available NFTs")) reason = "Pool is currently sold out.";
-        if (reason.includes("InsufficientPStake")) reason = "Your pStake is too low to rent NFTs.";
+        if (reason.includes("InsufficientPStake")) reason = "Your pStake is too low to use this service.";
+        if (reason.includes("RentalActive")) reason = "NFT is currently rented and cannot be withdrawn.";
+        if (reason.includes("NotOwner")) reason = "You do not own this NFT.";
 
         showToast(`${failMessage}: ${reason}`, "error");
         return false;
@@ -84,13 +100,6 @@ async function executeTransaction(txPromise, successMessage, failMessage, btnEle
 
 /**
  * Ensures the user has approved a specific amount of BKC (ERC20) OR a specific NFT (ERC721).
- * Automatically detects type based on input.
- * @param {Object} tokenContract - The contract instance (BKC or BoosterNFT).
- * @param {string} spenderAddress - The contract address to approve.
- * @param {BigInt|number} amountOrTokenId - Amount (for ERC20) or TokenID (for ERC721).
- * @param {HTMLElement} btnElement - The button for UI feedback.
- * @param {string} purpose - A description for the toast message.
- * @returns {Promise<boolean>} - True if approval is met or successful, false otherwise.
  */
 async function ensureApproval(tokenContract, spenderAddress, amountOrTokenId, btnElement, purpose) {
     if (!State.signer) return false;
@@ -170,9 +179,6 @@ async function ensureApproval(tokenContract, spenderAddress, amountOrTokenId, bt
 // 1. RENTAL MARKET TRANSACTIONS (AirBNFT)
 // ====================================================================
 
-/**
- * Lists an NFT for rent (Hourly basis).
- */
 export async function executeListNFT(tokenId, pricePerHourWei, maxDurationHours, btnElement) {
     if (!State.signer || !addresses.rentalManager) return showToast("Wallet not connected or Config missing", "error");
 
@@ -188,21 +194,11 @@ export async function executeListNFT(tokenId, pricePerHourWei, maxDurationHours,
 
     // 2. Call listNFT
     const rentalContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.signer);
-    
-    // Ensure params are BigInt
     const txPromise = rentalContract.listNFT(BigInt(tokenId), BigInt(pricePerHourWei), BigInt(maxDurationHours));
     
-    return await executeTransaction(
-        txPromise,
-        `NFT #${tokenId} listed successfully!`,
-        "Error listing NFT",
-        btnElement
-    );
+    return await executeTransaction(txPromise, `NFT #${tokenId} listed successfully!`, "Error listing NFT", btnElement);
 }
 
-/**
- * Rents a listed NFT for X hours.
- */
 export async function executeRentNFT(tokenId, hoursToRent, totalCostWei, btnElement) {
     if (!State.signer || !addresses.rentalManager) return showToast("Wallet not connected", "error");
 
@@ -220,29 +216,16 @@ export async function executeRentNFT(tokenId, hoursToRent, totalCostWei, btnElem
     const rentalContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.signer);
     const txPromise = rentalContract.rentNFT(BigInt(tokenId), BigInt(hoursToRent));
 
-    return await executeTransaction(
-        txPromise,
-        `NFT #${tokenId} rented for ${hoursToRent} hours!`,
-        "Error renting NFT",
-        btnElement
-    );
+    return await executeTransaction(txPromise, `NFT #${tokenId} rented for ${hoursToRent} hours!`, "Error renting NFT", btnElement);
 }
 
-/**
- * Withdraws an NFT from listing.
- */
 export async function executeWithdrawNFT(tokenId, btnElement) {
     if (!State.signer || !addresses.rentalManager) return showToast("Wallet not connected", "error");
 
     const rentalContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.signer);
     const txPromise = rentalContract.withdrawNFT(BigInt(tokenId));
 
-    return await executeTransaction(
-        txPromise,
-        `NFT #${tokenId} withdrawn!`,
-        "Error withdrawing NFT",
-        btnElement
-    );
+    return await executeTransaction(txPromise, `NFT #${tokenId} withdrawn!`, "Error withdrawing NFT", btnElement);
 }
 
 
@@ -277,12 +260,7 @@ export async function executeUnstake(index) {
     const btnElement = document.querySelector(`.unstake-btn[data-index='${index}']`)
     const unstakeTxPromise = State.delegationManagerContract.unstake(index, boosterIdToSend);
     
-    return await executeTransaction(
-        unstakeTxPromise,
-        'Unstake successful!',
-        'Error unstaking tokens',
-        btnElement
-    );
+    return await executeTransaction(unstakeTxPromise, 'Unstake successful!', 'Error unstaking tokens', btnElement);
 }
 
 export async function executeForceUnstake(index) {
@@ -294,15 +272,9 @@ export async function executeForceUnstake(index) {
     if (!confirm("Are you sure? This action will incur a penalty.")) return false;
     
     const btnElement = document.querySelector(`.force-unstake-btn[data-index='${index}']`)
-    
     const forceUnstakeTxPromise = State.delegationManagerContract.forceUnstake(index, boosterIdToSend); 
     
-    return await executeTransaction(
-        forceUnstakeTxPromise,
-        'Force unstake successful!',
-        'Error performing force unstake',
-        btnElement
-    );
+    return await executeTransaction(forceUnstakeTxPromise, 'Force unstake successful!', 'Error performing force unstake', btnElement);
 }
 
 export async function executeUniversalClaim(stakingRewards, minerRewards, btnElement) {
@@ -386,9 +358,8 @@ export async function executeBuyBooster(poolAddress, price, boosterTokenIdForPSt
         const boosterIdToSend = BigInt(boosterTokenIdForPStake);
 
         const buyTxPromise = poolContract.buyNextAvailableNFT(boosterIdToSend);
-        const success = await executeTransaction(buyTxPromise, 'Purchase successful!', 'Error during purchase', btnElement);
+        return await executeTransaction(buyTxPromise, 'Purchase successful!', 'Error during purchase', btnElement);
 
-        return success;
     } catch (e) {
         console.error("Error buying booster:", e);
         showToast(`Error: ${e.message || 'Transaction rejected.'}`, "error");
@@ -432,8 +403,7 @@ export async function executeSellBooster(poolAddress, tokenIdToSell, boosterToke
         const poolContract = new ethers.Contract(poolAddress, nftPoolABI, State.signer);
 
         const sellTxPromise = poolContract.sellNFT(tokenIdBigInt, boosterIdToSend);
-        const success = await executeTransaction(sellTxPromise, 'Sale successful!', 'Error during sale', btnElement);
-        return success;
+        return await executeTransaction(sellTxPromise, 'Sale successful!', 'Error during sale', btnElement);
 
     } catch (e) {
         console.error("Error selling booster:", e);
@@ -465,12 +435,7 @@ export async function executeFaucetClaim(btnElement) {
     const claimTxPromise = State.faucetContract.claim();
     const faucetAmount = formatBigNumber(FAUCET_AMOUNT_WEI);
     
-    return await executeTransaction(
-        claimTxPromise,
-        `Successfully claimed ${faucetAmount} $BKC!`,
-        'Error claiming tokens',
-        btnElement
-    );
+    return await executeTransaction(claimTxPromise, `Successfully claimed ${faucetAmount} $BKC!`, 'Error claiming tokens', btnElement);
 }
 
 export async function executeNotarizeDocument(documentURI, boosterId, submitButton) {
@@ -489,12 +454,5 @@ export async function executeNotarizeDocument(documentURI, boosterId, submitButt
 
     const notarizeTxPromise = State.decentralizedNotaryContract.notarize(documentURI, BigInt(boosterId));
 
-    const success = await executeTransaction(
-        notarizeTxPromise,
-        'Document notarized successfully!',
-        'Error notarizing document',
-        submitButton
-    );
-
-    return success;
+    return await executeTransaction(notarizeTxPromise, 'Document notarized successfully!', 'Error notarizing document', submitButton);
 }

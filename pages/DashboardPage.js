@@ -1,5 +1,5 @@
 // pages/DashboardPage.js
-// ✅ VERSÃO FINAL COMPLETA: Histórico Corrigido, Paginação Ativa, Marketing de Booster e Métricas Reais
+// ✅ VERSÃO FINAL V4.0: Real-Time Sync + Manual Refresh + Auto-Update Inteligente
 
 const ethers = window.ethers;
 
@@ -75,6 +75,13 @@ function renderDashboardLayout() {
 
     DOMElements.dashboard.innerHTML = `
         <div class="flex flex-col gap-8 pb-10">
+            
+            <div class="flex justify-end">
+                <button id="manual-refresh-btn" class="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white border border-zinc-700 px-3 py-1.5 rounded flex items-center gap-2 transition-colors">
+                    <i class="fa-solid fa-rotate"></i> Sync Data
+                </button>
+            </div>
+
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 ${renderMetricCard('Total Supply', 'fa-coins', 'text-zinc-400', 'dash-metric-supply')}
                 ${renderMetricCard('Net pStake', 'fa-layer-group', 'text-purple-400', 'dash-metric-pstake')}
@@ -190,7 +197,7 @@ function renderDashboardLayout() {
                         </div>
                     </div>
 
-                     <div class="glass-panel relative overflow-hidden border-cyan-500/20">
+                      <div class="glass-panel relative overflow-hidden border-cyan-500/20">
                         <div class="absolute inset-0 bg-cyan-900/10"></div>
                         <h3 class="font-bold text-white mb-2 relative z-10">Need a Boost?</h3>
                         <p class="text-sm text-zinc-400 mb-4 relative z-10">Don't want to buy an NFT? Rent one by the hour.</p>
@@ -285,7 +292,6 @@ async function updateGlobalMetrics() {
             if (addr && ethers.isAddress(addr)) uniqueAddrs.add(addr);
         }
 
-        // Throttle para evitar 429 no Infura
         for (const addr of uniqueAddrs) {
             try { 
                 const bal = await safeContractCall(State.bkcTokenContractPublic, 'balanceOf', [addr], 0n);
@@ -303,7 +309,6 @@ async function updateGlobalMetrics() {
         setTxt('dash-metric-supply', formatBigNumber(totalSupply).toLocaleString('en-US', { maximumFractionDigits: 0 }));
         setTxt('dash-metric-pstake', formatPStake(totalPStake));
         
-        // Formatação rica para Supply Locked
         let lockedText = "0%";
         if (totalSupply > 0n) {
             const percent = (Number(totalLocked * 10000n / totalSupply)/100).toFixed(1);
@@ -319,10 +324,14 @@ async function updateGlobalMetrics() {
 }
 
 // ============================================================================
-// 3. LÓGICA DE DADOS DO USUÁRIO
+// 3. LÓGICA DE DADOS DO USUÁRIO (COM REFRESH V4)
 // ============================================================================
 
-async function updateUserHub() {
+/**
+ * Atualiza os dados do usuário. 
+ * @param {boolean} forceRefresh - Se true, ignora cache e busca na blockchain.
+ */
+async function updateUserHub(forceRefresh = false) {
     if (!State.isConnected) {
         const boosterArea = document.getElementById('dash-booster-area');
         if(boosterArea) {
@@ -336,7 +345,14 @@ async function updateUserHub() {
     }
 
     try {
-        await loadUserData(); 
+        // Efeito Visual de Loading (Sutil)
+        const rewardsEl = document.getElementById('dash-user-rewards');
+        if (forceRefresh && rewardsEl) {
+            rewardsEl.classList.add('animate-pulse', 'opacity-70');
+        }
+
+        // Chama data.js com o parâmetro forceRefresh
+        await loadUserData(forceRefresh); 
         
         const claimDetails = await calculateClaimDetails();
         const { totalRewards, netClaimAmount } = claimDetails;
@@ -362,6 +378,9 @@ async function updateUserHub() {
         const boosterData = await getHighestBoosterBoostFromAPI();
         renderBoosterCard(boosterData, claimDetails);
 
+        // Remove efeito visual
+        if (rewardsEl) rewardsEl.classList.remove('animate-pulse', 'opacity-70');
+
     } catch (e) { console.error("User Hub Error", e); }
 }
 
@@ -371,7 +390,6 @@ function renderBoosterCard(data, claimDetails) {
 
     const totalPending = claimDetails ? claimDetails.totalRewards : 0n;
     
-    // CASO 1: SEM BOOSTER (Alerta de Perda)
     if (!data || data.highestBoost === 0) {
         const maxBoostBips = boosterTiers && boosterTiers.length > 0 
             ? boosterTiers.reduce((max, t) => t.boostBips > max ? t.boostBips : max, 0)
@@ -410,7 +428,6 @@ function renderBoosterCard(data, claimDetails) {
         return;
     }
 
-    // CASO 2: COM BOOSTER (Visual Rico)
     const isRented = data.source === 'rented';
     const badgeColor = isRented ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' : 'bg-green-500/20 text-green-300 border-green-500/30';
     const badgeText = isRented ? 'Rented Active' : 'Owner Active';
@@ -510,7 +527,6 @@ function applyFiltersAndRender() {
         });
     }
 
-    // Ordenação Robusta (Suporta Timestamp ou BlockNumber)
     result.sort((a, b) => {
         const getTime = (obj) => {
             if (obj.timestamp && obj.timestamp._seconds) return obj.timestamp._seconds;
@@ -544,7 +560,6 @@ function renderActivityPage() {
     const pageItems = DashboardState.filteredActivities.slice(start, end);
 
     listEl.innerHTML = pageItems.map(item => {
-        // Extração de Data Universal
         let ts = 0;
         if (item.timestamp && item.timestamp._seconds) ts = item.timestamp._seconds;
         else if (item.createdAt && item.createdAt._seconds) ts = item.createdAt._seconds;
@@ -557,7 +572,6 @@ function renderActivityPage() {
         let icon = 'fa-circle', color = 'text-zinc-500', label = item.type;
         const t = (item.type || '').toUpperCase();
         
-        // Mapeamento Inteligente de Tipos
         if(t.includes('DELEGATION')) { 
             icon = 'fa-layer-group'; color = 'text-purple-400'; label = 'Staked BKC'; 
         } else if(t.includes('UNSTAKE')) { 
@@ -574,7 +588,6 @@ function renderActivityPage() {
         
         const txLink = item.txHash ? `${EXPLORER_BASE_URL}${item.txHash}` : '#';
         
-        // Extração de Valor (Busca em qualquer lugar)
         let rawAmount = "0";
         if (item.amount) rawAmount = item.amount;
         else if (item.details && item.details.amount) rawAmount = item.details.amount;
@@ -628,6 +641,19 @@ function attachDashboardListeners() {
         DOMElements.dashboard.addEventListener('click', async (e) => {
             const target = e.target;
 
+            if (target.closest('#manual-refresh-btn')) {
+                const btn = target.closest('#manual-refresh-btn');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-rotate fa-spin"></i> Syncing...';
+                
+                await updateUserHub(true); // Força refresh
+                
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fa-solid fa-rotate"></i> Sync Data';
+                    btn.disabled = false;
+                }, 1000);
+            }
+
             if (target.closest('.delegate-link')) { e.preventDefault(); window.navigateTo('mine'); }
             if (target.closest('.go-to-store')) { e.preventDefault(); window.navigateTo('store'); }
             if (target.closest('.go-to-rental')) { e.preventDefault(); window.navigateTo('rental'); }
@@ -668,7 +694,7 @@ function attachDashboardListeners() {
                         const success = await executeUniversalClaim(stakingRewards, minerRewards, null);
                         if (success) {
                             showToast("Rewards claimed!", "success");
-                            await updateUserHub();
+                            await updateUserHub(true); // Refresh forçado após claim
                             DashboardState.activities = []; 
                             fetchAndProcessActivities();
                         }
@@ -712,8 +738,8 @@ export const DashboardPage = {
         renderDashboardLayout();
         updateGlobalMetrics();
         if (State.isConnected) {
-            await updateUserHub();
-            await fetchAndProcessActivities();
+            await updateUserHub(false); // Inicial normal (cache)
+            fetchAndProcessActivities();
         }
     },
 
@@ -726,7 +752,7 @@ export const DashboardPage = {
 
             if ((now - DashboardState.lastUpdate > 10000) || (!hasActivityData && isShowingPlaceholder)) {
                 DashboardState.lastUpdate = now;
-                updateUserHub(); 
+                updateUserHub(false); // Update suave em background
                 fetchAndProcessActivities(); 
             }
         }

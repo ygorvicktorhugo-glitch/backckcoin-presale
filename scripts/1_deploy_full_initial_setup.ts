@@ -6,7 +6,7 @@ import { BigNumberish } from "ethers";
 
 // Função auxiliar para atrasos (delays)
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const DEPLOY_DELAY_MS = 15000; // Tempo seguro para redes de teste/mainnet
+const DEPLOY_DELAY_MS = 30000; // Tempo seguro para redes de teste/mainnet
 
 // --- CONFIGURAÇÃO CRÍTICA (Fase 1) ---
 

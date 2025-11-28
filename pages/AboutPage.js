@@ -1,163 +1,200 @@
 // pages/AboutPage.js
+// ✅ VERSÃO FINAL V3.0: "The Architect's Legacy" - Hub & Spoke Focus + Anonymous Origin
+
 import { showToast } from '../ui-feedback.js';
+
+// --- CSS FX (VISUALIZATION) ---
+const style = document.createElement('style');
+style.innerHTML = `
+    .glass-card {
+        background: rgba(15, 15, 20, 0.6);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        transition: all 0.3s ease;
+    }
+    .glass-card:hover {
+        border-color: rgba(251, 191, 36, 0.3);
+        transform: translateY(-3px);
+    }
+    .text-gradient-gold {
+        background: linear-gradient(to right, #fbbf24, #d97706);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    /* HUB & SPOKE VISUALIZATION */
+    .hub-circle {
+        width: 100px; height: 100px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(251,191,36,0.2) 0%, rgba(0,0,0,0) 70%);
+        border: 2px solid #fbbf24;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 30px rgba(251,191,36,0.3);
+        z-index: 10;
+        position: relative;
+    }
+    .spoke-line {
+        height: 2px;
+        background: linear-gradient(90deg, rgba(251,191,36,0.5) 0%, rgba(255,255,255,0.1) 100%);
+        width: 100%;
+        margin: 10px 0;
+    }
+    .spoke-item {
+        border-left: 2px solid rgba(255,255,255,0.1);
+        padding-left: 15px;
+    }
+`;
+document.head.appendChild(style);
 
 const renderAboutContent = () => {
     const aboutContainer = document.getElementById('about');
     if (!aboutContainer) return;
 
     aboutContainer.innerHTML = `
-        <div class="container mx-auto max-w-6xl py-8">
+        <div class="container mx-auto max-w-5xl py-12 px-4 animate-fadeIn">
+            
             <div class="text-center mb-20">
-                <h1 class="text-5xl md:text-6xl font-black mb-4 tracking-tight text-gradient">The Backchain Manifesto</h1>
-                <p class="text-lg md:text-xl text-zinc-400 max-w-3xl mx-auto">
-                    An overview of the self-sustaining economic engine designed to reward every participant and challenge the status quo of Web3.
-                </p>
-
-                <div class="mt-10">
-                    <button id="openWhitepaperModalBtn" 
-                       class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-8 rounded-lg text-lg transition-transform hover:scale-105 inline-block cursor-pointer">
-                        <i class="fa-solid fa-file-lines mr-2"></i> Download Whitepaper
-                    </button>
+                <div class="inline-block p-3 rounded-full bg-amber-500/10 border border-amber-500/20 mb-4">
+                    <i class="fa-solid fa-user-secret text-2xl text-amber-500"></i>
                 </div>
+                <h1 class="text-5xl md:text-7xl font-black mb-6 tracking-tight text-white uppercase">
+                    The Silent <br><span class="text-gradient-gold">Architects</span>
+                </h1>
+                <p class="text-lg md:text-xl text-zinc-400 max-w-3xl mx-auto leading-relaxed">
+                    Backchain was not built by a corporation. It was forged by a collective of <strong class="text-white">anonymous enthusiasts</strong> united by a single vision: to leave a legacy of true decentralization. We built the engine, locked the keys, and handed it to you.
+                </p>
             </div>
 
-            <section id="philosophy" class="mb-20">
-                <div class="bg-sidebar border border-border-color rounded-xl p-8 md:p-12">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-                        <div class="text-center"><i class="fa-solid fa-hand-fist text-9xl text-amber-400/20"></i></div>
-                        <div class="md:col-span-2">
-                            <h3 class="text-3xl font-bold text-gradient mb-4">The Fair Launch Philosophy</h3>
-                            
+            <section class="mb-24">
+                <div class="glass-card rounded-3xl p-8 md:p-12 border border-zinc-800 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 rounded-full blur-3xl -z-10"></div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                        <div>
+                            <span class="text-amber-500 font-bold tracking-widest text-xs uppercase mb-2 block">THE CORE TECHNOLOGY</span>
+                            <h2 class="text-3xl font-bold text-white mb-6">Hub & Spoke Architecture</h2>
+                            <p class="text-zinc-400 mb-6 leading-relaxed">
+                                Unlike traditional monolithic blockchains, Backchain uses a modular design. The <strong>Hub (EcosystemManager)</strong> is the immutable brain that defines the rules. The <strong>Spokes</strong> are the satellite services (Fortune Pool, Notary, Market) that plug into the Hub.
+                            </p>
                             <p class="text-zinc-400 mb-6">
-                                Backchain was born from the idea of a group of experts united by a central principle: true decentralization. Using their own resources, they initiated a project *for* the community. There is no central owner, no corporate entity, <strong>no reserved token supply, and no seed investors.</strong>
+                                This means anyone can build a new "Spoke" service, plug it into the economy, and generate value for the entire network.
                             </p>
                             
-                            <ul class="space-y-4">
-                                <li class="flex items-start"><i class="fa-solid fa-check-circle text-green-400 mt-1 mr-3"></i><div><strong class="text-white">NFT-Funded Ecosystem:</strong> The entire initial funding for liquidity, marketing, and development comes from one transparent source: the public sale of our utility NFTs. These aren't just collectibles; they are power assets that grant special abilities within the dApp and can be sold at any time in our native liquidity pool.</div></li>
-                                <li class="flex items-start"><i class="fa-solid fa-check-circle text-green-400 mt-1 mr-3"></i><div><strong class="text-white">Community First:</strong> To ensure maximum decentralization from day one, <strong>35% of the initial token supply (TGE)</strong> will be distributed for free to community members who help promote and build the rebellion.</div></li>
-                                
-                                <li class="flex items-start">
-                                    <i class="fa-solid fa-landmark text-cyan-400 mt-1 mr-3"></i>
-                                    <div>
-                                        <strong class="text-white">Community-Led Future:</strong> The community will decide the direction and usability of the project. Backchain was built to be governed by its participants, ensuring it evolves to meet collective needs.
-                                    </div>
+                            <ul class="space-y-3 mt-6">
+                                <li class="flex items-center text-sm text-zinc-300">
+                                    <i class="fa-solid fa-circle-nodes text-blue-500 mr-3"></i> Modular & Scalable Design
+                                </li>
+                                <li class="flex items-center text-sm text-zinc-300">
+                                    <i class="fa-solid fa-shield-halved text-blue-500 mr-3"></i> Centralized Security, Decentralized Growth
+                                </li>
+                                <li class="flex items-center text-sm text-zinc-300">
+                                    <i class="fa-solid fa-code-branch text-blue-500 mr-3"></i> Open for Developers
                                 </li>
                             </ul>
                         </div>
-                    </div>
-                </div>
-            </section>
-            
-            <div class="border-t border-border-color my-20"></div>
 
-            <section id="how-it-works" class="mb-20">
-                <div class="text-center mb-16">
-                    <span class="text-sm font-bold text-amber-400 tracking-widest">THE ECONOMIC ENGINE</span>
-                    <h2 class="text-4xl md:text-5xl font-bold my-4">The Self-Sustaining Value Cycle</h2>
-                    <p class="text-lg text-zinc-400 max-w-3xl mx-auto">
-                        Our closed-loop model ensures every action generates value that is redistributed back to its most active participants.
-                    </p>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div class="p-8 bg-sidebar rounded-lg border border-border-color transform hover:-translate-y-2 transition-transform duration-300">
-                        <div class="flex items-center justify-center h-16 w-16 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-6">
-                            <i class="fa-solid fa-fire text-3xl text-amber-400"></i>
-                        </div>
-                        <h3 class="text-2xl font-bold mb-3">1. Proof-of-Purchase Mining</h3>
-                        <p class="text-zinc-400">Instead of burning electricity, the network mints new tokens based on real economic activity. Key user actions, like creating a Notary record or playing in the Fortune Pool, trigger the minting of new $BKC that are sent directly to the reward pools.</p>
-                    </div>
-                    <div class="p-8 bg-sidebar rounded-lg border border-border-color transform hover:-translate-y-2 transition-transform duration-300">
-                         <div class="flex items-center justify-center h-16 w-16 rounded-xl bg-purple-500/10 border border-purple-500/30 mb-6">
-                            <i class="fa-solid fa-globe text-3xl text-purple-400"></i>
-                        </div>
-                        <h3 class="text-2xl font-bold mb-3">2. Global Consensus Staking</h3>
-                        <p class="text-zinc-400">Users lock their $BKC tokens in the Global Consensus Pool. This staking process generates pStake (Power Stake), which determines your share of the rewards generated by the ecosystem. It's simple, secure, and passive.</p>
-                    </div>
-                    <div class="p-8 bg-sidebar rounded-lg border border-border-color transform hover:-translate-y-2 transition-transform duration-300">
-                        <div class="flex items-center justify-center h-16 w-16 rounded-xl bg-green-500/10 border border-green-500/30 mb-6">
-                            <i class="fa-solid fa-bolt text-3xl text-green-400"></i>
-                        </div>
-                        <h3 class="text-2xl font-bold mb-3">3. Booster NFTs: The Multiplier</h3>
-                        <p class="text-zinc-400">The base reward claim efficiency starts at 50%. By acquiring a Booster NFT, you amplify this efficiency up to 100% and reduce system fees. These are strategic assets that directly multiply your passive income.</p>
-                    </div>
-                </div>
-            </section>
-
-            <div class="border-t border-border-color my-20"></div>
-
-            <section id="roles" class="mb-20">
-                <div class="text-center mb-16">
-                    <span class="text-sm font-bold text-cyan-400 tracking-widest">PARTICIPATION</span>
-                    <h2 class="text-4xl md:text-5xl font-bold my-4">Your Role in the Rebellion</h2>
-                    <p class="text-lg text-zinc-400 max-w-3xl mx-auto">
-                        Whether you are a passive investor or an active user, there is a vital role for you.
-                    </p>
-                </div>
-                <div class="space-y-10">
-                    <div class="bg-sidebar border border-border-color rounded-xl p-8 md:p-12">
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-                            <div class="md:col-span-2">
-                                <h3 class="text-3xl font-bold text-gradient mb-4">The Staker (Delegator)</h3>
-                                <p class="text-zinc-400 mb-6">Stakers are the backbone of the network. By locking $BKC in the Global Pool, you stabilize the economy and earn passive income.</p>
-                                <ul class="space-y-4">
-                                    <li class="flex items-start"><i class="fa-solid fa-circle-check text-green-400 mt-1 mr-3"></i><div><strong class="text-white">Earn Passive Income:</strong> Receive a share of rewards from all platform fees and Proof-of-Purchase Mining.</div></li>
-                                    <li class="flex items-start"><i class="fa-solid fa-circle-check text-green-400 mt-1 mr-3"></i><div><strong class="text-white">Amplify with Time:</strong> The pStake calculation rewards long-term commitment. The longer you lock your tokens, the greater your share of the reward pool.</div></li>
-                                </ul>
+                        <div class="relative flex flex-col items-center justify-center py-10">
+                            <div class="hub-circle flex-col text-center mb-8 animate-pulse">
+                                <i class="fa-solid fa-brain text-3xl text-amber-400"></i>
+                                <span class="text-[10px] font-bold text-white mt-1">THE HUB</span>
                             </div>
-                            <div class="text-center"><i class="fa-solid fa-users text-9xl text-purple-400/20"></i></div>
-                        </div>
-                    </div>
-                    <div class="bg-sidebar border border-border-color rounded-xl p-8 md:p-12">
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-                            <div class="text-center md:order-2"><i class="fa-solid fa-hand-holding-dollar text-9xl text-cyan-400/20"></i></div>
-                            <div class="md:col-span-2 md:order-1">
-                                <h3 class="text-3xl font-bold text-gradient mb-4">The Liquidity Provider</h3>
-                                <p class="text-zinc-400 mb-6">Liquidity Providers (LPs) ensure the smooth operation of the NFT market.</p>
-                                <ul class="space-y-4">
-                                    <li class="flex items-start"><i class="fa-solid fa-circle-check text-green-400 mt-1 mr-3"></i><div><strong class="text-white">Instant Liquidity:</strong> By adding NFTs and $BKC to the AMM pools, you allow other users to buy and sell instantly.</div></li>
-                                    <li class="flex items-start"><i class="fa-solid fa-circle-check text-green-400 mt-1 mr-3"></i><div><strong class="text-white">Earn Trading Fees:</strong> A portion of every NFT sale tax remains in the liquidity pool, increasing the value of your LP position over time.</div></li>
-                                </ul>
+                            
+                            <div class="w-full grid grid-cols-3 gap-4 text-center">
+                                <div class="flex flex-col items-center">
+                                    <div class="h-8 w-0.5 bg-gradient-to-b from-amber-500 to-transparent"></div>
+                                    <div class="glass-card p-3 rounded-xl w-full mt-2">
+                                        <i class="fa-solid fa-dice text-purple-400 mb-2"></i>
+                                        <div class="text-[10px] font-bold">FORTUNE</div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col items-center transform translate-y-8">
+                                    <div class="h-16 w-0.5 bg-gradient-to-b from-amber-500 to-transparent"></div>
+                                    <div class="glass-card p-3 rounded-xl w-full mt-2">
+                                        <i class="fa-solid fa-file-contract text-cyan-400 mb-2"></i>
+                                        <div class="text-[10px] font-bold">NOTARY</div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col items-center">
+                                    <div class="h-8 w-0.5 bg-gradient-to-b from-amber-500 to-transparent"></div>
+                                    <div class="glass-card p-3 rounded-xl w-full mt-2">
+                                        <i class="fa-solid fa-store text-green-400 mb-2"></i>
+                                        <div class="text-[10px] font-bold">MARKET</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
-            
-            <div class="border-t border-border-color my-20"></div>
 
-            <section id="share" class="text-center">
-                 <span class="text-sm font-bold text-green-400 tracking-widest">JOIN THE CAUSE</span>
-                <h2 class="text-4xl md:text-5xl font-bold my-4">Spread the Rebellion</h2>
-                <p class="text-lg text-zinc-400 max-w-3xl mx-auto mb-8">
-                    Our strength is our community. Share the project with your network and help us build a truly decentralized future.
-                </p>
-                <button id="shareProjectBtn" class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-6 rounded-lg text-lg transition-transform hover:scale-105">
-                    <i class="fa-solid fa-share-nodes mr-2"></i> Share the Project
+            <section class="mb-24">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold text-white">How You Win by Helping</h2>
+                    <p class="text-zinc-400 mt-2">The ecosystem pays you to keep it alive.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="glass-card p-8 rounded-2xl">
+                        <div class="text-4xl mb-4">🏛️</div>
+                        <h3 class="text-xl font-bold text-white mb-2">Stake & Govern</h3>
+                        <p class="text-sm text-zinc-400">
+                            Don't just hold tokens. Lock them to secure the Hub. In return, you receive a % of EVERY transaction fee generated by the Spokes.
+                        </p>
+                    </div>
+                    <div class="glass-card p-8 rounded-2xl">
+                        <div class="text-4xl mb-4">🎮</div>
+                        <h3 class="text-xl font-bold text-white mb-2">Play & Mine</h3>
+                        <p class="text-sm text-zinc-400">
+                            Using services (like Fortune Pool) isn't spending; it's mining. Proof-of-Purchase ensures that active users mint new $BKC rewards.
+                        </p>
+                    </div>
+                    <div class="glass-card p-8 rounded-2xl">
+                        <div class="text-4xl mb-4">🤝</div>
+                        <h3 class="text-xl font-bold text-white mb-2">Share & Grow</h3>
+                        <p class="text-sm text-zinc-400">
+                            By spreading the word, you increase network volume. More volume = Higher APY for Stakers = More Value for Token Holders.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="text-center py-12 bg-gradient-to-b from-transparent to-amber-500/5 rounded-3xl border border-white/5">
+                <img src="assets/bkc_logo_3d.png" class="w-16 h-16 mx-auto mb-6 opacity-80" alt="Logo">
+                <h2 class="text-3xl font-bold text-white mb-4">Read the Full Architecture</h2>
+                <p class="text-zinc-400 mb-8 max-w-lg mx-auto">Deep dive into the mathematical models and code structure that make this legacy possible.</p>
+                
+                <button id="openWhitepaperModalBtn" class="bg-white hover:bg-zinc-200 text-black font-black py-4 px-10 rounded-xl text-lg shadow-[0_0_25px_rgba(255,255,255,0.2)] transition-all hover:scale-105">
+                    <i class="fa-solid fa-file-code mr-2"></i> OPEN WHITEPAPER
                 </button>
             </section>
+
         </div>
 
-        <div id="whitepaperModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden" style="backdrop-filter: blur(5px);">
-            <div class="bg-sidebar border border-border-color rounded-xl p-8 md:p-12 w-full max-w-lg relative text-left shadow-lg">
-                
-                <button id="closeModalBtn" class="absolute top-4 right-5 text-zinc-500 hover:text-white text-3xl leading-none">&times;</button>
-                
-                <h3 class="text-2xl font-bold text-white mb-6">Download Whitepaper</h3>
-                <p class="text-zinc-400 mb-8">Please select which document you would like to view.</p>
-                
-                <div class="space-y-4">
-                    <a href="./assets/Backchain ($BKC) en V2.pdf" 
-                       target="_blank" 
-                       rel="noopener noreferrer" 
-                       class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-6 rounded-lg text-lg transition-transform hover:scale-105 w-full text-center inline-block">
-                        <i class="fa-solid fa-file-lines mr-2"></i> $BKC Tokenomics Whitepaper
+        <div id="whitepaperModal" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden transition-opacity opacity-0">
+            <div class="glass-card bg-[#0a0a0a] border border-zinc-700 rounded-2xl p-8 w-full max-w-md relative transform scale-95 transition-transform duration-300">
+                <button id="closeModalBtn" class="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-2xl"></i></button>
+                <div class="text-center mb-8">
+                    <h3 class="text-2xl font-bold text-white">Technical Documentation</h3>
+                    <p class="text-zinc-400 text-sm mt-2">Select a document to verify our code and vision.</p>
+                </div>
+                <div class="space-y-3">
+                    <a href="./assets/Backchain ($BKC) en V2.pdf" target="_blank" class="flex items-center gap-4 p-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-amber-500/50 transition-all group">
+                        <div class="text-amber-500 text-xl"><i class="fa-solid fa-coins"></i></div>
+                        <div class="text-left">
+                            <div class="text-white font-bold text-sm group-hover:text-amber-400 transition-colors">Tokenomics Paper</div>
+                            <div class="text-zinc-500 text-xs">Distribution Models</div>
+                        </div>
+                        <i class="fa-solid fa-download ml-auto text-zinc-600 group-hover:text-white"></i>
                     </a>
-                    
-                    <a href="./assets/whitepaper_bkc_ecosystem_english.pdf" 
-                       target="_blank" 
-                       rel="noopener noreferrer" 
-                       class="bg-cyan-500 hover:bg-cyan-600 text-zinc-900 font-bold py-3 px-6 rounded-lg text-lg transition-transform hover:scale-105 w-full text-center inline-block">
-                        <i class="fa-solid fa-sitemap mr-2"></i> Backchain Ecosystem Whitepaper
+                    <a href="./assets/whitepaper_bkc_ecosystem_english.pdf" target="_blank" class="flex items-center gap-4 p-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-cyan-500/50 transition-all group">
+                        <div class="text-cyan-500 text-xl"><i class="fa-solid fa-network-wired"></i></div>
+                        <div class="text-left">
+                            <div class="text-white font-bold text-sm group-hover:text-cyan-400 transition-colors">Ecosystem Architecture</div>
+                            <div class="text-zinc-500 text-xs">Hub & Spoke Technicals</div>
+                        </div>
+                        <i class="fa-solid fa-download ml-auto text-zinc-600 group-hover:text-white"></i>
                     </a>
                 </div>
             </div>
@@ -169,50 +206,34 @@ const setupAboutPageListeners = () => {
     const pageContainer = document.getElementById('about');
     if (!pageContainer) return;
 
-    // --- Lógica do Botão Share ---
-    const shareButton = pageContainer.querySelector('#shareProjectBtn');
-    if (shareButton) {
-        const newShareButton = shareButton.cloneNode(true);
-        shareButton.parentNode.replaceChild(newShareButton, shareButton);
-        
-        newShareButton.addEventListener('click', () => {
-            const url = window.location.origin; 
-            navigator.clipboard.writeText(url).then(() => {
-                showToast('Project link copied to clipboard!', 'success');
-            }).catch(err => {
-                console.error('Failed to copy: ', err);
-                showToast('Failed to copy link.', 'error');
-            });
-        });
-    }
-
-    // --- Lógica do Modal Whitepaper ---
     const modal = pageContainer.querySelector('#whitepaperModal');
     const openBtn = pageContainer.querySelector('#openWhitepaperModalBtn');
-    
-    if (modal && openBtn) {
+    const closeBtn = pageContainer.querySelector('#closeModalBtn');
+
+    if (modal && openBtn && closeBtn) {
+        // Remover listeners antigos clonando
         const newOpenBtn = openBtn.cloneNode(true);
         openBtn.parentNode.replaceChild(newOpenBtn, openBtn);
         
-        const newModal = modal.cloneNode(true);
-        modal.parentNode.replaceChild(newModal, modal);
+        const open = () => {
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modal.querySelector('div').classList.remove('scale-95');
+                modal.querySelector('div').classList.add('scale-100');
+            }, 10);
+        };
 
-        const closeBtn = newModal.querySelector('#closeModalBtn');
+        const close = () => {
+            modal.classList.add('opacity-0');
+            modal.querySelector('div').classList.remove('scale-100');
+            modal.querySelector('div').classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        };
 
-        const openModal = () => newModal.classList.remove('hidden');
-        const closeModal = () => newModal.classList.add('hidden');
-
-        newOpenBtn.addEventListener('click', openModal);
-        
-        if (closeBtn) {
-            closeBtn.addEventListener('click', closeModal);
-        }
-
-        newModal.addEventListener('click', (e) => {
-            if (e.target === newModal) {
-                closeModal();
-            }
-        });
+        newOpenBtn.addEventListener('click', open);
+        closeBtn.addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if(e.target === modal) close(); });
     }
 };
 
@@ -221,10 +242,6 @@ export const AboutPage = {
         renderAboutContent();
         setupAboutPageListeners();
     },
-    init() {
-        setupAboutPageListeners();
-    },
-    update(isConnected) {
-        setupAboutPageListeners();
-    }
+    init() { setupAboutPageListeners(); },
+    update() { setupAboutPageListeners(); }
 };

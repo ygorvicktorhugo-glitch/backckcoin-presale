@@ -1,5 +1,5 @@
 // pages/NotaryPage.js
-// ✅ VERSÃO FINAL V7.1: "Single Click Fix" + Legal Copy + UX Premium
+// ✅ VERSÃO FINAL V7.2: Otimizada (Sem chamadas redundantes) + UX Premium
 
 import { addresses } from '../config.js'; 
 import { State } from '../state.js';
@@ -16,6 +16,7 @@ let currentFileToUpload = null;
 let currentUploadedIPFS_URI = null; 
 let notaryButtonState = 'initial'; 
 let rpcErrorCount = 0; 
+let lastNotaryDataFetch = 0; // Controle de cache local da página
 
 // --- CSS FX ---
 const style = document.createElement('style');
@@ -52,11 +53,10 @@ style.innerHTML = `
 document.head.appendChild(style);
 
 // =========================================================================
-// FUNÇÕES AUXILIARES (DEFINIDAS ANTES DO USO)
+// FUNÇÕES AUXILIARES
 // =========================================================================
 
 function handleFiles(e) {
-    // Suporte tanto para Drag&Drop (dataTransfer) quanto Input (target)
     const file = e.target.files ? e.target.files[0] : (e.dataTransfer ? e.dataTransfer.files[0] : null);
     
     if (!file) return;
@@ -76,13 +76,10 @@ function initNotaryListeners() {
     
     if (!dropArea || !input) return;
 
-    // 1. CORREÇÃO DO CLIQUE ÚNICO
-    // Ao clicar na DIV, acionamos o input programaticamente
     dropArea.addEventListener('click', () => {
         input.click();
     });
 
-    // 2. Drag & Drop Visuals
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         dropArea.addEventListener(eventName, (e) => {
             e.preventDefault();
@@ -98,9 +95,8 @@ function initNotaryListeners() {
         dropArea.addEventListener(eventName, () => dropArea.classList.remove('dragover'), false);
     });
     
-    // 3. File Capture
-    dropArea.addEventListener('drop', handleFiles); // Soltar arquivo
-    input.addEventListener('change', handleFiles);  // Selecionar via janela
+    dropArea.addEventListener('drop', handleFiles);
+    input.addEventListener('change', handleFiles);
 }
 
 // =========================================================================
@@ -165,8 +161,8 @@ function renderNotaryPageLayout() {
                     <h4 class="text-blue-400 font-bold text-sm mb-2"><i class="fa-solid fa-circle-info mr-2"></i> How it works</h4>
                     <p class="text-xs text-zinc-400 leading-relaxed">
                         1. Your file is hashed (SHA-256) locally.<br>
-                        2. The hash is stored on IPFS (Decentralized Storage).<br>
-                        3. A unique NFT is minted on Backchain linking your wallet to the document hash.<br>
+                        2. The hash is stored on IPFS.<br>
+                        3. A unique NFT is minted linking your wallet to the hash.<br>
                         4. <strong>100% Privacy:</strong> Only the hash is on-chain.
                     </p>
                 </div>
@@ -194,11 +190,9 @@ function updateNotaryStep(step) {
     const content = document.getElementById('notary-step-content');
     if (!content) return;
 
-    // Progress Bar
     const line = document.getElementById('progress-line');
     if (line) line.style.width = step === 1 ? '0%' : step === 2 ? '50%' : '100%';
 
-    // Bubbles Styling
     [1,2,3].forEach(i => {
         const el = document.getElementById(`step-${i}`);
         if(el) {
@@ -215,7 +209,6 @@ function updateNotaryStep(step) {
         }
     });
 
-    // Content Switching
     if (step === 1) {
         content.innerHTML = `
             <div class="text-center mb-8">
@@ -225,7 +218,6 @@ function updateNotaryStep(step) {
             
             <div id="drop-area" class="drop-zone h-64 flex flex-col items-center justify-center cursor-pointer relative group">
                 <input type="file" id="notary-file-input" class="hidden" accept=".pdf,.doc,.docx,.jpg,.png,.txt,.zip">
-                
                 <div class="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-zinc-700 transition-all shadow-xl">
                     <i class="fa-solid fa-cloud-arrow-up text-3xl text-blue-500"></i>
                 </div>
@@ -233,7 +225,7 @@ function updateNotaryStep(step) {
                 <p class="text-xs text-zinc-500">or drag and drop file here</p>
             </div>
         `;
-        initNotaryListeners(); // Attach events
+        initNotaryListeners();
 
     } else if (step === 2) {
         content.innerHTML = `
@@ -334,6 +326,7 @@ function updateNotaryUserStatus() {
 
 async function loadNotaryPublicData() {
     const now = Date.now();
+    // Cache de 60s para evitar flood RPC
     if (rpcErrorCount > 5 && now - lastNotaryDataFetch < 30000) return;
     if (now - lastNotaryDataFetch < 60000 && State.notaryFee > 0n) { updateNotaryUserStatus(); return; }
 
@@ -347,13 +340,13 @@ async function loadNotaryPublicData() {
         if (fee > 0n) {
             State.notaryFee = fee;
             State.notaryMinPStake = stake;
+            lastNotaryDataFetch = now; // Atualiza timestamp
             rpcErrorCount = 0;
         }
     } catch(e) { rpcErrorCount++; }
     updateNotaryUserStatus();
 }
 
-// 🔴 COPY JURÍDICA PROFISSIONAL AQUI
 async function handleSignAndUpload(event) {
     const btn = event.currentTarget;
     btn.disabled = true;
@@ -366,7 +359,6 @@ async function handleSignAndUpload(event) {
         const signer = await State.provider.getSigner();
         const timestamp = new Date().toLocaleString('en-US', { timeZoneName: 'short' });
         
-        // --- LEGAL TEXT BLOCK ---
         const message = `BACKCHAIN DECENTRALIZED NOTARY
 --------------------------------
 ACTION: Immutable Blockchain Registration
@@ -382,12 +374,10 @@ I hereby authorize the permanent hashing and timestamping of the following docum
 By signing this message, I certify ownership and integrity of this data.
 --------------------------------`;
         
-        // 1. Signature
         const signature = await signer.signMessage(message);
         
         btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Uploading to IPFS...`;
 
-        // 2. Upload
         const formData = new FormData();
         formData.append('file', currentFileToUpload);
         formData.append('signature', signature);
@@ -400,12 +390,11 @@ By signing this message, I certify ownership and integrity of this data.
         const data = await res.json();
         currentUploadedIPFS_URI = data.ipfsUri;
 
-        // 3. Mint
         btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Waiting for Wallet...`;
         await executeNotarizeDocument(currentUploadedIPFS_URI, 0n, btn);
         
         NotaryPage.reset();
-        await loadUserData(true);
+        await loadUserData(true); // Aqui forçamos refresh pois o saldo mudou
         renderMyNotarizedDocuments();
 
     } catch (e) {
@@ -436,7 +425,8 @@ export const NotaryPage = {
         if (!isActive) return;
         renderNotaryPageLayout();
         await loadNotaryPublicData();
-        if (State.isConnected) { await loadUserData(true); renderMyNotarizedDocuments(); }
+        // OTIMIZAÇÃO: Removemos o 'true' para usar o cache global
+        if (State.isConnected) { await loadUserData(); renderMyNotarizedDocuments(); }
         updateNotaryUserStatus();
     },
     reset: () => {

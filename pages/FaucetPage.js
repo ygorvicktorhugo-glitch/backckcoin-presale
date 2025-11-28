@@ -1,305 +1,288 @@
 // pages/FaucetPage.js
-// ✅ VERSÃO FINAL BLINDADA: Anti-Loop, Cache e Proteção contra Erro 429
+// ✅ VERSÃO FINAL V2.0: "Visual Impact" - Loading Animado + UX Premium
 
 import { addresses, FAUCET_AMOUNT_WEI } from '../config.js';
 import { State } from '../state.js';
-import { 
-    renderLoading, 
-    renderError, 
-    formatBigNumber, 
-    formatAddress 
-} from '../utils.js';
-import { 
-    safeContractCall, 
-    safeBalanceOf, // ✅ Importante para evitar loop no getBalance
-    loadUserData 
-} from '../modules/data.js';
+import { formatBigNumber, formatAddress, renderError } from '../utils.js';
+import { safeBalanceOf } from '../modules/data.js';
 import { executeFaucetClaim } from '../modules/transactions.js';
 import { showToast } from '../ui-feedback.js';
 
 const ethers = window.ethers;
 
-// --- Estado Local ---
+// --- CSS FX (INJEÇÃO) ---
+const style = document.createElement('style');
+style.innerHTML = `
+    @keyframes pulseLogo {
+        0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.2)); }
+        50% { transform: scale(1.1); filter: drop-shadow(0 0 25px rgba(16, 185, 129, 0.5)); }
+        100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.2)); }
+    }
+    .faucet-logo-anim { animation: pulseLogo 2s infinite ease-in-out; }
+    
+    .glass-card {
+        background: rgba(15, 15, 20, 0.7);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+    }
+    .step-number {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+`;
+document.head.appendChild(style);
+
+// --- ESTADO LOCAL ---
 let faucetState = {
     ethBalance: null,
     faucetBKCBalance: null,
     isLoading: false, 
-    lastFetch: 0 // Cache de tempo
+    lastFetch: 0,
+    loadingInterval: null // Para rodar as mensagens
 };
 
-// --- Função Auxiliar: Copiar para Clipboard ---
-function copyToClipboard(text, buttonElement) {
-    if (!buttonElement || buttonElement.disabled) return;
-    navigator.clipboard.writeText(text).then(() => {
-        const originalHTML = buttonElement.innerHTML;
-        buttonElement.innerHTML = '<i class="fa-solid fa-check mr-2"></i> Copied!';
-        buttonElement.disabled = true;
-        setTimeout(() => {
-            if (document.body.contains(buttonElement)) {
-                buttonElement.innerHTML = originalHTML;
-                buttonElement.disabled = false;
-            }
-        }, 1500);
-    }).catch(err => {
-        console.error('Failed to copy text: ', err);
-        showToast('Failed to copy address.', 'error');
-    });
-}
+// --- COMPONENTES VISUAIS ---
 
-// --- Função Auxiliar: Renderizar Card de Passo ---
-function renderStepCard({ title, status, icon, contentHTML, actionHTML = '', customClass = '' }) {
-    const statusStyles = {
-        required: { border: 'border-red-500',    bg: 'bg-red-900/30',    text: 'text-red-400',    iconBg: 'bg-red-500/20' },
-        active:   { border: 'border-green-500',   bg: 'bg-green-900/30',   text: 'text-green-400',  iconBg: 'bg-green-500/20' },
-        error:    { border: 'border-amber-500',     bg: 'bg-amber-900/30',    text: 'text-amber-400',    iconBg: 'bg-amber-500/20' },
-        complete: { border: 'border-zinc-700',   bg: 'bg-zinc-800/50',  text: 'text-zinc-400',   iconBg: 'bg-zinc-700/50' }
-    };
-    const styles = statusStyles[status] || statusStyles.complete;
-
+function renderLoadingScreen() {
     return `
-        <div class="step-card border ${styles.border}/50 ${styles.bg} rounded-xl shadow-xl hover:shadow-2xl transition-shadow duration-300 mb-6 overflow-hidden ${customClass}">
-            <div class="flex items-center gap-4 p-4 border-b ${styles.border}/50">
-                <i class="fa-solid ${icon} text-2xl ${styles.text} flex-shrink-0"></i>
-                <h3 class="text-xl font-bold text-white flex-1">${title}</h3>
-            </div>
-            <div class="p-5">
-                <div class="prose prose-sm prose-invert max-w-none text-zinc-300 mb-4 prose-p:my-2">
-                    ${contentHTML}
-                </div>
-                ${actionHTML}
+        <div class="flex flex-col items-center justify-center py-32 animate-fadeIn">
+            <img src="assets/bkc_logo_3d.png" class="w-24 h-24 mb-8 faucet-logo-anim" alt="Loading...">
+            <div class="text-xl font-bold text-white mb-2 tracking-widest" id="faucet-loading-text">CONNECTING...</div>
+            <div class="w-64 h-1 bg-zinc-800 rounded-full overflow-hidden mt-4">
+                <div class="h-full bg-green-500 animate-progressBar"></div>
             </div>
         </div>
     `;
 }
 
-// --- Componentes de Tela ---
-
-function renderWalletInfo(walletAddress, ethBalance) {
-    const ethFormatted = ethBalance !== null ? ethers.formatEther(ethBalance) : '0.00';
-    return `
-        <div class="bg-sidebar p-4 rounded-xl text-sm mb-6 border border-border-color shadow-lg">
-            <p class="text-zinc-400">Your Wallet:</p>
-            <p class="font-mono text-white break-all">${walletAddress}</p>
-            <p class="text-zinc-400 mt-2">Sepolia ETH Balance (Gas):</p>
-            <p class="font-bold text-lg ${ethBalance > 0n ? 'text-green-400' : 'text-red-400'}">${Number(ethFormatted).toFixed(4)} ETH</p>
-        </div>
-    `;
-}
-
-function renderScreen_MissingETH() {
-    return `
-        <div class="max-w-xl mx-auto">
-            ${renderWalletInfo(State.userAddress, faucetState.ethBalance)}
-            
-            ${renderStepCard({
-                title: 'Step 1: Get Sepolia ETH (Gas)',
-                status: 'required',
-                icon: 'fa-gas-pump', 
-                contentHTML: `
-                    <p>Your wallet requires Sepolia ETH to pay for transaction fees (gas) before we can send you $BKC.</p>
-                    <p class="mt-3 text-sm font-semibold text-white">Follow these 3 actions to get Sepolia ETH:</p>
-                    <ol class="list-decimal list-inside text-zinc-300 ml-4 space-y-2 mt-2 text-sm">
-                        <li>Action 1: Copy your wallet address.</li>
-                        <li>Action 2: Click the button to go to the Sepolia ETH Faucet.</li>
-                        <li>Action 3: Paste your address into the Faucet and claim your ETH.</li>
-                    </ol>
-                `,
-                actionHTML: `
-                    <button id="copyAddressBtnStep1" class="mt-4 w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm">
-                        <i class="fa-solid fa-copy mr-2"></i> Copy Your Address (Action 1)
-                    </button>
-                    <a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" target="_blank" rel="noopener noreferrer" class="mt-3 w-full inline-block text-center bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-2 px-4 rounded-md transition-colors text-sm shadow-md">
-                        <i class="fa-solid fa-cloud mr-2"></i> Go to ETH Faucet (Action 2)
-                    </a>
-                    <p class="text-xs text-zinc-500 mt-4 italic text-center">After receiving ETH, please refresh this page (F5) to proceed to the next step.</p>
-                `
-            })}
-        </div>
-    `;
-}
-
-function renderScreen_ReadyToClaim() {
-    const bkcClaimAmountFormatted = formatBigNumber(FAUCET_AMOUNT_WEI);
-    const faucetHasEnoughBKC = (faucetState.faucetBKCBalance || 0n) >= FAUCET_AMOUNT_WEI;
-
-    let claimStatus = 'active'; 
-    let content = `<p class="text-lg">You are ready to claim ${bkcClaimAmountFormatted.toFixed(2)} $BKC per claim.</p><p class="text-xs text-zinc-400">This action can be performed multiple times to facilitate network testing.</p>`;
-    let actionHTML = `
-        <button id="claimFaucetBtn" class="w-full font-bold py-3 px-6 rounded-lg text-lg transition-colors shadow-lg hover:shadow-xl bg-green-500 hover:bg-green-600 text-zinc-900">
-            <i class="fa-solid fa-gift mr-2"></i> Claim ${bkcClaimAmountFormatted.toFixed(2)} $BKC
-        </button>
-    `;
-
-    if (!faucetHasEnoughBKC) {
-        claimStatus = 'error';
-        content = `<p class="text-lg text-center">Faucet Empty! The faucet currently has insufficient $BKC. Please try again later.</p>
-                   <p class="text-sm text-zinc-400 text-center mt-2">Faucet Balance: ${formatBigNumber(faucetState.faucetBKCBalance).toFixed(2)} $BKC</p>`;
-        actionHTML = `<button disabled class="w-full font-bold py-3 px-6 rounded-lg text-lg btn-disabled bg-zinc-700 text-zinc-500 shadow-md">Faucet Empty</button>`;
-    }
-
-    return `
-        <div class="max-w-xl mx-auto">
-            ${renderWalletInfo(State.userAddress, faucetState.ethBalance)}
-            
-            ${renderStepCard({
-                title: 'Step 2: Claim Your $BKC Tokens',
-                status: claimStatus,
-                icon: 'fa-hand-holding-dollar', 
-                contentHTML: content,
-                actionHTML: actionHTML
-            })}
-        </div>
-    `;
-}
-
-function renderScreen_Disconnected() {
-    return `
-        <div class="max-w-xl mx-auto text-center py-20">
-            <i class="fa-solid fa-plug-circle-exclamation text-6xl text-red-500 mb-6"></i>
-            <h3 class="text-2xl font-bold text-white mb-3">Connect Your Wallet to Access the Testnet Faucet</h3>
-            <p class="text-zinc-400 mb-6">
-                Please connect your wallet on the Sepolia Testnet to verify your address and claim free $BKC tokens for testing.
-            </p>
-            <button onclick="window.openConnectModal()" class="bg-amber-500 hover:bg-amber-600 text-zinc-900 font-bold py-3 px-8 rounded-lg text-lg transition-all shadow-lg hover:shadow-amber-500/20">
-                <i class="fa-solid fa-wallet mr-2"></i> Connect Wallet
-            </button>
-        </div>
-    `;
-}
-
-// --- Função Principal de Renderização ---
-async function renderFaucetContent() {
-    const container = document.getElementById('faucet-content-wrapper');
-    if (!container) return;
-
-    // 1. VERIFICAÇÃO DE CONEXÃO
-    if (!State.isConnected || !State.userAddress || !State.provider) { 
-        container.innerHTML = renderScreen_Disconnected(); 
-        return; 
-    }
+function startLoadingMessages() {
+    const msgs = [
+        "CONNECTING TO SEPOLIA...",
+        "VERIFYING WALLET BALANCE...",
+        "CHECKING FAUCET LIQUIDITY...",
+        "PREPARING $BKC DROP..."
+    ];
+    let idx = 0;
+    if (faucetState.loadingInterval) clearInterval(faucetState.loadingInterval);
     
-    // 2. Verificações de Configuração
-    if (!addresses.faucet || addresses.faucet.startsWith('0x...') || !State.faucetContractPublic || !State.bkcTokenContractPublic) {
-        return container.innerHTML = renderError('Faucet contract is not configured or instantiated correctly in the dApp.');
-    }
-
-    // 3. Carregamento dos Dados (Com Cache de Tempo para evitar Loop)
-    const now = Date.now();
-    // Se os dados não existem OU (não está carregando E passou 5s desde a última tentativa)
-    if ((faucetState.ethBalance === null || faucetState.faucetBKCBalance === null) && (!faucetState.isLoading && (now - faucetState.lastFetch > 5000))) {
-        faucetState.isLoading = true;
-        faucetState.lastFetch = now;
-        
-        container.innerHTML = `<div class="max-w-xl mx-auto text-center py-20"><div class="loader inline-block !w-8 !h-8"></div><p class="text-zinc-400 mt-4 text-lg">Loading faucet status...</p></div>`;
-        
-        try {
-            console.log("FAUCET: Fetching data...");
-            
-            // Usamos Promise.all para buscar em paralelo, mas com proteção safeBalanceOf
-            const [ethBal, faucetBal] = await Promise.all([
-                State.provider.getBalance(State.userAddress).catch(() => 0n),
-                safeBalanceOf(State.bkcTokenContractPublic, addresses.faucet)
-            ]);
-
-            faucetState.ethBalance = ethBal;
-            faucetState.faucetBKCBalance = faucetBal;
-            faucetState.isLoading = false;
-
-        } catch (e) {
-            console.error("FAUCET: Critical error during data fetch.", e);
-            faucetState.isLoading = false;
-            return container.innerHTML = renderError(`Could not load faucet data. Check connection.`);
+    faucetState.loadingInterval = setInterval(() => {
+        const el = document.getElementById('faucet-loading-text');
+        if (el) {
+            el.innerText = msgs[idx % msgs.length];
+            idx++;
         }
-    }
+    }, 1500);
+}
 
-    // Se ainda estiver carregando, não desenha nada (o loading já está na tela)
-    if (faucetState.isLoading) return;
-
-    // 4. Determinação da Tela (Conectado)
-    let screenContent = '';
-    const needsSepoliaETH = faucetState.ethBalance === 0n;
-
-    if (needsSepoliaETH) {
-        screenContent = renderScreen_MissingETH();
-    } else { 
-        screenContent = renderScreen_ReadyToClaim();
-    }
-
-    // 5. Renderização Final da Estrutura
-    container.innerHTML = `
-        <div class="max-w-2xl mx-auto">
-            <div class="text-center mb-10">
-                <i class="fa-solid fa-faucet-drip text-6xl text-cyan-400 mb-4"></i>
-                <h2 class="text-3xl font-bold text-white mb-2">Sepolia Testnet Faucet</h2>
-                <p class="text-zinc-400">Get free $BKC tokens to test the Backchain dApp in 2 simple steps.</p>
-            </div>
-
-            ${screenContent}
-
-            <div class="mt-10 pt-6 border-t border-border-color text-center text-xs text-zinc-500 space-y-2">
-                 <p><strong class="text-zinc-400">Your Address:</strong> <span class="font-mono">${State.userAddress ? formatAddress(State.userAddress) : 'N/A'}</span></p>
-                 <p><strong class="text-zinc-400">Faucet Contract:</strong> <a href="https://sepolia.etherscan.io/address/${addresses.faucet}" target="_blank" class="font-mono text-blue-500 hover:text-blue-400 hover:underline ml-1">${formatAddress(addresses.faucet)} <i class="fa-solid fa-arrow-up-right-from-square text-xs ml-1"></i></a></p>
-                 <p><strong class="text-zinc-400">$BKC Token Contract:</strong> <a href="https://sepolia.etherscan.io/token/${addresses.bkcToken}" target="_blank" class="font-mono text-blue-500 hover:text-blue-400 hover:underline ml-1">${formatAddress(addresses.bkcToken)} <i class="fa-solid fa-arrow-up-right-from-square text-xs ml-1"></i></a></p>
+function renderStepCard({ step, title, contentHTML, actionHTML = '', status = 'normal' }) {
+    const borderClass = status === 'error' ? 'border-red-500/30' : 'border-zinc-700/50';
+    
+    return `
+        <div class="glass-card rounded-2xl p-6 mb-6 border ${borderClass} transition-all hover:border-zinc-600">
+            <div class="flex items-start gap-4">
+                <div class="flex-shrink-0 w-10 h-10 rounded-xl step-number flex items-center justify-center font-bold text-lg shadow-lg">
+                    ${step}
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-xl font-bold text-white mb-3">${title}</h3>
+                    <div class="text-zinc-400 text-sm leading-relaxed mb-4">
+                        ${contentHTML}
+                    </div>
+                    ${actionHTML}
+                </div>
             </div>
         </div>
     `;
+}
 
-    // 6. Listeners
-    const copyBtnElement = document.getElementById('copyAddressBtnStep1');
-    if (copyBtnElement && State.userAddress) {
-        copyBtnElement.addEventListener('click', (e) => {
-            copyToClipboard(State.userAddress, e.currentTarget);
+function renderWalletHeader(ethBalance) {
+    const ethFormatted = ethBalance !== null ? Number(ethers.formatEther(ethBalance)).toFixed(4) : '0.0000';
+    const hasGas = ethBalance > 0n;
+
+    return `
+        <div class="flex flex-col md:flex-row justify-between items-center bg-zinc-900/50 rounded-xl p-4 px-6 mb-8 border border-zinc-800">
+            <div class="flex items-center gap-3 mb-3 md:mb-0">
+                <div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400">
+                    <i class="fa-solid fa-wallet"></i>
+                </div>
+                <div>
+                    <div class="text-[10px] text-zinc-500 uppercase font-bold">CONNECTED WALLET</div>
+                    <div class="font-mono text-white text-sm">${formatAddress(State.userAddress)}</div>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div class="text-right">
+                    <div class="text-[10px] text-zinc-500 uppercase font-bold">GAS BALANCE (ETH)</div>
+                    <div class="font-mono text-sm ${hasGas ? 'text-green-400' : 'text-red-400'} font-bold">
+                        ${ethFormatted} ETH
+                    </div>
+                </div>
+                ${!hasGas ? '<div class="px-3 py-1 bg-red-500/10 text-red-400 text-xs rounded-lg border border-red-500/20">Gas Required</div>' : ''}
+            </div>
+        </div>
+    `;
+}
+
+function renderContent() {
+    const hasGas = (faucetState.ethBalance || 0n) > 0n;
+    const bkcAmount = formatBigNumber(FAUCET_AMOUNT_WEI);
+    const faucetHasFunds = (faucetState.faucetBKCBalance || 0n) >= FAUCET_AMOUNT_WEI;
+
+    let html = `
+        <div class="max-w-2xl mx-auto animate-fadeIn">
+            <div class="text-center mb-10">
+                <h1 class="text-4xl font-black text-white mb-2 tracking-tight">TESTNET FAUCET</h1>
+                <p class="text-zinc-400">Get free <span class="text-green-400 font-bold">$BKC</span> tokens to explore the ecosystem.</p>
+            </div>
+
+            ${renderWalletHeader(faucetState.ethBalance)}
+    `;
+
+    // PASSO 1: GAS (ETH)
+    if (!hasGas) {
+        html += renderStepCard({
+            step: '1',
+            title: 'Get Sepolia ETH (Gas)',
+            status: 'error',
+            contentHTML: `You need a small amount of Sepolia ETH to pay for transaction fees. This is free and required by the blockchain network.`,
+            actionHTML: `
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <button onclick="navigator.clipboard.writeText('${State.userAddress}'); showToast('Address copied!', 'success')" class="bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 px-4 rounded-lg text-sm border border-zinc-700 transition-colors">
+                        <i class="fa-regular fa-copy mr-2"></i> Copy Address
+                    </button>
+                    <a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" target="_blank" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg text-sm text-center shadow-lg shadow-blue-900/20 transition-all">
+                        Go to ETH Faucet <i class="fa-solid fa-arrow-up-right-from-square ml-2"></i>
+                    </a>
+                </div>
+            `
         });
     }
 
-    const claimBtnElement = document.getElementById('claimFaucetBtn');
-    if (claimBtnElement) {
-         // Remove listener antigo (clonando) para evitar duplicação
-         const newBtn = claimBtnElement.cloneNode(true);
-         claimBtnElement.parentNode.replaceChild(newBtn, claimBtnElement);
-         newBtn.addEventListener('click', FaucetPage.claimHandler);
+    // PASSO 2: CLAIM BKC
+    let claimBtn = '';
+    if (!faucetHasFunds) {
+        claimBtn = `<button disabled class="w-full bg-zinc-800 text-zinc-500 font-bold py-4 rounded-xl cursor-not-allowed border border-zinc-700">Faucet Empty (Try later)</button>`;
+    } else if (!hasGas) {
+        claimBtn = `<button disabled class="w-full bg-zinc-800 text-zinc-500 font-bold py-4 rounded-xl cursor-not-allowed border border-zinc-700">Waiting for Gas...</button>`;
+    } else {
+        claimBtn = `
+            <button id="claimFaucetBtn" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-black py-4 rounded-xl shadow-lg shadow-green-900/20 transform transition hover:-translate-y-1 active:scale-95 text-lg tracking-wide">
+                CLAIM ${bkcAmount} $BKC
+            </button>
+        `;
     }
+
+    html += renderStepCard({
+        step: hasGas ? '1' : '2',
+        title: 'Claim Test Tokens',
+        contentHTML: `Mint <strong>${bkcAmount} $BKC</strong> instantly to your wallet. You can use these tokens to stake, play, or test the notary service.`,
+        actionHTML: claimBtn
+    });
+
+    html += `
+        <div class="mt-8 text-center">
+            <p class="text-xs text-zinc-600 font-mono">
+                Faucet Contract: <a href="https://sepolia.etherscan.io/address/${addresses.faucet}" target="_blank" class="hover:text-green-400 transition-colors underline">${formatAddress(addresses.faucet)}</a>
+            </p>
+        </div>
+        </div>
+    `;
+
+    return html;
 }
 
-// --- Objeto Exportado da Página ---
+// --- LÓGICA PRINCIPAL ---
+
 export const FaucetPage = {
     async render(isNewPage) {
-        const faucetContainer = document.getElementById('faucet');
-        if (!faucetContainer) return;
+        const container = document.getElementById('faucet');
+        if (!container) return;
         
-        // 1. Renderiza o wrapper apenas se não existir
-        if (!faucetContainer.querySelector('#faucet-content-wrapper')) {
-             faucetContainer.innerHTML = `<div id="faucet-content-wrapper" class="container mx-auto max-w-7xl py-8"></div>`;
+        if (!container.querySelector('#faucet-content-wrapper')) {
+             container.innerHTML = `<div id="faucet-content-wrapper" class="container mx-auto max-w-7xl py-8 min-h-[60vh]"></div>`;
+        }
+        const wrapper = document.getElementById('faucet-content-wrapper');
+
+        // 1. Desconectado
+        if (!State.isConnected) {
+            wrapper.innerHTML = `
+                <div class="text-center py-32 animate-fadeIn">
+                    <div class="mb-6 inline-block p-6 rounded-full bg-zinc-900 border border-zinc-800">
+                        <i class="fa-solid fa-wallet text-4xl text-zinc-500"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2">Wallet Disconnected</h2>
+                    <p class="text-zinc-400 mb-8">Please connect to claim tokens.</p>
+                    <button onclick="window.openConnectModal()" class="bg-white text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition-transform">Connect Wallet</button>
+                </div>
+            `;
+            return;
         }
 
-        // 2. Reseta estado se for nova página ou desconectado
-        if (isNewPage || !State.isConnected) {
-            faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false, lastFetch: 0 };
-        }
-        
-        // 3. Renderiza conteúdo
-        await renderFaucetContent();
-    },
-    
-    async claimHandler(e) {
-        const claimBtn = e.currentTarget;
-        if (claimBtn && !claimBtn.disabled) {
-            const success = await executeFaucetClaim(claimBtn);
-            if (success) {
-                setTimeout(async () => { 
-                    // Força refresh dos dados
-                    faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false, lastFetch: 0 };
-                    await renderFaucetContent(); 
-                }, 2500);
+        // 2. Loading
+        const now = Date.now();
+        if ((faucetState.ethBalance === null) && (!faucetState.isLoading && (now - faucetState.lastFetch > 5000))) {
+            faucetState.isLoading = true;
+            faucetState.lastFetch = now;
+            wrapper.innerHTML = renderLoadingScreen();
+            startLoadingMessages();
+
+            try {
+                // Fetch Paralelo
+                const [ethBal, faucetBal] = await Promise.all([
+                    State.provider.getBalance(State.userAddress).catch(() => 0n),
+                    safeBalanceOf(State.bkcTokenContractPublic, addresses.faucet)
+                ]);
+                
+                faucetState.ethBalance = ethBal;
+                faucetState.faucetBKCBalance = faucetBal;
+                
+                // Pequeno delay para apreciar a animação (UX)
+                setTimeout(() => {
+                    faucetState.isLoading = false;
+                    clearInterval(faucetState.loadingInterval);
+                    wrapper.innerHTML = renderContent();
+                    this.attachListeners();
+                }, 1500);
+
+            } catch (e) {
+                console.error(e);
+                faucetState.isLoading = false;
+                wrapper.innerHTML = renderError("Failed to load faucet data.");
             }
+        } else if (!faucetState.isLoading) {
+            // Renderiza direto se já tem dados
+            wrapper.innerHTML = renderContent();
+            this.attachListeners();
         }
     },
-    
+
+    attachListeners() {
+        const btn = document.getElementById('claimFaucetBtn');
+        if (btn) {
+            // Remove clones antigos para evitar duplo click
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+            
+            newBtn.addEventListener('click', async () => {
+                const success = await executeFaucetClaim(newBtn);
+                if (success) {
+                    // Refresh após sucesso
+                    setTimeout(() => {
+                        faucetState = { ethBalance: null, faucetBKCBalance: null, isLoading: false, lastFetch: 0 };
+                        this.render(true);
+                    }, 2000);
+                }
+            });
+        }
+    },
+
     update() {
-        const faucetContainer = document.getElementById('faucet');
-        // Só atualiza se a página estiver visível
-        if (faucetContainer && !faucetContainer.classList.contains('hidden')) {
-             renderFaucetContent();
+        const container = document.getElementById('faucet');
+        if (container && !container.classList.contains('hidden')) {
+             this.render(false);
         }
     }
 };

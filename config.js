@@ -1,5 +1,5 @@
 // config.js
-// ✅ VERSÃO FINAL V9.0: Fortune Pool V2 (Strategic Betting) + Full Ecosystem Support
+// ✅ VERSÃO FINAL V9.1: Fortune Pool V2 Fix (ABI Update) + Full Ecosystem Support
 
 // ============================================================================
 // 1. ENVIRONMENT DETECTION
@@ -54,6 +54,7 @@ export async function loadAddresses() {
 // ============================================================================
 // 3. NETWORK CONFIGURATION
 // ============================================================================
+// ⚠️ OBS: Substitua pela sua chave NOVA se esta estiver bloqueada.
 const INFURA_KEY = "a17d6aa469bd4214836fe54f36df6915"; 
 
 export const sepoliaWssUrl = `wss://sepolia.infura.io/ws/v3/${INFURA_KEY}`;
@@ -149,11 +150,11 @@ export const nftPoolABI = [
 ];
 
 // --- [UPDATED] FORTUNE POOL V2 ABI ---
-// Esta é a parte CRÍTICA que foi atualizada para suportar a nova mecânica
+// CORREÇÃO CRÍTICA APLICADA: gameResults agora pede (gameId, index) para suportar Arrays em Mappings
 export const actionsManagerABI = [
     "function participate(uint256 _amount, uint8[3] _guesses, bool _isCumulative) payable", 
     "function oracleFeeInWei() view returns (uint256)",
-    "function gameResults(uint256) view returns (uint256[3] memory)",
+    "function gameResults(uint256, uint256) view returns (uint256)", // <-- FIX AQUI!
     "function gameCounter() view returns (uint256)",
     "function prizePoolBalance() view returns (uint256)",
     "event GameRequested(uint256 indexed gameId, address indexed user, uint256 purchaseAmount, uint8[3] guesses, bool isCumulative)",

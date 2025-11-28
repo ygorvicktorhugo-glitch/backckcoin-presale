@@ -1,7 +1,7 @@
 {
   "serviceFees": {
-    "COMMENT": "💰 PREÇO DOS SERVIÇOS (Em BKC): Define quanto custa para usar cada serviço. Exemplo: Se colocar '100', o usuário pagará 100 tokens BKC. O sistema converte isso automaticamente para a unidade da blockchain (Wei).",
-    "NOTARY_SERVICE": "100",
+    "COMMENT": "💰 PREÇO DOS SERVIÇOS (VALOR EM BKC): Custo de uso de serviços. O script converte para Wei (x 10^18). EXEMPLO: '15' vira 15.000...000.",
+    "NOTARY_SERVICE": "15",
     "FORTUNE_POOL_SERVICE": "10",
     "NFT_POOL_ACCESS": "0",
     "RENTAL_MARKET_TAX_BIPS": "500",
@@ -9,26 +9,26 @@
     "NFT_POOL_SELL_TAX_BIPS": "100"
   },
   "pStakeMinimums": {
-    "COMMENT": "🔒 TRAVA DE VIP (Mínimo de Stake): Define quantos tokens BKC o usuário precisa ter travado (Staked) para ter permissão de usar o serviço.",
+    "COMMENT": "🔒 REQUISITO MÍNIMO DE PSTAKE (INTEIRO PURO): O script envia o número exato. NÃO usa casas decimais. Ex: '10000'.",
     "NOTARY_SERVICE": "10000",
     "FORTUNE_POOL_SERVICE": "1000",
     "NFT_POOL_ACCESS": "5000",
     "RENTAL_MARKET_ACCESS": "0"
   },
   "stakingFees": {
-    "COMMENT": "📉 TAXAS DE STAKE (Use BIPS): Taxas cobradas sobre o investimento. 100 = 1%.",
-    "DELEGATION_FEE_BIPS": "0",
-    "UNSTAKE_FEE_BIPS": "100",
-    "FORCE_UNSTAKE_PENALTY_BIPS": "500",
-    "CLAIM_REWARD_FEE_BIPS": "50" 
+    "COMMENT": "📉 TAXAS DE STAKE (VALOR EM BIPS): 100 = 1%.",
+    "DELEGATION_FEE_BIPS": "50",               
+    "UNSTAKE_FEE_BIPS": "100",                
+    "FORCE_UNSTAKE_PENALTY_BIPS": "500",      
+    "CLAIM_REWARD_FEE_BIPS": "500"            
   },
   "ammTaxFees": {
-    "COMMENT": "💸 TAXAS DO MERCADO DE NFT (Use BIPS): A porcentagem que o sistema retém quando alguém compra ou vende um NFT nas piscinas de liquidez. (Movido para ServiceFees, mas mantido aqui para referência, use o ServiceFees para o deploy!)",
+    "COMMENT": "💸 TAXAS DE POOLS DE LIQUIDEZ (VALOR EM BIPS).",
     "NFT_POOL_BUY_TAX_BIPS": "100",
     "NFT_POOL_SELL_TAX_BIPS": "100"
   },
   "boosterDiscounts": {
-    "COMMENT": "⭐ DESCONTOS DOS NFTs (Equivalência): O valor do Desconto (lado direito) deve ser igual à Força do NFT (lado esquerdo).",
+    "COMMENT": "⭐ DESCONTOS DO NFT (BIPS). A chave é a força (ex: 7000) e o valor é o desconto (ex: 7000).",
     "7000": "7000",
     "6000": "6000",
     "5000": "5000",
@@ -38,20 +38,15 @@
     "1000": "1000"
   },
   "miningDistribution": {
-    "COMMENT": "⛏️ DIVISÃO DA MINERAÇÃO (Novos Tokens): Para onde vão os tokens CRIADOS. A SOMA DEVE SER 10000 (100%).",
-    "TREASURY": "2000",
-    "VALIDATOR_POOL": "0",
-    "DELEGATOR_POOL": "8000"
+    "COMMENT": "⛏️ MINERAÇÃO (NOVOS TOKENS - PoP). Soma deve ser 10000.",
+    "TREASURY": "2000",                        
+    "VALIDATOR_POOL": "0",                     
+    "DELEGATOR_POOL": "8000"                   
   },
   "feeDistribution": {
-    "COMMENT": "💵 DIVISÃO DAS TAXAS (Tokens Pagos): Para onde vão os tokens que o usuário PAGOU. A SOMA DEVE SER 10000 (100%).",
-    "TREASURY": "5000",
-    "VALIDATOR_POOL": "0",
-    "DELEGATOR_POOL": "5000"
-  },
-  "rentalFees": {
-    "COMMENT": "⚙️ CONFIGURAÇÃO DO RENTAL MARKET (Para scripts legados)",
-    "TAX_BIPS": "500",
-    "PSTAKE_MIN": "0"
+    "COMMENT": "💵 DIVISÃO DAS TAXAS (TOKENS PAGOS). Soma deve ser 10000.",
+    "TREASURY": "5000",                        
+    "VALIDATOR_POOL": "0",                     
+    "DELEGATOR_POOL": "5000"                   
   }
 }

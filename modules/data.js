@@ -1,5 +1,5 @@
 // js/modules/data.js
-// ✅ VERSÃO FINAL V4.0: Real-Time Data + Optimistic UI Support + Cache Bypass
+// ✅ VERSÃO FINAL V4.1: Cache Robusto (Exclui Requisitos Críticos)
 
 const ethers = window.ethers;
 
@@ -68,7 +68,9 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
     const cacheKey = `${contractAddr}-${method}-${JSON.stringify(args)}`;
     const now = Date.now();
 
-    // Métodos seguros para cache (Leitura)
+    // 🚨 AJUSTE DE EFICIÊNCIA/ECONOMIA: 
+    // Métodos que podem ser cacheados localmente (evitam requisições RPC)
+    // 'getServiceRequirements' foi removido para garantir a leitura fresca para dados críticos.
     const cacheableMethods = [
         'getPoolInfo', 'getBuyPrice', 'getSellPrice', 'getAvailableTokenIds', 
         'getAllListedTokenIds', 'tokenURI', 'boostBips', 'getListing', 

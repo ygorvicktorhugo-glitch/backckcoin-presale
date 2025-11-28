@@ -1,5 +1,5 @@
 // modules/wallet.js
-// ✅ VERSÃO FINAL V4.0: Auto-Reconnect + Polling Adaptativo + Rate Limit Safe
+// ✅ VERSÃO FINAL V4.1: Auto-Reconnect + Polling Adaptativo + Instâncias Públicas Essenciais
 
 import { ethers } from 'https://esm.sh/ethers@6.11.1';
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
@@ -231,6 +231,14 @@ export async function initPublicProvider() {
             State.faucetContractPublic = new ethers.Contract(addresses.faucet, faucetABI, State.publicProvider);
         if (isValidAddress(addresses.rentalManager))
             State.rentalManagerContractPublic = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.publicProvider);
+        
+        // 🚨 NOVO: Instância pública do HUB (EcosystemManager) para ler FEES/PSTAKE/REGRAS
+        if (isValidAddress(addresses.ecosystemManager))
+            State.ecosystemManagerContractPublic = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, State.publicProvider);
+        
+        // 🚨 NOVO: Instância pública do FORTUNE POOL (ActionsManager) para ler PRIZE POOL
+        if (isValidAddress(addresses.actionsManager))
+            State.actionsManagerContractPublic = new ethers.Contract(addresses.actionsManager, actionsManagerABI, State.publicProvider);
         
         // Carrega dados públicos (Supply, etc) em background
         loadPublicData().then(() => {

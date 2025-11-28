@@ -1,5 +1,5 @@
 // pages/NotaryPage.js
-// ✅ VERSÃO FINAL V7.4: Robustez de Rede + Tratamento de Erro Amigável + Assinatura
+// ✅ VERSÃO FINAL V7.5: Animação de Mineração "Crypto Security" + Barra de Progresso 40s
 
 import { addresses } from '../config.js'; 
 import { State } from '../state.js';
@@ -9,7 +9,7 @@ import { showToast } from '../ui-feedback.js';
 import { executeNotarizeDocument } from '../modules/transactions.js';
 
 const ethers = window.ethers;
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // Limite seguro de 10MB para evitar timeout
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
 // --- ESTADO LOCAL ---
 let currentFileToUpload = null;
@@ -18,7 +18,7 @@ let notaryButtonState = 'initial';
 let rpcErrorCount = 0; 
 let lastNotaryDataFetch = 0; 
 
-// --- CSS FX ---
+// --- CSS FX (Adicionado Animações de Mineração) ---
 const style = document.createElement('style');
 style.innerHTML = `
     .drop-zone {
@@ -49,6 +49,93 @@ style.innerHTML = `
         100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
     }
     .btn-pulse { animation: pulse-border 2s infinite; }
+
+    /* --- MINING ANIMATION STYLES --- */
+    .mining-overlay {
+        background: rgba(0, 0, 0, 0.95);
+        backdrop-filter: blur(10px);
+    }
+    
+    @keyframes spin-slow {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    
+    @keyframes orbit-reverse {
+        from { transform: rotate(360deg); }
+        to { transform: rotate(0deg); }
+    }
+
+    @keyframes logo-pulse {
+        0% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(59, 130, 246, 0)); }
+        50% { transform: scale(1.05); filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.5)); }
+        100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(59, 130, 246, 0)); }
+    }
+
+    .orbit-container {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .orbit-ring {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border: 1px dashed rgba(59, 130, 246, 0.3);
+        border-radius: 50%;
+        animation: spin-slow 10s linear infinite;
+    }
+
+    .orbit-item {
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        background: #18181b;
+        border: 1px solid #3b82f6;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #60a5fa;
+        font-size: 12px;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+        animation: orbit-reverse 10s linear infinite; /* Mantém o ícone de pé */
+    }
+
+    /* Posições dos ícones na órbita */
+    .item-1 { top: -15px; left: 50%; transform: translateX(-50%); }
+    .item-2 { bottom: 10px; right: -10px; }
+    .item-3 { bottom: 10px; left: -10px; }
+
+    .central-logo {
+        width: 64px;
+        height: 64px;
+        z-index: 10;
+        animation: logo-pulse 2s ease-in-out infinite;
+    }
+
+    .progress-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        height: 6px;
+        width: 100%;
+        max-width: 300px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+        width: 0%;
+        transition: width 0.2s linear;
+        box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+    }
 `;
 document.head.appendChild(style);
 
@@ -76,9 +163,7 @@ function initNotaryListeners() {
     
     if (!dropArea || !input) return;
 
-    dropArea.addEventListener('click', () => {
-        input.click();
-    });
+    dropArea.addEventListener('click', () => input.click());
 
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         dropArea.addEventListener(eventName, (e) => {
@@ -110,6 +195,25 @@ function renderNotaryPageLayout() {
     if (container.querySelector('#notary-main-box')) return; 
 
     container.innerHTML = `
+        <div id="mining-overlay" class="mining-overlay fixed inset-0 z-50 hidden flex-col items-center justify-center animate-fadeIn">
+            <div class="orbit-container">
+                <div class="orbit-ring">
+                    <div class="orbit-item item-1" style="top: -15px; left: 45px;"><i class="fa-solid fa-shield-halved"></i></div>
+                    <div class="orbit-item item-2" style="top: 85px; right: -5px;"><i class="fa-solid fa-link"></i></div>
+                    <div class="orbit-item item-3" style="top: 85px; left: -5px;"><i class="fa-solid fa-key"></i></div>
+                </div>
+                <img src="assets/bkc_logo_3d.png" class="central-logo" alt="Backcoin Logo">
+            </div>
+            
+            <h3 class="text-2xl font-bold text-white mb-2 tracking-widest uppercase">Securing Data</h3>
+            <p id="mining-status-text" class="text-blue-400 font-mono text-xs mb-6 blink">INITIALIZING PROTOCOL...</p>
+            
+            <div class="progress-track">
+                <div id="mining-progress-bar" class="progress-fill"></div>
+            </div>
+            <div class="mt-2 text-zinc-500 text-[10px] font-mono">ESTIMATED TIME: ~40s</div>
+        </div>
+
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 animate-fadeIn">
             <div>
                 <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">Decentralized Notary</h1>
@@ -326,7 +430,7 @@ function updateNotaryUserStatus() {
 
 async function loadNotaryPublicData() {
     const now = Date.now();
-    // Cache de 60s para evitar flood RPC
+    // Cache de 60s
     if (rpcErrorCount > 5 && now - lastNotaryDataFetch < 30000) return;
     if (now - lastNotaryDataFetch < 60000 && State.notaryFee > 0n) { updateNotaryUserStatus(); return; }
 
@@ -340,7 +444,7 @@ async function loadNotaryPublicData() {
         if (fee > 0n) {
             State.notaryFee = fee;
             State.notaryMinPStake = stake;
-            lastNotaryDataFetch = now; // Atualiza timestamp
+            lastNotaryDataFetch = now; 
             rpcErrorCount = 0;
         }
     } catch(e) { rpcErrorCount++; }
@@ -349,8 +453,38 @@ async function loadNotaryPublicData() {
 
 async function handleSignAndUpload(event) {
     const btn = event.currentTarget;
-    btn.disabled = true;
-    btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Signing...`;
+    
+    // --- SHOW MINING OVERLAY ---
+    const overlay = document.getElementById('mining-overlay');
+    const progressBar = document.getElementById('mining-progress-bar');
+    const statusText = document.getElementById('mining-status-text');
+    
+    if (overlay) overlay.classList.remove('hidden');
+    if (overlay) overlay.classList.add('flex');
+    
+    // --- PROGRESS BAR LOGIC (40 Seconds to 99%) ---
+    let progress = 0;
+    const duration = 40000; // 40 seconds
+    const interval = 100; // Update every 100ms
+    const step = 99 / (duration / interval); // Calculate step per interval to reach 99%
+    
+    const progressTimer = setInterval(() => {
+        progress += step;
+        if (progress >= 99) {
+            progress = 99; // Hang at 99% until done
+            clearInterval(progressTimer);
+        }
+        if (progressBar) progressBar.style.width = `${progress}%`;
+    }, interval);
+
+    // --- STATUS TEXT ROTATION ---
+    const textTimer = setInterval(() => {
+        const texts = ["HASHING DOCUMENT...", "ENCRYPTING METADATA...", "UPLOADING TO IPFS...", "CONNECTING TO BACKCHAIN...", "MINTING PROOF..."];
+        const current = statusText ? statusText.innerText : "";
+        const idx = texts.indexOf(current);
+        const next = texts[(idx + 1) % texts.length];
+        if (statusText) statusText.innerText = next;
+    }, 4000);
 
     try {
         const rawDesc = document.getElementById('notary-user-description')?.value;
@@ -359,7 +493,6 @@ async function handleSignAndUpload(event) {
         const signer = await State.provider.getSigner();
         const timestamp = new Date().toLocaleString('en-US', { timeZoneName: 'short' });
         
-        // --- ASSINATURA CORRIGIDA ---
         const message = `BACKCOIN & BACKCHAIN PROTOCOL
 DECENTRALIZED NOTARY SERVICE
 --------------------------------
@@ -378,8 +511,7 @@ By signing this message, I certify ownership and integrity of this data.
         
         const signature = await signer.signMessage(message);
         
-        btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Uploading...`;
-
+        // --- UPLOAD ---
         const formData = new FormData();
         formData.append('file', currentFileToUpload);
         formData.append('signature', signature);
@@ -409,24 +541,38 @@ By signing this message, I certify ownership and integrity of this data.
         const data = await res.json();
         currentUploadedIPFS_URI = data.ipfsUri;
 
-        btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Waiting for Wallet...`;
+        // --- BLOCKCHAIN TRANSACTION ---
         await executeNotarizeDocument(currentUploadedIPFS_URI, 0n, btn);
         
-        NotaryPage.reset();
-        await loadUserData(true); 
-        renderMyNotarizedDocuments();
+        // --- SUCCESS ---
+        clearInterval(progressTimer);
+        clearInterval(textTimer);
+        if (progressBar) progressBar.style.width = `100%`;
+        if (statusText) statusText.innerText = "SUCCESS! IMMUTABLE PROOF GENERATED.";
+        
+        setTimeout(() => {
+            if (overlay) overlay.classList.add('hidden');
+            if (overlay) overlay.classList.remove('flex');
+            NotaryPage.reset();
+            loadUserData(true); 
+            renderMyNotarizedDocuments();
+        }, 1500);
 
     } catch (e) {
+        clearInterval(progressTimer);
+        clearInterval(textTimer);
         console.error(e);
+        
+        if (overlay) overlay.classList.add('hidden');
+        if (overlay) overlay.classList.remove('flex');
+
         if (e.code === 'ACTION_REJECTED' || e.code === 4001) {
             showToast("Signature rejected.", "info");
         } else if (e.name === 'AbortError') {
-             showToast("Upload Timed Out. File might be too large or network slow.", "error");
+             showToast("Upload Timed Out. Network slow.", "error");
         } else {
             showToast("Error: " + e.message, "error");
         }
-        btn.disabled = false;
-        btn.innerHTML = `<i class="fa-solid fa-rotate-right mr-2"></i> Try Again`;
     }
 }
 

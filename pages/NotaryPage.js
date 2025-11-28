@@ -1,5 +1,5 @@
 // pages/NotaryPage.js
-// ✅ VERSÃO FINAL V7.5: Animação de Mineração "Crypto Security" + Barra de Progresso 40s
+// ✅ VERSÃO FINAL V7.6: Animação Pós-Assinatura + Textos Educativos + Timeout 60s
 
 import { addresses } from '../config.js'; 
 import { State } from '../state.js';
@@ -18,7 +18,7 @@ let notaryButtonState = 'initial';
 let rpcErrorCount = 0; 
 let lastNotaryDataFetch = 0; 
 
-// --- CSS FX (Adicionado Animações de Mineração) ---
+// --- CSS FX ---
 const style = document.createElement('style');
 style.innerHTML = `
     .drop-zone {
@@ -53,7 +53,7 @@ style.innerHTML = `
     /* --- MINING ANIMATION STYLES --- */
     .mining-overlay {
         background: rgba(0, 0, 0, 0.95);
-        backdrop-filter: blur(10px);
+        backdrop-filter: blur(15px);
     }
     
     @keyframes spin-slow {
@@ -74,8 +74,8 @@ style.innerHTML = `
 
     .orbit-container {
         position: relative;
-        width: 120px;
-        height: 120px;
+        width: 140px;
+        height: 140px;
         display: flex;
         justify-content: center;
         align-items: center;
@@ -88,13 +88,13 @@ style.innerHTML = `
         height: 100%;
         border: 1px dashed rgba(59, 130, 246, 0.3);
         border-radius: 50%;
-        animation: spin-slow 10s linear infinite;
+        animation: spin-slow 12s linear infinite;
     }
 
     .orbit-item {
         position: absolute;
-        width: 30px;
-        height: 30px;
+        width: 36px;
+        height: 36px;
         background: #18181b;
         border: 1px solid #3b82f6;
         border-radius: 50%;
@@ -102,39 +102,44 @@ style.innerHTML = `
         align-items: center;
         justify-content: center;
         color: #60a5fa;
-        font-size: 12px;
-        box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
-        animation: orbit-reverse 10s linear infinite; /* Mantém o ícone de pé */
+        font-size: 14px;
+        box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+        animation: orbit-reverse 12s linear infinite; /* Mantém o ícone de pé */
     }
 
     /* Posições dos ícones na órbita */
-    .item-1 { top: -15px; left: 50%; transform: translateX(-50%); }
-    .item-2 { bottom: 10px; right: -10px; }
-    .item-3 { bottom: 10px; left: -10px; }
+    .item-1 { top: -18px; left: 50%; transform: translateX(-50%); }
+    .item-2 { bottom: 15px; right: -10px; }
+    .item-3 { bottom: 15px; left: -10px; }
 
     .central-logo {
-        width: 64px;
-        height: 64px;
+        width: 72px;
+        height: 72px;
         z-index: 10;
-        animation: logo-pulse 2s ease-in-out infinite;
+        animation: logo-pulse 3s ease-in-out infinite;
     }
 
     .progress-track {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
         border-radius: 8px;
-        height: 6px;
+        height: 4px;
         width: 100%;
-        max-width: 300px;
+        max-width: 320px;
         overflow: hidden;
         position: relative;
+        margin-top: 1rem;
     }
 
     .progress-fill {
         height: 100%;
-        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+        background: linear-gradient(90deg, #3b82f6, #a855f7);
         width: 0%;
         transition: width 0.2s linear;
-        box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+    }
+    
+    .fade-in-text {
+        animation: fadeIn 0.5s ease-in-out;
     }
 `;
 document.head.appendChild(style);
@@ -195,23 +200,27 @@ function renderNotaryPageLayout() {
     if (container.querySelector('#notary-main-box')) return; 
 
     container.innerHTML = `
-        <div id="mining-overlay" class="mining-overlay fixed inset-0 z-50 hidden flex-col items-center justify-center animate-fadeIn">
+        <div id="mining-overlay" class="mining-overlay fixed inset-0 z-[100] hidden flex-col items-center justify-center animate-fadeIn">
             <div class="orbit-container">
                 <div class="orbit-ring">
-                    <div class="orbit-item item-1" style="top: -15px; left: 45px;"><i class="fa-solid fa-shield-halved"></i></div>
-                    <div class="orbit-item item-2" style="top: 85px; right: -5px;"><i class="fa-solid fa-link"></i></div>
-                    <div class="orbit-item item-3" style="top: 85px; left: -5px;"><i class="fa-solid fa-key"></i></div>
+                    <div class="orbit-item item-1" style="top: -18px; left: 52px;"><i class="fa-solid fa-file-shield"></i></div>
+                    <div class="orbit-item item-2" style="top: 100px; right: -8px;"><i class="fa-solid fa-fingerprint"></i></div>
+                    <div class="orbit-item item-3" style="top: 100px; left: -8px;"><i class="fa-solid fa-link"></i></div>
                 </div>
                 <img src="assets/bkc_logo_3d.png" class="central-logo" alt="Backcoin Logo">
             </div>
             
-            <h3 class="text-2xl font-bold text-white mb-2 tracking-widest uppercase">Securing Data</h3>
-            <p id="mining-status-text" class="text-blue-400 font-mono text-xs mb-6 blink">INITIALIZING PROTOCOL...</p>
+            <h3 class="text-3xl font-black text-white mb-1 tracking-widest uppercase text-center">Notarizing</h3>
+            <p id="mining-status-text" class="text-blue-400 font-mono text-xs mb-4 uppercase tracking-wider">INITIATING SECURE PROTOCOL...</p>
             
+            <div class="h-10 flex items-center justify-center w-full max-w-md px-4 text-center">
+                <p id="mining-edu-text" class="text-zinc-400 text-xs italic fade-in-text">"Creating a unique cryptographic fingerprint for your file..."</p>
+            </div>
+
             <div class="progress-track">
                 <div id="mining-progress-bar" class="progress-fill"></div>
             </div>
-            <div class="mt-2 text-zinc-500 text-[10px] font-mono">ESTIMATED TIME: ~40s</div>
+            <div class="mt-2 text-zinc-600 text-[9px] font-mono">ESTIMATED TIME: ~60s</div>
         </div>
 
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 animate-fadeIn">
@@ -453,38 +462,16 @@ async function loadNotaryPublicData() {
 
 async function handleSignAndUpload(event) {
     const btn = event.currentTarget;
+    const originalBtnText = btn.innerHTML;
     
-    // --- SHOW MINING OVERLAY ---
-    const overlay = document.getElementById('mining-overlay');
-    const progressBar = document.getElementById('mining-progress-bar');
-    const statusText = document.getElementById('mining-status-text');
-    
-    if (overlay) overlay.classList.remove('hidden');
-    if (overlay) overlay.classList.add('flex');
-    
-    // --- PROGRESS BAR LOGIC (40 Seconds to 99%) ---
-    let progress = 0;
-    const duration = 40000; // 40 seconds
-    const interval = 100; // Update every 100ms
-    const step = 99 / (duration / interval); // Calculate step per interval to reach 99%
-    
-    const progressTimer = setInterval(() => {
-        progress += step;
-        if (progress >= 99) {
-            progress = 99; // Hang at 99% until done
-            clearInterval(progressTimer);
-        }
-        if (progressBar) progressBar.style.width = `${progress}%`;
-    }, interval);
+    // 1. Prepare UI for Signature
+    btn.disabled = true;
+    btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Waiting for Signature...`;
 
-    // --- STATUS TEXT ROTATION ---
-    const textTimer = setInterval(() => {
-        const texts = ["HASHING DOCUMENT...", "ENCRYPTING METADATA...", "UPLOADING TO IPFS...", "CONNECTING TO BACKCHAIN...", "MINTING PROOF..."];
-        const current = statusText ? statusText.innerText : "";
-        const idx = texts.indexOf(current);
-        const next = texts[(idx + 1) % texts.length];
-        if (statusText) statusText.innerText = next;
-    }, 4000);
+    // Variáveis para limpar timers
+    let progressTimer = null;
+    let textTimer = null;
+    let eduTextTimer = null;
 
     try {
         const rawDesc = document.getElementById('notary-user-description')?.value;
@@ -509,9 +496,65 @@ I hereby authorize the permanent hashing and timestamping of the following docum
 By signing this message, I certify ownership and integrity of this data.
 --------------------------------`;
         
+        // 2. Request Signature (Blocking)
         const signature = await signer.signMessage(message);
         
-        // --- UPLOAD ---
+        // ============================================
+        // 3. START MINING ANIMATION (Post-Signature)
+        // ============================================
+        const overlay = document.getElementById('mining-overlay');
+        const progressBar = document.getElementById('mining-progress-bar');
+        const statusText = document.getElementById('mining-status-text');
+        const eduText = document.getElementById('mining-edu-text');
+        
+        if (overlay) {
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+        }
+        
+        // --- PROGRESS BAR LOGIC (60 Seconds to 99%) ---
+        let progress = 0;
+        const duration = 60000; // 60 seconds (aligned with timeout)
+        const interval = 100; // Update every 100ms
+        const step = 99 / (duration / interval); 
+        
+        progressTimer = setInterval(() => {
+            progress += step;
+            if (progress >= 99) {
+                progress = 99; // Hang at 99%
+                clearInterval(progressTimer);
+            }
+            if (progressBar) progressBar.style.width = `${progress}%`;
+        }, interval);
+
+        // --- STATUS TEXT ROTATION ---
+        textTimer = setInterval(() => {
+            const texts = ["HASHING DOCUMENT...", "UPLOADING TO IPFS...", "VERIFYING INTEGRITY...", "CONNECTING TO BACKCHAIN...", "MINTING PROOF..."];
+            const current = statusText ? statusText.innerText : "";
+            const idx = texts.indexOf(current);
+            const next = texts[(idx + 1) % texts.length];
+            if (statusText) statusText.innerText = next;
+        }, 8000); // Slower updates
+
+        // --- EDUCATIONAL TEXT ROTATION ---
+        const eduMessages = [
+            "You are creating a cryptographic proof that you owned this file at this exact moment.",
+            "The document hash is being stored permanently on the decentralized IPFS network.",
+            "Only the wallet holding the private key (you) can claim origin of this notary.",
+            "The service fee you paid is now being used to mine new Backcoins ($BKC)."
+        ];
+        let eduIdx = 0;
+        eduTextTimer = setInterval(() => {
+            eduIdx = (eduIdx + 1) % eduMessages.length;
+            if(eduText) {
+                eduText.classList.remove('fade-in-text');
+                void eduText.offsetWidth; // Trigger reflow
+                eduText.innerText = `"${eduMessages[eduIdx]}"`;
+                eduText.classList.add('fade-in-text');
+            }
+        }, 10000); // Change every 10s
+
+        // 4. Perform Upload
         const formData = new FormData();
         formData.append('file', currentFileToUpload);
         formData.append('signature', signature);
@@ -519,7 +562,7 @@ By signing this message, I certify ownership and integrity of this data.
         formData.append('description', desc);
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 min timeout
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
         const res = await fetch(API_ENDPOINTS.uploadFileToIPFS, { 
             method: 'POST', 
@@ -541,38 +584,56 @@ By signing this message, I certify ownership and integrity of this data.
         const data = await res.json();
         currentUploadedIPFS_URI = data.ipfsUri;
 
-        // --- BLOCKCHAIN TRANSACTION ---
+        // 5. Blockchain Transaction
+        if (statusText) statusText.innerText = "CONFIRMING TRANSACTION ON-CHAIN...";
         await executeNotarizeDocument(currentUploadedIPFS_URI, 0n, btn);
         
-        // --- SUCCESS ---
+        // 6. Success
         clearInterval(progressTimer);
         clearInterval(textTimer);
+        clearInterval(eduTextTimer);
+        
         if (progressBar) progressBar.style.width = `100%`;
-        if (statusText) statusText.innerText = "SUCCESS! IMMUTABLE PROOF GENERATED.";
+        if (statusText) {
+            statusText.classList.remove('text-blue-400');
+            statusText.classList.add('text-green-400');
+            statusText.innerText = "SUCCESS! IMMUTABLE PROOF GENERATED.";
+        }
+        if (eduText) eduText.innerText = "Your document is now part of history.";
         
         setTimeout(() => {
-            if (overlay) overlay.classList.add('hidden');
-            if (overlay) overlay.classList.remove('flex');
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
             NotaryPage.reset();
             loadUserData(true); 
             renderMyNotarizedDocuments();
-        }, 1500);
+        }, 3000);
 
     } catch (e) {
         clearInterval(progressTimer);
         clearInterval(textTimer);
+        clearInterval(eduTextTimer);
         console.error(e);
         
-        if (overlay) overlay.classList.add('hidden');
-        if (overlay) overlay.classList.remove('flex');
+        // Só esconde o overlay se for erro, mas se for abort (timeout), já passou 1 min
+        const overlay = document.getElementById('mining-overlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('flex');
+        }
 
         if (e.code === 'ACTION_REJECTED' || e.code === 4001) {
             showToast("Signature rejected.", "info");
         } else if (e.name === 'AbortError') {
-             showToast("Upload Timed Out. Network slow.", "error");
+             showToast("Process took too long. Check network.", "error");
         } else {
             showToast("Error: " + e.message, "error");
         }
+        
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fa-solid fa-rotate-right mr-2"></i> Try Again`;
     }
 }
 

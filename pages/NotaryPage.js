@@ -1,5 +1,5 @@
 // pages/NotaryPage.js
-// ✅ VERSÃO FINAL V7.2: Otimizada (Sem chamadas redundantes) + UX Premium
+// ✅ VERSÃO FINAL V7.4: Robustez de Rede + Tratamento de Erro Amigável + Assinatura
 
 import { addresses } from '../config.js'; 
 import { State } from '../state.js';
@@ -9,14 +9,14 @@ import { showToast } from '../ui-feedback.js';
 import { executeNotarizeDocument } from '../modules/transactions.js';
 
 const ethers = window.ethers;
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // Limite seguro de 10MB para evitar timeout
 
 // --- ESTADO LOCAL ---
 let currentFileToUpload = null;
 let currentUploadedIPFS_URI = null; 
 let notaryButtonState = 'initial'; 
 let rpcErrorCount = 0; 
-let lastNotaryDataFetch = 0; // Controle de cache local da página
+let lastNotaryDataFetch = 0; 
 
 // --- CSS FX ---
 const style = document.createElement('style');
@@ -62,7 +62,7 @@ function handleFiles(e) {
     if (!file) return;
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-        showToast("File exceeds 50MB limit.", "error");
+        showToast(`File too large (${(file.size/1024/1024).toFixed(2)}MB). Limit is 10MB due to network constraints.`, "error");
         return;
     }
 
@@ -160,10 +160,10 @@ function renderNotaryPageLayout() {
                 <div class="p-6 rounded-2xl bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/20">
                     <h4 class="text-blue-400 font-bold text-sm mb-2"><i class="fa-solid fa-circle-info mr-2"></i> How it works</h4>
                     <p class="text-xs text-zinc-400 leading-relaxed">
-                        1. Your file is hashed (SHA-256) locally.<br>
-                        2. The hash is stored on IPFS.<br>
-                        3. A unique NFT is minted linking your wallet to the hash.<br>
-                        4. <strong>100% Privacy:</strong> Only the hash is on-chain.
+                        1. Your file is hashed locally & stored on IPFS.<br>
+                        2. A unique NFT is minted linking your wallet to the hash.<br>
+                        3. <strong>100% Privacy:</strong> Only the hash is on-chain.<br>
+                        4. <strong>Fee:</strong> Mining fee is burned to mint new BKC.
                     </p>
                 </div>
             </div>
@@ -213,7 +213,7 @@ function updateNotaryStep(step) {
         content.innerHTML = `
             <div class="text-center mb-8">
                 <h3 class="text-2xl font-bold text-white mb-2">Upload Document</h3>
-                <p class="text-zinc-400 text-sm">Supported: PDF, JPG, PNG, DOC (Max 50MB)</p>
+                <p class="text-zinc-400 text-sm">Supported: PDF, JPG, PNG, DOC (Max 10MB)</p>
             </div>
             
             <div id="drop-area" class="drop-zone h-64 flex flex-col items-center justify-center cursor-pointer relative group">
@@ -350,7 +350,7 @@ async function loadNotaryPublicData() {
 async function handleSignAndUpload(event) {
     const btn = event.currentTarget;
     btn.disabled = true;
-    btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Processing...`;
+    btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Signing...`;
 
     try {
         const rawDesc = document.getElementById('notary-user-description')?.value;
@@ -359,7 +359,9 @@ async function handleSignAndUpload(event) {
         const signer = await State.provider.getSigner();
         const timestamp = new Date().toLocaleString('en-US', { timeZoneName: 'short' });
         
-        const message = `BACKCHAIN DECENTRALIZED NOTARY
+        // --- ASSINATURA CORRIGIDA ---
+        const message = `BACKCOIN & BACKCHAIN PROTOCOL
+DECENTRALIZED NOTARY SERVICE
 --------------------------------
 ACTION: Immutable Blockchain Registration
 PROTOCOL: Proof-of-Existence
@@ -376,7 +378,7 @@ By signing this message, I certify ownership and integrity of this data.
         
         const signature = await signer.signMessage(message);
         
-        btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Uploading to IPFS...`;
+        btn.innerHTML = `<div class="loader-sm inline-block mr-2"></div> Uploading...`;
 
         const formData = new FormData();
         formData.append('file', currentFileToUpload);
@@ -384,8 +386,25 @@ By signing this message, I certify ownership and integrity of this data.
         formData.append('address', State.userAddress);
         formData.append('description', desc);
 
-        const res = await fetch(API_ENDPOINTS.uploadFileToIPFS, { method: 'POST', body: formData });
-        if (!res.ok) throw new Error("Upload Failed");
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 min timeout
+
+        const res = await fetch(API_ENDPOINTS.uploadFileToIPFS, { 
+            method: 'POST', 
+            body: formData,
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+            let errorDetails = `HTTP ${res.status}`;
+            try { 
+                const errData = await res.json(); 
+                errorDetails = errData.error || errData.details || res.statusText;
+            } catch(e) { errorDetails = res.statusText; }
+            throw new Error(`Upload Failed: ${errorDetails}`);
+        }
         
         const data = await res.json();
         currentUploadedIPFS_URI = data.ipfsUri;
@@ -394,15 +413,17 @@ By signing this message, I certify ownership and integrity of this data.
         await executeNotarizeDocument(currentUploadedIPFS_URI, 0n, btn);
         
         NotaryPage.reset();
-        await loadUserData(true); // Aqui forçamos refresh pois o saldo mudou
+        await loadUserData(true); 
         renderMyNotarizedDocuments();
 
     } catch (e) {
         console.error(e);
         if (e.code === 'ACTION_REJECTED' || e.code === 4001) {
             showToast("Signature rejected.", "info");
+        } else if (e.name === 'AbortError') {
+             showToast("Upload Timed Out. File might be too large or network slow.", "error");
         } else {
-            showToast("Process Failed: " + e.message, "error");
+            showToast("Error: " + e.message, "error");
         }
         btn.disabled = false;
         btn.innerHTML = `<i class="fa-solid fa-rotate-right mr-2"></i> Try Again`;
@@ -425,7 +446,6 @@ export const NotaryPage = {
         if (!isActive) return;
         renderNotaryPageLayout();
         await loadNotaryPublicData();
-        // OTIMIZAÇÃO: Removemos o 'true' para usar o cache global
         if (State.isConnected) { await loadUserData(); renderMyNotarizedDocuments(); }
         updateNotaryUserStatus();
     },

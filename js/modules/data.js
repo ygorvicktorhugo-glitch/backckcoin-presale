@@ -1,10 +1,10 @@
 // js/modules/data.js
-// ✅ VERSÃO PRESALE LITE V1.0: Focado em Venda Pública e Inventário
+// ✅ VERSÃO ROBUSTA: Ignora erros de rede e foca na Presale
 
 const ethers = window.ethers;
 
 import { State } from '../state.js';
-import { addresses, boosterTiers } from '../config.js'; // Certifique-se que publicSaleABI está no config ou use a interface mínima abaixo
+import { addresses, boosterTiers } from '../config.js'; 
 
 // ====================================================================
 // CONSTANTS & UTILITIES
@@ -33,7 +33,6 @@ async function fetchWithTimeout(url, timeoutMs) {
     }
 }
 
-// Endpoints reduzidos para o necessário
 export const API_ENDPOINTS = {
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app'
 };
@@ -49,13 +48,17 @@ function isRateLimitError(e) {
     );
 }
 
+// Verifica se é erro de troca de rede (para ignorar)
+function isNetworkError(e) {
+    return (e.code === 'NETWORK_ERROR' || e.message?.includes('network changed') || e.code === 'SERVER_ERROR');
+}
+
 function getContractInstance(address, abi, fallbackStateContract) {
     if (fallbackStateContract) return fallbackStateContract;
     if (!address || !State.publicProvider) return null;
     try {
         return new ethers.Contract(address, abi, State.publicProvider);
     } catch (e) {
-        console.warn("Failed to create lazy contract instance", e);
         return null;
     }
 }
@@ -68,7 +71,7 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
     const cacheKey = `${contractAddr}-${method}-${serializedArgs}`;
     const now = Date.now();
 
-    const cacheableMethods = ['tiers', 'ownerOf', 'balanceOf', 'totalSupply'];
+    const cacheableMethods = ['tiers', 'ownerOf', 'balanceOf', 'totalSupply', 'getTierInfo'];
     
     if (!forceRefresh && cacheableMethods.includes(method)) {
         const cached = contractReadCache.get(cacheKey);
@@ -85,8 +88,11 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
         return result;
 
     } catch (e) {
+        // 🔥 FIX: Se a rede mudou, retorna fallback silenciosamente (sem logar erro)
+        if (isNetworkError(e)) return fallbackValue;
+
         if (isRateLimitError(e) && retries > 0) {
-            await wait(1500 + Math.floor(Math.random() * 2000));
+            await wait(1000 + Math.floor(Math.random() * 2000));
             return safeContractCall(contract, method, args, fallbackValue, retries - 1, forceRefresh);
         }
         return fallbackValue;
@@ -100,39 +106,43 @@ export const safeBalanceOf = async (contract, address, forceRefresh = false) =>
 // 1. PRESALE DATA (Tiers Info)
 // ====================================================================
 
-/**
- * Carrega informações dos Tiers da Venda Pública (Preço, Supply, Mintados).
- * Assume que existem Tiers de ID 1, 2, 3 (padrão do contrato).
- */
 export async function loadPresaleData(forceRefresh = false) {
-    if (!State.publicSaleContractPublic && !State.publicSaleContract) return;
+    // Tenta usar provider público se o signer não estiver pronto
+    const contractToUse = State.publicSaleContract || 
+                          getContractInstance(addresses.publicSale, ['function tiers(uint256) view returns (uint256,uint64,uint64,uint16,bool)'], null);
+
+    if (!contractToUse) return;
     
-    // Usa o contrato público ou o signer se disponível
-    const contract = State.publicSaleContractPublic || State.publicSaleContract;
-    
-    // IDs dos Tiers esperados (ajuste conforme sua config real no PublicSale.sol)
-    // Se o contrato tiver IDs dinâmicos, precisaríamos de uma lógica diferente, 
-    // mas geralmente são fixos (1=Comum, 2=Raro, 3=Lendário).
-    const tierIds = [1, 2, 3]; 
+    // IDs (Assumindo 1-based conforme o contrato)
+    const tierIds = [1, 2, 3, 4, 5, 6, 7]; 
     const presaleData = [];
 
     for (const id of tierIds) {
         try {
-            // Struct Tier: priceInWei, maxSupply, mintedCount, boostBips, isConfigured
-            const tierInfo = await safeContractCall(contract, 'tiers', [id], null, 2, forceRefresh);
+            const tierInfo = await safeContractCall(contractToUse, 'tiers', [id], null, 2, forceRefresh);
             
-            if (tierInfo && tierInfo.isConfigured) {
-                presaleData.push({
-                    id: id,
-                    price: tierInfo.priceInWei,
-                    maxSupply: tierInfo.maxSupply,
-                    minted: tierInfo.mintedCount,
-                    boostBips: tierInfo.boostBips,
-                    soldOut: tierInfo.mintedCount >= tierInfo.maxSupply
-                });
+            if (tierInfo) {
+                // Ethers v6 retorna Result array-like ou Object
+                // Acesso seguro: .priceInWei ou [0]
+                const price = tierInfo.priceInWei ?? tierInfo[0];
+                const maxSupply = tierInfo.maxSupply ?? tierInfo[1];
+                const minted = tierInfo.mintedCount ?? tierInfo[2];
+                const boost = tierInfo.boostBips ?? tierInfo[3];
+                const configured = tierInfo.isConfigured ?? tierInfo[4];
+
+                if (configured) {
+                    presaleData.push({
+                        id: id, // ID do contrato
+                        price: price,
+                        maxSupply: maxSupply,
+                        minted: minted,
+                        boostBips: boost,
+                        soldOut: Number(minted) >= Number(maxSupply)
+                    });
+                }
             }
         } catch (e) {
-            console.warn(`Error fetching tier ${id}`, e);
+            // Ignora erro individual de tier
         }
     }
 
@@ -141,7 +151,6 @@ export async function loadPresaleData(forceRefresh = false) {
 }
 
 export async function loadPublicData() {
-    // Carrega apenas dados da Presale. Removemos SystemData e TotalSupply desnecessários.
     await loadPresaleData();
 }
 
@@ -153,39 +162,44 @@ export async function loadUserData(forceRefresh = false) {
     if (!State.isConnected || !State.userAddress) return;
 
     try {
-        // 1. Saldo Nativo (ETH) - CRÍTICO para comprar na Presale
+        // 1. Saldo Nativo (ETH)
         if (State.provider) {
-            const nativeBalance = await State.provider.getBalance(State.userAddress);
-            State.currentUserNativeBalance = nativeBalance;
+            try {
+                const nativeBalance = await State.provider.getBalance(State.userAddress);
+                State.currentUserNativeBalance = nativeBalance;
+            } catch (e) {
+                if (!isNetworkError(e)) console.warn("ETH balance fetch failed");
+            }
         }
 
-        // 2. Saldo BKC (Opcional, apenas visual)
+        // 2. Saldo BKC (Opcional)
         if (State.bkcTokenContract) {
             const balance = await safeBalanceOf(State.bkcTokenContract, State.userAddress, forceRefresh);
             State.currentUserBalance = balance;
         }
 
-        // 3. Carrega Meus Boosters (Para mostrar após a compra)
+        // 3. Meus Boosters
         await loadMyBoostersFromAPI(forceRefresh);
 
-    } catch (e) { console.error("Error loading user data:", e); }
+    } catch (e) { 
+        if (!isNetworkError(e)) console.error("Error loading user data:", e); 
+    }
 }
 
 // ====================================================================
-// 3. BOOSTER INVENTORY (Ghost Buster V2 - Mantido)
+// 3. BOOSTER INVENTORY (Ghost Buster V2)
 // ====================================================================
 
 export async function loadMyBoostersFromAPI(forceRefresh = false) {
     if (!State.userAddress) return [];
 
     try {
-        // 1. Pega lista da API
         const response = await fetchWithTimeout(`${API_ENDPOINTS.getBoosters}/${State.userAddress}`, 5000);
         if (!response.ok) throw new Error(`API Error`);
         
         let ownedTokensAPI = await response.json(); 
         
-        // 2. Validação "Ghost Buster" (Confirma on-chain se ainda é dono)
+        // Validação On-Chain
         const minABI = ["function ownerOf(uint256) view returns (address)"];
         const contract = getContractInstance(addresses.rewardBoosterNFT, minABI, State.rewardBoosterContractPublic);
 
@@ -214,6 +228,8 @@ export async function loadMyBoostersFromAPI(forceRefresh = false) {
                     }
                     return null; 
                 } catch(e) {
+                    if (isNetworkError(e)) return null; // Ignora erro de rede
+                    // Se der erro de rate limit, confia na API temporariamente
                     if(isRateLimitError(e)) {
                         return { tokenId: id, boostBips: Number(token.boostBips || 0) };
                     }

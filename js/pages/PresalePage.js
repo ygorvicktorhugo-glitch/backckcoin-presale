@@ -1,51 +1,44 @@
 // js/pages/PresalePage.js
-// ✅ VERSÃO "WHY BUY": Foco em Utilidade Real, Sem Pré-venda de Token e Aluguel
+// ✅ VERSÃO FINAL: Compra Ativa + Preços Dinâmicos + Marketing
 
 const ethers = window.ethers;
 import { DOMElements } from '../dom-elements.js';
 import { State } from '../state.js';
 import { addresses, publicSaleABI, boosterTiers } from '../config.js';
+// 🔥 IMPORTANTE: Importa a função de transação
+import { executePresaleMint } from '../modules/transactions.js';
 
 // =================================================================
-// 1. LÓGICA DE VENDAS (Copywriting Otimizado)
+// 1. CONFIGURAÇÃO DE VENDAS
 // =================================================================
 
-// Gera a lista de vantagens focada nas "Chaves de Acesso" e "Aluguel"
+const PRICE_INCREASE_DATE = new Date("2025-12-31T23:59:59Z").getTime();
+
 function getAdvantages(name, bips) {
     const percent = bips / 100;
-    
-    // Vantagens BASE (Todos os Tiers têm isso)
     const benefits = [
-        `<strong>${percent}% Lifetime Fee Discount</strong> (Save Forever)`, // Economia Vitalícia
-        `<strong>+${percent}% Mining Power</strong> (Earn More BKC)`,        // Ganho de Tokens
-        `🔑 <strong>Access Key</strong>: Unlocks Protocol Features`          // Chave de Acesso
+        `<strong>${percent}% Lifetime Fee Discount</strong> (Save Forever)`, 
+        `<strong>+${percent}% Mining Power</strong> (Earn More BKC)`,        
+        `🔑 <strong>Access Key</strong>: Unlocks Protocol Features`          
     ];
-
-    // Vantagens por Nível de Escassez
-    if (percent >= 50) { // Gold, Platinum, Diamond
-        benefits.push("💸 <strong>Passive Income:</strong> Rent this NFT to others"); // Aluguel
-        benefits.push("🔄 <strong>Instant Liquidity:</strong> Sell back to AMM Pool"); // Revenda
-        benefits.push("👑 <strong>Governance Rights</strong> & Voting Power");
+    if (percent >= 50) { 
+        benefits.push("💸 <strong>Passive Income:</strong> Rent this NFT"); 
+        benefits.push("👑 <strong>Governance Rights</strong> & Voting");
+        benefits.push("🔄 <strong>Instant Liquidity</strong> (Sell to AMM)");
     } 
-    else if (percent >= 30) { // Silver, Bronze
-        benefits.push("💸 <strong>Passive Income:</strong> Rent this NFT to others"); // Aluguel
-        benefits.push("🔓 <strong>Reduced Fees</strong> on Notary Services");
+    else if (percent >= 30) { 
+        benefits.push("💸 <strong>Passive Income:</strong> Rent to others"); 
     }
-    else { // Iron, Crystal
-        benefits.push("📈 <strong>Tradeable Asset:</strong> Sell on Marketplace");
-    }
-    
     return benefits;
 }
 
 const PRESALE_CONFIG = {
     nftTiers: boosterTiers.map((tier, index) => ({
         ...tier,
-        id: index, 
+        id: index + 1, 
         batchSize: (index + 1) * 15,
         phase2Price: "TBA", 
-        // Aqui chamamos a nova função de vantagens
-        advantages: getAdvantages(tier.name, tier.boostBips), 
+        advantages: getAdvantages(tier.name, tier.boostBips),
         
         priceInWei: 0n, 
         mintedCount: 0,
@@ -57,19 +50,17 @@ const PRESALE_CONFIG = {
         en: {
             saleTag: "FAIR LAUNCH PROTOCOL • ZERO TOKEN PRE-SALE",
             saleTitle: "The Only Way In.",
-            // O texto abaixo responde EXATAMENTE a sua pergunta de forma inequívoca
             saleSubtitle: `
                 <strong>Why buy a Booster?</strong> Because there is <span class="text-red-500">NO Token Pre-Sale</span>. 
                 <br>These NFTs are the <strong>exclusive keys</strong> that unlock <strong>Lifetime Fee Discounts</strong> and boost your <strong>Mining Power</strong>.
                 <br>Funds raised here develop the ecosystem. You own the utility: <strong>Use it, Sell it, or Rent it</strong> for passive income.
             `,
-            
-            cardPricePhase2: "Next Phase:",
+            cardPricePhase2: "Price after Dec 31, 2025:",
             cardBtnConnect: "Connect Wallet",
-            cardBtnBuy: "Mint Access Key", // Mudou de "Buy" para "Mint Access Key"
+            cardBtnBuy: "Mint Access Key",
             cardBtnSoldOut: "Sold Out",
-            cardBtnUnavailable: "Unavailable",
-            loadingText: "Loading Tiers...",
+            cardBtnUnavailable: "Check Network",
+            loadingText: "Syncing with Blockchain...",
             anchorBtn: "Secure My Key"
         }
     }
@@ -78,14 +69,13 @@ const PRESALE_CONFIG = {
 let hasRendered = false;
 
 // =================================================================
-// 2. FUNÇÕES VISUAIS (Helpers)
+// 2. FUNÇÕES VISUAIS
 // =================================================================
 
 const getHttpUrl = (tier) => {
     let url = tier.realImg || tier.img;
     if (!url) return './assets/bkc_logo_3d.png';
     if (url.startsWith('./')) return url;
-
     if (!url.endsWith('.png') && !url.endsWith('.json') && !url.endsWith('.jpg')) {
         const filename = `${tier.name.toLowerCase()}_booster.png`; 
         if (!url.endsWith('/')) url += '/';
@@ -94,12 +84,28 @@ const getHttpUrl = (tier) => {
     return url;
 };
 
+function getPhase2Price(currentWei) {
+    if (currentWei === 0n) return "TBA";
+    const nextPriceWei = (currentWei * 150n) / 100n; 
+    return parseFloat(ethers.formatUnits(nextPriceWei, 18)).toString() + " ETH";
+}
+
 function createCardHTML(tier) {
     const t = PRESALE_CONFIG.translations.en;
     
     let displayPrice = "---";
+    let phase2Display = t.cardPricePhase2 + " TBA";
+
+    // Lógica de Exibição do Preço
     if (tier.isLoaded && tier.priceInWei > 0n) {
-        displayPrice = parseFloat(ethers.formatUnits(tier.priceInWei, 18)).toString() + " BNB";
+        displayPrice = parseFloat(ethers.formatUnits(tier.priceInWei, 18)).toString() + " ETH"; 
+        
+        if (Date.now() < PRICE_INCREASE_DATE) {
+            phase2Display = `${t.cardPricePhase2} <span class="text-red-400 font-bold">${getPhase2Price(tier.priceInWei)}</span>`;
+        } else {
+            phase2Display = `<span class="text-green-400 font-bold">Phase 2 Pricing Active</span>`;
+        }
+
     } else if (tier.isLoaded && tier.priceInWei === 0n) {
         displayPrice = "Sold Out";
     }
@@ -129,15 +135,9 @@ function createCardHTML(tier) {
             </div>
             
             <div class="p-5 flex flex-col flex-1 relative">
-                
                 <div class="space-y-3 mb-6">
                     <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">KEY BENEFITS</p>
-                    ${tier.advantages.map(adv => `
-                        <div class="flex items-start gap-3 text-sm text-zinc-300 leading-tight">
-                            <i class="fa-solid fa-check-circle text-green-500 mt-0.5 flex-shrink-0"></i>
-                            <span>${adv}</span>
-                        </div>
-                    `).join('')}
+                    ${tier.advantages.map(adv => `<div class="flex items-start gap-3 text-sm text-zinc-300 leading-tight"><i class="fa-solid fa-check-circle text-green-500 mt-0.5 flex-shrink-0"></i><span>${adv}</span></div>`).join('')}
                 </div>
                 
                 <div class="w-full mb-6">
@@ -155,7 +155,7 @@ function createCardHTML(tier) {
                 <div class="mt-auto bg-black/20 rounded-xl p-4 border border-white/5">
                     <div class="flex justify-between items-end mb-3">
                         <div class="text-left">
-                            <div class="text-xs text-zinc-500 line-through mb-0.5">${t.cardPricePhase2} ${tier.phase2Price}</div>
+                            <div class="text-xs text-zinc-500 mb-0.5">${phase2Display}</div>
                             <div class="text-2xl font-black text-white tracking-tight">${displayPrice}</div>
                         </div>
                         
@@ -185,29 +185,47 @@ async function fetchAllTierData() {
     if (!grid) return;
     
     if (!addresses.publicSale) {
+        console.warn("⚠️ Endereço PublicSale não configurado.");
         renderMarketplace();
         return;
     }
 
     try {
-        if (!State.provider) { renderMarketplace(); return; }
+        const providerToUse = State.signer || State.provider || State.publicProvider;
+        if (!providerToUse) { 
+            console.warn("⚠️ Nenhum provider disponível.");
+            renderMarketplace(); 
+            return; 
+        }
 
-        const saleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, State.provider);
+        console.log("🔍 Conectando ao contrato:", addresses.publicSale);
+        const saleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, providerToUse);
+        
         const tierIds = PRESALE_CONFIG.nftTiers.map(t => t.id);
         
-        // Assume IDs 1-based (1..7) se o contrato foi deployado assim
-        const tierResults = await Promise.all(tierIds.map(id => saleContract.tiers(id + 1).catch(e => null)));
+        const tierResults = await Promise.all(tierIds.map(async (id) => {
+            try { return await saleContract.tiers(id); } catch (e) { return null; }
+        }));
 
         tierResults.forEach((data, index) => {
             const tierConfig = PRESALE_CONFIG.nftTiers[index];
-            tierConfig.isLoaded = true; 
+            tierConfig.isLoaded = true;
             
             if (data) {
-                tierConfig.priceInWei = data.priceInWei;
-                tierConfig.mintedCount = Number(data.mintedCount);
-                if (data.priceInWei === 0n) tierConfig.isSoldOut = true;
+                const price = data.priceInWei ?? data[0]; 
+                const minted = data.mintedCount ?? data[2];
+                const configured = data.isConfigured ?? data[4];
+
+                console.log(`✅ Tier [${tierConfig.name}] Loaded: Price=${price}, Configured=${configured}`);
+
+                if (configured) {
+                    tierConfig.priceInWei = price;
+                    tierConfig.mintedCount = Number(minted);
+                } else {
+                    tierConfig.priceInWei = 0n;
+                }
             } else {
-                tierConfig.isSoldOut = true; 
+                tierConfig.priceInWei = 0n;
             }
         });
 
@@ -235,17 +253,33 @@ function updateBuyButtonsState(isConnected) {
         if (!isConnected) {
             button.disabled = false;
             button.innerHTML = `<i class='fa-solid fa-wallet mr-2'></i> ${t.cardBtnConnect}`;
+            button.onclick = () => { if(window.openConnectModal) window.openConnectModal(); };
             return;
         }
 
-        if (!tier.isLoaded || tier.priceInWei === 0n || tier.isSoldOut) {
+        if (!tier.isLoaded || tier.priceInWei === 0n) {
             button.disabled = true;
-            const msg = (!tier.isLoaded || !addresses.publicSale) ? t.cardBtnUnavailable : t.cardBtnSoldOut;
+            const msg = (!tier.isLoaded) ? "Loading..." : t.cardBtnSoldOut;
             button.innerHTML = `<i class='fa-solid fa-ban mr-2'></i> ${msg}`;
             return;
         }
 
+        // --- HABILITADO PARA COMPRA ---
         button.disabled = false;
+        button.onclick = null; // Limpa eventos antigos
+        
+        // 🔥 EVENTO DE COMPRA REAL
+        button.onclick = async () => {
+             const card = button.closest('.nft-card');
+             const qtyInput = card.querySelector('.quantity-input');
+             const qty = qtyInput ? parseInt(qtyInput.value) : 1;
+             
+             console.log(`🚀 Minting Tier ${tierId}, Qty: ${qty}, Price: ${tier.priceInWei}`);
+             
+             // Chama a função importada do transactions.js que abre a MetaMask
+             await executePresaleMint(tierId, qty, tier.priceInWei, button);
+        };
+
         const card = button.closest('.nft-card');
         if(card) updateTotalPrice(card);
     });
@@ -264,8 +298,9 @@ function updateTotalPrice(card) {
     
     if(tier.priceInWei > 0n) {
         const total = tier.priceInWei * BigInt(qty);
-        const fmt = parseFloat(ethers.formatUnits(total, 18)).toString();
-        btn.innerHTML = `MINT FOR ${fmt} BNB`;
+        // Testnet usa ETH, formatamos para 4 casas decimais
+        const fmt = parseFloat(ethers.formatUnits(total, 18)).toFixed(4); 
+        btn.innerHTML = `MINT FOR ${fmt} ETH`;
     } 
 }
 
@@ -321,6 +356,7 @@ export const PresalePage = {
         setupCountdown();
         fetchAllTierData();
         
+        // Listeners de quantidade
         const grid = document.getElementById('marketplace-grid');
         if(grid) {
             grid.addEventListener('click', e => {
@@ -347,7 +383,7 @@ export const PresalePage = {
 };
 
 function setupCountdown() {
-    const targetDate = new Date("2025-12-01T00:00:00Z").getTime();
+    const targetDate = new Date("2025-12-31T23:59:59Z").getTime();
     setInterval(() => {
         const now = new Date().getTime();
         const distance = targetDate - now;

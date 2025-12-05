@@ -1,5 +1,5 @@
 // js/modules/wallet.js
-// ✅ VERSÃO FINAL TESTNET: Provider Assíncrono + Auto Add Chain
+// ✅ VERSÃO TESTNET (Arbitrum Sepolia) - Com Correção de UI
 
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.1.11?bundle';
 import { State } from '../state.js';
@@ -12,8 +12,8 @@ const ethers = window.ethers;
 // ============================================================
 // 1. CONFIGURAÇÃO DA REDE (ARBITRUM SEPOLIA - TESTNET)
 // ============================================================
-const TESTNET_ID_DECIMAL = 421614; 
-const TESTNET_ID_HEX = '0x66eee';
+const TESTNET_ID_DECIMAL = 421614; // Arbitrum Sepolia ID
+const TESTNET_ID_HEX = '0x66eee';  // 421614 em Hex
 const TESTNET_RPC_URL = 'https://sepolia-rollup.arbitrum.io/rpc'; 
 
 // --- Web3Modal Setup ---
@@ -62,7 +62,7 @@ function isValidAddress(addr) {
     return addr && addr !== ethers.ZeroAddress && !addr.startsWith('0x...');
 }
 
-// Verifica se a rede está certa (sem forçar troca)
+// Apenas verifica se a rede está certa, não força troca (evita loop)
 async function checkNetworkOnly(provider) {
     try {
         const network = await provider.getNetwork();
@@ -70,7 +70,7 @@ async function checkNetworkOnly(provider) {
     } catch (e) { return false; }
 }
 
-// Força a troca para Sepolia (com fallback para adicionar a rede)
+// Força a troca manualmente (chamado pelo botão se necessário)
 export async function forceSwitchNetwork() {
     if (!State.web3Provider) return false;
     try {
@@ -78,25 +78,20 @@ export async function forceSwitchNetwork() {
         await provider.send("wallet_switchEthereumChain", [{ chainId: TESTNET_ID_HEX }]);
         return true;
     } catch (error) {
-        // Se a rede não existir (Erro 4902), tenta adicionar
-        if (error.code === 4902 || error.data?.code === 4902 || error.message?.includes("Unrecognized chain")) {
-            try {
-                 const provider = new ethers.BrowserProvider(State.web3Provider);
-                 await provider.send("wallet_addEthereumChain", [{
-                    chainId: TESTNET_ID_HEX,
-                    chainName: "Arbitrum Sepolia",
-                    rpcUrls: [TESTNET_RPC_URL],
-                    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-                    blockExplorerUrls: ["https://sepolia.arbiscan.io"]
-                 }]);
-                 return true;
-            } catch (addError) {
-                 showToast("Failed to add Arbitrum Sepolia. Please add manually.", "error");
-                 return false;
-            }
+        // Se a rede não existir, tenta adicionar (opcional, mas bom para testnet)
+        try {
+             await provider.send("wallet_addEthereumChain", [{
+                chainId: TESTNET_ID_HEX,
+                chainName: "Arbitrum Sepolia",
+                rpcUrls: [TESTNET_RPC_URL],
+                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+                blockExplorerUrls: ["https://sepolia.arbiscan.io"]
+             }]);
+             return true;
+        } catch (addError) {
+             showToast("Please switch to Arbitrum Sepolia manually.", "warning");
+             return false;
         }
-        showToast("Please switch to Arbitrum Sepolia manually.", "warning");
-        return false;
     }
 }
 
@@ -108,7 +103,7 @@ function instantiateContracts(signerOrProvider) {
         if (isValidAddress(addresses.publicSale)) {
             State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
         }
-    } catch (e) { console.warn("Contract init partial failure", e); }
+    } catch (e) { }
 }
 
 // Função Principal de Conexão
@@ -116,18 +111,19 @@ async function setupSignerAndLoadData(provider, address) {
     try {
         if (!validateEthereumAddress(address)) return false;
 
-        // 🔥 FIX 1: Atualiza o State IMEDIATAMENTE (Visual)
+        // 🔥 FIX CRÍTICO: Atualiza o State IMEDIATAMENTE para o botão mudar
         State.userAddress = address;
         State.isConnected = true; 
-        State.provider = provider;
 
-        // Verifica a rede
+        // Agora verificamos a rede
         const isCorrectNetwork = await checkNetworkOnly(provider);
+        State.provider = provider;
         
         if (!isCorrectNetwork) {
-            console.warn("⚠️ Wrong Network. Data loading paused.");
-            // Não carregamos dados sensíveis, mas mantemos o estado "conectado"
-            return true; 
+            // Se rede errada: O botão já vai mostrar o endereço (por causa das linhas acima),
+            // mas paramos de carregar dados para não dar erro de contrato.
+            console.warn("Wrong Network - Data loading paused until switch.");
+            return false; 
         }
 
         // Se rede certa: Carrega Signer e Dados
@@ -138,8 +134,6 @@ async function setupSignerAndLoadData(provider, address) {
         }
         
         instantiateContracts(State.signer);
-        
-        // Carrega dados do usuário (saldo, boosters)
         loadUserData().catch(() => {});
 
         return true;
@@ -152,28 +146,14 @@ async function setupSignerAndLoadData(provider, address) {
 
 // --- Exports ---
 
-// 🔥 FIX 2: Provider Público Assíncrono com Verificação
 export async function initPublicProvider() {
     try {
-        const provider = new ethers.JsonRpcProvider(TESTNET_RPC_URL);
-        // Espera o provider responder para garantir que está pronto
-        await provider.getNetwork(); 
-        
-        State.publicProvider = provider;
-        console.log("✅ Public Provider Ready");
-        
-        // Instancia contratos de leitura pública para exibir preços nos cards
-        if (isValidAddress(addresses.publicSale)) {
-             State.publicSaleContractPublic = new ethers.Contract(addresses.publicSale, publicSaleABI, provider);
-        }
-    } catch (e) { 
-        console.error("❌ Public provider error:", e); 
-        throw e; // Lança erro para o app.js saber
-    }
+        State.publicProvider = new ethers.JsonRpcProvider(TESTNET_RPC_URL);
+    } catch (e) { console.error("Public provider error:", e); }
 }
 
 export function initWalletSubscriptions(callback) {
-    // 1. Checagem Inicial
+    // 1. Checagem Inicial Rápida (Sincroniza botão ao carregar página)
     if (web3modal.getIsConnected()) {
         const address = web3modal.getAddress();
         const provider = web3modal.getWalletProvider();
@@ -182,13 +162,13 @@ export function initWalletSubscriptions(callback) {
             const ethersProvider = new ethers.BrowserProvider(provider, "any");
             State.web3Provider = provider;
             
-            // Callback imediato para UI
+            // 🔥 Dispara callback imediatamente para app.js atualizar o botão
             callback({ isConnected: true, address: address, isNewConnection: false });
             setupSignerAndLoadData(ethersProvider, address);
         }
     }
 
-    // 2. Eventos (Troca de conta/rede/disconnect)
+    // 2. Listener de Eventos (Mudanças de conta/rede)
     const handler = async ({ provider, address, isConnected }) => {
         if (isConnected && provider) {
             const ethersProvider = new ethers.BrowserProvider(provider, "any");
@@ -201,6 +181,7 @@ export function initWalletSubscriptions(callback) {
                 await setupSignerAndLoadData(ethersProvider, currentAddr);
             }
         } else {
+            // Desconectou
             State.isConnected = false;
             State.userAddress = null;
             callback({ isConnected: false });
@@ -218,15 +199,17 @@ export async function switchToTestnet() {
 }
 
 export async function openConnectModal() { 
-    // Se já conectado, verifica rede antes de abrir modal
+    // Se já estiver conectado, verifica se a rede está certa
     if (State.isConnected && State.web3Provider) {
         const provider = new ethers.BrowserProvider(State.web3Provider);
         const isCorrect = await checkNetworkOnly(provider);
         if (!isCorrect) {
+            // Se estiver na rede errada, o clique no botão força a troca
             await forceSwitchNetwork();
             return;
         }
     }
+    // Se não estiver conectado, abre o modal
     web3modal.open(); 
 }
 

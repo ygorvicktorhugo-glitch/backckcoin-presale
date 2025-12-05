@@ -1,15 +1,15 @@
 // js/config.js
-// ✅ VERSÃO PRESALE PRODUCTION: Links IPFS configurados
+// ✅ VERSÃO COM ADMIN WALLET
 
-// Gateway IPFS (Pinata)
-export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/";
-export const mainnetRpcUrl = "https://arb1.arbitrum.io/rpc";
+// RPC Público (Arbitrum Sepolia)
+export const mainnetRpcUrl = "https://sepolia-rollup.arbitrum.io/rpc";
+export const ipfsGateway = "https://ipfs.io/ipfs/"; 
 
-// ============================================================================
-// 1. ENDEREÇOS (Carregados Dinamicamente)
-// ============================================================================
+// 🔥 CARTEIRA DO DEPLOYER / ADMIN
+export const ADMIN_WALLET_ADDRESS = "0x03aC69873293cD6ddef7625AfC91E3Bd5434562a"; 
+
 export const addresses = {
-    publicSale: null,  // Preenchido pelo loadAddresses
+    publicSale: null,  
     bkcToken: null,
     rewardBoosterNFT: null
 };
@@ -17,13 +17,9 @@ export const addresses = {
 export async function loadAddresses() {
     try {
         const response = await fetch('./deployment-addresses.json');
-        if (!response.ok) {
-            console.warn("⚠️ deployment-addresses.json not found.");
-            return false;
-        }
+        if (!response.ok) return false;
+        
         const data = await response.json();
-
-        // Mapeamento
         if (data.presaleNFTContract) addresses.publicSale = data.presaleNFTContract;
         if (data.bkcToken) addresses.bkcToken = data.bkcToken;
         if (data.rewardBoosterNFT) addresses.rewardBoosterNFT = data.rewardBoosterNFT;
@@ -31,16 +27,9 @@ export async function loadAddresses() {
         console.log("✅ Addresses loaded:", addresses);
         return true;
     } catch (error) {
-        console.error("❌ Failed to load addresses:", error);
         return false;
     }
 }
-
-// ============================================================================
-// 2. DADOS DOS TIERS (IPFS)
-// ============================================================================
-// Nota: 'img' aponta para metadata (json), 'realImg' aponta para a pasta da imagem.
-// O PresalePage.js vai adicionar o nome do arquivo (ex: diamond_booster.png) automaticamente.
 
 export const boosterTiers = [
     { name: "Diamond", boostBips: 7000, color: "text-cyan-400", img: `${ipfsGateway}bafybeicgip72jcqgsirlrhn3tq5cc226vmko6etnndzl6nlhqrktfikafq/diamond_booster.json`, realImg: `${ipfsGateway}bafybeicgip72jcqgsirlrhn3tq5cc226vmko6etnndzl6nlhqrktfikafq`, borderColor: "border-cyan-400/50", glowColor: "bg-cyan-500/10" },
@@ -52,17 +41,14 @@ export const boosterTiers = [
     { name: "Crystal", boostBips: 1000, color: "text-indigo-300", img: `${ipfsGateway}bafybeib6nacggrhgcp72xksbhsqcofg3lzhfb576kuebj5ioxpk2id5m7u/crystal_booster.json`, realImg: `${ipfsGateway}bafybeib6nacggrhgcp72xksbhsqcofg3lzhfb576kuebj5ioxpk2id5m7u`, borderColor: "border-indigo-300/50", glowColor: "bg-indigo-300/10" }
 ];
 
-// ============================================================================
-// 3. ABIs
-// ============================================================================
-
 export const publicSaleABI = [
-    "function tiers(uint256) view returns (uint256 priceInWei, uint64 maxSupply, uint64 mintedCount, uint16 boostBips, bool isConfigured)",
+    "function tiers(uint256) view returns (uint256 priceInWei, uint64 maxSupply, uint64 mintedCount, uint16 boostBips, bool isConfigured, string metadataFile)",
     "function buyMultipleNFTs(uint256 _tierId, uint256 _quantity) payable",
-    "function buyNFT(uint256 _tierId) payable"
+    "function buyNFT(uint256 _tierId) payable",
+    "function withdrawFunds() external",
+    "function owner() view returns (address)"
 ];
 
-// Placeholders
 export const bkcTokenABI = ["function balanceOf(address) view returns (uint256)"];
 export const rewardBoosterABI = ["function ownerOf(uint256) view returns (address)"];
 export const delegationManagerABI = [];

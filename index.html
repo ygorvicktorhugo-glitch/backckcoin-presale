@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Secure your Backcoin Booster NFT on Arbitrum One. Exclusive Presale Phase 1 with 50% Discount.">
     
     <title>Backcoin Presale | Arbitrum One</title>
 
@@ -25,8 +26,7 @@
     
     <link rel="icon" href="./assets/bkc_logo_3d.png" type="image/png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-    <link rel="stylesheet" href="./styles/trade.css"> 
-
+    
     <script src="https://cdn.jsdelivr.net/npm/ethers@6.4.0/dist/ethers.umd.min.js" defer></script>
     <script src="https://pay.coinbase.com/pay-sdk.js" defer></script>
     <script src="https://static.moonpay.com/web-sdk/v1/moonpay-web-sdk.min.js" defer></script>
@@ -36,16 +36,23 @@
             darkMode: 'class',
             theme: {
                 extend: {
+                    colors: {
+                        'presale-bg-main': '#0a0a0a',
+                        'presale-bg-darker': '#050505',
+                        'presale-bg-card': '#121212',
+                        'presale-border': '#27272a',
+                        'accent': '#f59e0b',
+                        'accent-hover': '#d97706',
+                    },
                     animation: {
-                        'gradient-x': 'gradient-x 15s ease infinite',
-                        'bounce-slow': 'bounce-slow 3s infinite ease-in-out',
-                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                        'fadeIn': 'fadeIn 0.5s ease-out',
+                        'spin-slow': 'spin 3s linear infinite',
+                        'pulse-glow': 'pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                     },
                     keyframes: {
-                        'gradient-x': { '0%, 100%': { 'background-size': '200% 200%', 'background-position': 'left center' }, '50%': { 'background-size': '200% 200%', 'background-position': 'right center' } },
-                        'bounce-slow': { '0%, 100%': { transform: 'translateY(-5%)' }, '50%': { transform: 'translateY(5%)' } },
-                        'fadeIn': { '0%': { opacity: 0 }, '100%': { opacity: 1 } }
+                        'pulse-glow': {
+                            '0%, 100%': { opacity: 1, boxShadow: '0 0 20px rgba(245, 158, 11, 0.2)' },
+                            '50%': { opacity: .7, boxShadow: '0 0 10px rgba(245, 158, 11, 0)' }
+                        }
                     }
                 }
             }
@@ -53,88 +60,106 @@
     </script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        :root {
-            --bg-main: #18181b; --bg-sidebar: #27272a; --bg-card: #3f3f46; --border-color: #52525b; --text-primary: #f4f4f5; --text-secondary: #a1a1aa; --accent: #f59e0b; --accent-hover: #d97706;
-            --presale-bg-main: #0a0a0a; --presale-bg-darker: #000000; --presale-bg-card: #1a1a1a; --presale-border-color: #2a2a2a;
-        }
-        body { font-family: 'Inter', sans-serif; background-color: var(--presale-bg-main); color: var(--text-primary); }
-        .btn-disabled { background-color: #3f3f46 !important; color: #71717a !important; cursor: not-allowed !important; }
-        .loader { border: 2px solid var(--border-color); border-radius: 50%; border-top: 2px solid var(--accent); width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        
+        :root { --accent: #f59e0b; --accent-hover: #d97706; }
+        body { font-family: 'Inter', sans-serif; background-color: #0a0a0a; color: #f4f4f5; overflow-x: hidden; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #18181b; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+        .loader { border: 3px solid rgba(255,255,255,0.1); border-radius: 50%; border-top: 3px solid var(--accent); width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .presale-text-gradient {
+            background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #f59e0b 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .btn-primary { background: linear-gradient(90deg, var(--accent), var(--accent-hover)); color: #000; transition: all 0.3s ease; }
+        .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4); }
+        .btn-primary:disabled { background: #27272a; color: #71717a; cursor: not-allowed; box-shadow: none; }
+
+        .wallet-btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 16px; border-radius: 10px; font-weight: 700; font-size: 14px; transition: all 0.3s ease; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+        .wallet-btn-disconnected { background: rgba(245, 158, 11, 0.1); color: var(--accent); }
+        .wallet-btn-disconnected:hover { background: rgba(245, 158, 11, 0.2); border-color: var(--accent); }
+        .wallet-btn-connected { background: #18181b; color: #fff; border-color: #3f3f46; }
+
+        .quantity-selector { display: flex; align-items: center; justify-content: center; background: #18181b; border: 1px solid #27272a; border-radius: 8px; overflow: hidden; max-width: 140px; margin: 0 auto; }
+        .quantity-btn { background: transparent; color: #a1a1aa; width: 40px; height: 40px; font-size: 18px; transition: color 0.2s; }
+        .quantity-btn:hover { color: #fff; background: #27272a; }
         
-        /* Presale Focus Styles */
-        #presale { background-color: var(--presale-bg-main); min-height: 80vh; }
-        #presale .loader { border: 2px solid #fff; border-top: 2px solid var(--accent); width: 16px; height: 16px; margin-right: 8px; }
-        #presale .btn-primary { background: linear-gradient(90deg, var(--accent), var(--accent-hover)); box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); transition: all 0.3s ease-in-out; color: #1a1a1a; }
-        #presale .btn-primary:hover:not(:disabled) { transform: translateY(-3px) scale(1.05); box-shadow: 0 0 25px rgba(245, 158, 11, 0.6); }
-        #presale .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        
-        /* Estilos do botão de carteira */
-        .wallet-btn {
-            display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 16px; border-radius: 12px; font-weight: 700; font-family: 'Inter', sans-serif; transition: all 0.3s ease; cursor: pointer; min-height: 44px; font-size: 14px; position: relative; overflow: hidden;
+        .quantity-input {
+            background: transparent; border: none; color: #fff; text-align: center;
+            width: 50px; font-weight: 600; font-size: 16px;
+            -moz-appearance: textfield;
+            appearance: textfield; /* ✅ FIX: Propriedade padrão adicionada */
         }
-        .wallet-btn-connected {
-            background: rgba(24, 24, 27, 0.8); color: var(--text-primary); border: 1px solid rgba(63, 63, 70, 0.5); backdrop-filter: blur(10px);
-        }
-        .wallet-btn-disconnected {
-            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%); color: var(--bg-main); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
-        }
+        .quantity-input::-webkit-outer-spin-button,
+        .quantity-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .quantity-input:focus { outline: none; }
+
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
     </style>
 </head>
-<body class="antialiased">
+<body class="antialiased min-h-screen flex flex-col">
 
-    <div id="toast-container" class="fixed bottom-4 right-4 z-[60] flex flex-col gap-2"></div>
+    <div id="toast-container" class="fixed bottom-6 right-6 z-[100] flex flex-col gap-3"></div>
 
-    <div class="relative min-h-screen flex flex-col">
-        
-        <header class="sticky top-0 z-20 flex justify-between items-center p-4 bg-presale-bg-darker/80 backdrop-blur-sm border-b border-zinc-800">
-            <div class="flex items-center gap-4">
-                <img src="./assets/bkc_logo_3d.png" alt="Backcoin Presale Logo" class="h-8 w-auto rounded-full">
-                <span id="mobileAppDisplay" class="text-xl font-bold text-amber-400 hidden sm:inline">Backcoin Presale</span>
-            </div>
+    <header class="fixed w-full top-0 z-50 bg-black/80 backdrop-blur-md border-b border-white/5 transition-all duration-300">
+        <div class="container mx-auto max-w-7xl px-4 h-20 flex justify-between items-center">
             
-            <div class="flex items-center ml-auto gap-3">
-                <button id="return-to-testnet-btn" class="flex items-center gap-2 py-2 px-4 rounded-lg transition-colors text-cyan-400 hover:text-white hover:bg-cyan-900/50 text-sm font-semibold">
-                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
-                    <span class="hidden sm:inline">Go to Testnet DApp</span>
-                </button>
-                
-                <button id="connectButtonDesktop" class="wallet-btn wallet-btn-disconnected text-xs font-mono text-center max-w-fit whitespace-nowrap relative">
-                    <i class="fa-solid fa-plug"></i> Connect Wallet
-                </button>
-            </div>
-        </header>
-        
-        <main class="flex-1 overflow-y-auto bg-presale-bg-main p-4 sm:p-6 lg:p-10">
-            <div class="container mx-auto max-w-7xl">
-                <section id="presale" class="">
-                    <div class="flex flex-col items-center justify-center h-96">
-                        <div class="loader w-12 h-12 border-4 border-amber-500/30 border-t-amber-500 mb-4"></div>
-                        <p class="text-zinc-500 animate-pulse">Loading Presale Data...</p>
-                    </div>
-                </section>
-            </div>
-        </main>
-
-        <footer class="bg-presale-bg-darker/80 border-t border-zinc-800 p-4 text-center">
-             <div class="flex justify-center items-center gap-6">
-                <a href="#" id="shareProjectBtn" class="text-zinc-400 hover:text-white transition-colors text-sm font-semibold flex items-center gap-2">
-                    <i class="fa-solid fa-share-nodes"></i> Share Project
-                </a>
-                
-                <div class="flex justify-center items-center gap-4">
-                     <p class="text-[10px] uppercase tracking-widest text-zinc-600 font-bold hidden sm:inline">Powered By:</p>
-                     <img src="./assets/arbitrum.svg" class="h-5 w-auto" title="Arbitrum One">
-                     <a href="https://www.alchemy.com/?r=b4b667087754b238" target="_blank" rel="noopener noreferrer">
-                        <img src="./assets/alchemy.svg" class="h-5 w-auto opacity-70 hover:opacity-100 grayscale hover:grayscale-0 transition-all duration-300" title="Alchemy">
-                    </a>
-                    <img src="./assets/metamask_icon.png" class="h-5 w-auto opacity-70 hover:opacity-100 grayscale hover:grayscale-0 transition-all duration-300" title="MetaMask">
+            <div class="flex items-center gap-3 group cursor-default">
+                <div class="relative w-10 h-10">
+                    <img src="./assets/bkc_logo_3d.png" alt="BKC" class="w-full h-full object-contain group-hover:scale-110 transition-transform duration-300">
+                    <div class="absolute inset-0 bg-amber-500/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                </div>
+                <div class="hidden sm:flex flex-col">
+                    <span class="text-lg font-black tracking-tight text-white leading-none">BACKCOIN</span>
+                    <span class="text-[10px] font-bold tracking-[0.2em] text-amber-500 uppercase">Presale</span>
                 </div>
             </div>
-        </footer>
 
-    </div>
+            <div class="flex items-center gap-3">
+                <button id="return-to-testnet-btn" class="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-all text-xs font-semibold border border-transparent hover:border-white/10">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    <span>Back to Ecosystem</span>
+                </button>
+                
+                <button id="connectButtonDesktop" class="wallet-btn wallet-btn-disconnected">
+                    <i class="fa-solid fa-wallet"></i> 
+                    <span>Connect Wallet</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 pt-20">
+        <div id="presale">
+            <div class="min-h-[80vh] flex flex-col items-center justify-center space-y-4">
+                <div class="loader w-12 h-12 border-4 border-amber-500/30 border-t-amber-500"></div>
+                <p class="text-zinc-500 text-sm animate-pulse font-mono">Initializing Secure Connection...</p>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-black border-t border-white/5 py-8 mt-auto">
+        <div class="container mx-auto max-w-7xl px-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p class="text-zinc-500 text-xs">&copy; 2025 Backcoin Protocol. All rights reserved.</p>
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity">
+                    <img src="./assets/icon_arbitrum.svg" class="h-4 w-auto" alt="Arbitrum">
+                    <span class="text-[10px] font-mono text-zinc-400">DEPLOYED ON ARBITRUM ONE</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
     <div id="modal-container"></div>
     <script type="module" src="./app.js"></script>
 </body>

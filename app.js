@@ -51,7 +51,7 @@ function renderAnimatedLoader() {
 
                 <div id="loader-logo-container" class="absolute inset-2 flex items-center justify-center">
                     <img id="logo-bkc" src="./assets/bkc_logo_3d.png" class="w-full h-full object-contain absolute transition-opacity duration-500 opacity-100" alt="Backcoin Logo">
-                    <img id="logo-arb" src="./assets/arbitrum.svg" class="w-full h-full object-contain absolute transition-opacity duration-500 opacity-0" alt="Arbitrum Logo">
+                    <img id="logo-arb" src="./assets/icon_arbitrum.svg" class="w-full h-full object-contain absolute transition-opacity duration-500 opacity-0" alt="Arbitrum Logo">
                 </div>
             </div>
             

@@ -1,23 +1,51 @@
 // js/pages/PresalePage.js
-// ✅ VERSÃO IPFS READY: Renderiza imagens do Pinata corretamente
+// ✅ VERSÃO "WHY BUY": Foco em Utilidade Real, Sem Pré-venda de Token e Aluguel
 
 const ethers = window.ethers;
 import { DOMElements } from '../dom-elements.js';
 import { State } from '../state.js';
 import { addresses, publicSaleABI, boosterTiers } from '../config.js';
 
-// Configuração Visual baseada no config.js
-const PRESALE_CONFIG = {
-    countdownDate: "2025-12-01T00:00:00Z",
+// =================================================================
+// 1. LÓGICA DE VENDAS (Copywriting Otimizado)
+// =================================================================
+
+// Gera a lista de vantagens focada nas "Chaves de Acesso" e "Aluguel"
+function getAdvantages(name, bips) {
+    const percent = bips / 100;
     
-    // Mesclamos os dados visuais do config.js (boosterTiers) com IDs e vantagens
+    // Vantagens BASE (Todos os Tiers têm isso)
+    const benefits = [
+        `<strong>${percent}% Lifetime Fee Discount</strong> (Save Forever)`, // Economia Vitalícia
+        `<strong>+${percent}% Mining Power</strong> (Earn More BKC)`,        // Ganho de Tokens
+        `🔑 <strong>Access Key</strong>: Unlocks Protocol Features`          // Chave de Acesso
+    ];
+
+    // Vantagens por Nível de Escassez
+    if (percent >= 50) { // Gold, Platinum, Diamond
+        benefits.push("💸 <strong>Passive Income:</strong> Rent this NFT to others"); // Aluguel
+        benefits.push("🔄 <strong>Instant Liquidity:</strong> Sell back to AMM Pool"); // Revenda
+        benefits.push("👑 <strong>Governance Rights</strong> & Voting Power");
+    } 
+    else if (percent >= 30) { // Silver, Bronze
+        benefits.push("💸 <strong>Passive Income:</strong> Rent this NFT to others"); // Aluguel
+        benefits.push("🔓 <strong>Reduced Fees</strong> on Notary Services");
+    }
+    else { // Iron, Crystal
+        benefits.push("📈 <strong>Tradeable Asset:</strong> Sell on Marketplace");
+    }
+    
+    return benefits;
+}
+
+const PRESALE_CONFIG = {
     nftTiers: boosterTiers.map((tier, index) => ({
         ...tier,
-        id: index, // Assume ordem 0=Diamond, 1=Platinum...
-        batchSize: (index + 1) * 10, // 10, 20, 30...
+        id: index, 
+        batchSize: (index + 1) * 15,
         phase2Price: "TBA", 
-        // Vantagens baseadas no nome
-        advantages: getAdvantages(tier.name, tier.boostBips),
+        // Aqui chamamos a nova função de vantagens
+        advantages: getAdvantages(tier.name, tier.boostBips), 
         
         priceInWei: 0n, 
         mintedCount: 0,
@@ -27,51 +55,42 @@ const PRESALE_CONFIG = {
     
     translations: {
         en: {
-            saleTag: "BATCH 1: 50% DISCOUNT",
-            saleTitle: "Choose Your Power",
-            saleTimerTitle: "Time Remaining Until Phase 2 Price Increase:",
-            cardPricePhase2: "Phase 2 Price:",
+            saleTag: "FAIR LAUNCH PROTOCOL • ZERO TOKEN PRE-SALE",
+            saleTitle: "The Only Way In.",
+            // O texto abaixo responde EXATAMENTE a sua pergunta de forma inequívoca
+            saleSubtitle: `
+                <strong>Why buy a Booster?</strong> Because there is <span class="text-red-500">NO Token Pre-Sale</span>. 
+                <br>These NFTs are the <strong>exclusive keys</strong> that unlock <strong>Lifetime Fee Discounts</strong> and boost your <strong>Mining Power</strong>.
+                <br>Funds raised here develop the ecosystem. You own the utility: <strong>Use it, Sell it, or Rent it</strong> for passive income.
+            `,
+            
+            cardPricePhase2: "Next Phase:",
             cardBtnConnect: "Connect Wallet",
-            cardBtnBuy: "Acquire Now",
+            cardBtnBuy: "Mint Access Key", // Mudou de "Buy" para "Mint Access Key"
             cardBtnSoldOut: "Sold Out",
             cardBtnUnavailable: "Unavailable",
-            loadingText: "Syncing with Blockchain...",
-            anchorBtn: "Secure Your NFT"
+            loadingText: "Loading Tiers...",
+            anchorBtn: "Secure My Key"
         }
     }
 };
 
-// Helper para gerar vantagens dinamicamente
-function getAdvantages(name, bips) {
-    const percent = bips / 100;
-    const base = [`${percent}% Max Reward Boost`];
-    if (percent >= 30) base.push("Fee Reduction & Liquidity Access");
-    if (percent >= 50) base.push("Priority Access & Governance");
-    else base.push("Standard Ecosystem Access");
-    return base;
-}
-
 let hasRendered = false;
 
-// --- CORE FUNCTIONS ---
+// =================================================================
+// 2. FUNÇÕES VISUAIS (Helpers)
+// =================================================================
 
 const getHttpUrl = (tier) => {
-    // 1. Tenta usar a imagem real do IPFS (realImg)
     let url = tier.realImg || tier.img;
-    
     if (!url) return './assets/bkc_logo_3d.png';
     if (url.startsWith('./')) return url;
 
-    // Lógica para links IPFS de pasta
-    // Se o link termina com um hash (sem extensão), assumimos que é uma pasta
-    // e tentamos anexar o nome do arquivo padrão: "nome_booster.png"
     if (!url.endsWith('.png') && !url.endsWith('.json') && !url.endsWith('.jpg')) {
         const filename = `${tier.name.toLowerCase()}_booster.png`; 
-        // ex: .../QmHash/diamond_booster.png
         if (!url.endsWith('/')) url += '/';
         return url + filename;
     }
-
     return url;
 };
 
@@ -88,61 +107,66 @@ function createCardHTML(tier) {
     const minted = tier.mintedCount;
     const batchTarget = Math.max(tier.batchSize, 10);
     const progressPercent = Math.max(5, Math.min(100, (minted / batchTarget) * 100));
-
-    // Resolve a URL da imagem usando o helper inteligente
+    
     const imageUrl = getHttpUrl(tier);
+    const glowClass = tier.glowColor || "bg-amber-500/10";
+    const borderClass = tier.borderColor || "border-zinc-800";
+    const textClass = tier.color || "text-white";
 
     return `
-        <div class="bg-presale-bg-card border border-presale-border rounded-xl flex flex-col nft-card group overflow-hidden shadow-xl hover:shadow-amber-500/20 transition-all duration-300 w-full" data-tier-id="${tier.id}">
+        <div class="bg-presale-bg-card border ${borderClass} rounded-2xl flex flex-col nft-card group overflow-hidden shadow-2xl hover:shadow-amber-500/20 transition-all duration-300 w-full relative transform hover:-translate-y-1" data-tier-id="${tier.id}">
             
-            <div class="w-full h-48 overflow-hidden bg-black relative">
+            <div class="absolute top-0 right-0 ${glowClass} backdrop-blur-md px-4 py-2 rounded-bl-2xl border-b border-l border-white/10 z-10">
+                <span class="font-black ${textClass} text-lg">+${tier.boostBips / 100}% MINING POWER</span>
+            </div>
+
+            <div class="w-full h-56 overflow-hidden bg-black/50 relative flex items-center justify-center group-hover:bg-black/40 transition-colors">
+                <div class="absolute inset-0 bg-gradient-to-t from-presale-bg-card to-transparent opacity-80"></div>
                 <img src="${imageUrl}" alt="${tier.name}" 
-                     class="w-full h-full object-contain p-4 group-hover:scale-110 transition-all duration-500" 
+                     class="h-4/5 w-auto object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.15)] group-hover:scale-110 transition-transform duration-500" 
                      onerror="this.src='./assets/bkc_logo_3d.png'"/>
-                     
-                <div class="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent flex items-end p-4">
-                    <h3 class="text-3xl font-black ${tier.color} drop-shadow-md">${tier.name}</h3>
-                </div>
+                <h3 class="absolute bottom-4 left-4 text-3xl font-black ${textClass} drop-shadow-md tracking-tighter uppercase italic">${tier.name}</h3>
             </div>
             
-            <div class="p-5 flex flex-col flex-1">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-sm text-zinc-400">Boost Power</span>
-                    <span class="text-2xl font-bold text-white">+${tier.boostBips / 100}%</span>
-                </div>
-
-                <div class="space-y-2 mb-6 min-h-[80px]">
-                    ${tier.advantages.slice(0, 3).map(adv => `
-                        <div class="flex items-start gap-2 text-xs text-zinc-300">
-                            <i class="fa-solid fa-check text-green-500 mt-0.5"></i>
+            <div class="p-5 flex flex-col flex-1 relative">
+                
+                <div class="space-y-3 mb-6">
+                    <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">KEY BENEFITS</p>
+                    ${tier.advantages.map(adv => `
+                        <div class="flex items-start gap-3 text-sm text-zinc-300 leading-tight">
+                            <i class="fa-solid fa-check-circle text-green-500 mt-0.5 flex-shrink-0"></i>
                             <span>${adv}</span>
                         </div>
                     `).join('')}
                 </div>
                 
-                <div class="w-full mb-4">
+                <div class="w-full mb-6">
                     <div class="flex justify-between text-[10px] font-bold text-zinc-500 uppercase mb-1">
-                        <span>Batch Progress</span>
-                        <span class="text-amber-500">${minted} / ${batchTarget}</span>
+                        <span>Batch Availability</span>
+                        <span class="${minted > batchTarget * 0.8 ? 'text-red-500 animate-pulse' : 'text-green-500'}">
+                            ${minted} / ${batchTarget} Minted
+                        </span>
                     </div>
-                    <div class="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                        <div class="bg-amber-500 h-1.5 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)]" style="width: ${progressPercent}%"></div>
+                    <div class="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
+                        <div class="bg-gradient-to-r from-amber-600 to-yellow-400 h-2 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)] transition-all duration-1000" style="width: ${progressPercent}%"></div>
                     </div>
                 </div>
 
-                <div class="bg-black/40 rounded-lg p-3 text-center mb-4 border border-white/5">
-                    <div class="text-xs text-zinc-500 line-through mb-1">${t.cardPricePhase2} ${tier.phase2Price}</div>
-                    <div class="text-2xl font-bold text-white">${displayPrice}</div>
-                </div>
-
-                <div class="mt-auto">
-                    <div class="flex items-center justify-between bg-zinc-900 rounded-lg p-1 mb-3 border border-zinc-800">
-                        <button class="quantity-btn w-8 h-8 flex items-center justify-center hover:bg-zinc-800 rounded quantity-minus">-</button>
-                        <input type="number" class="quantity-input bg-transparent text-center w-12 font-bold text-white" value="1" min="1">
-                        <button class="quantity-btn w-8 h-8 flex items-center justify-center hover:bg-zinc-800 rounded quantity-plus">+</button>
+                <div class="mt-auto bg-black/20 rounded-xl p-4 border border-white/5">
+                    <div class="flex justify-between items-end mb-3">
+                        <div class="text-left">
+                            <div class="text-xs text-zinc-500 line-through mb-0.5">${t.cardPricePhase2} ${tier.phase2Price}</div>
+                            <div class="text-2xl font-black text-white tracking-tight">${displayPrice}</div>
+                        </div>
+                        
+                        <div class="flex items-center bg-zinc-900 rounded-lg border border-zinc-700">
+                            <button class="quantity-minus w-8 h-8 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-l-lg transition-colors">-</button>
+                            <input type="number" class="quantity-input w-8 bg-transparent text-center text-sm font-bold text-white focus:outline-none" value="1" min="1" readonly>
+                            <button class="quantity-plus w-8 h-8 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-r-lg transition-colors">+</button>
+                        </div>
                     </div>
 
-                    <button class="w-full btn-primary font-bold py-3 px-4 rounded-lg buy-button uppercase tracking-wide text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" 
+                    <button class="w-full btn-primary font-black py-3 px-4 rounded-lg buy-button uppercase tracking-wide text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 active:scale-95 transition-all" 
                         data-tier-id="${tier.id}">
                         ${t.cardBtnConnect}
                     </button>
@@ -152,7 +176,10 @@ function createCardHTML(tier) {
     `;
 }
 
-// 🔥 FETCH REAL DATA ONLY
+// =================================================================
+// 3. LÓGICA DE DADOS (Blockchain Fetch)
+// =================================================================
+
 async function fetchAllTierData() {
     const grid = document.getElementById('marketplace-grid');
     if (!grid) return;
@@ -168,9 +195,7 @@ async function fetchAllTierData() {
         const saleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, State.provider);
         const tierIds = PRESALE_CONFIG.nftTiers.map(t => t.id);
         
-        // Mapeia IDs: O contrato usa 1=Diamond, 2=Platinum? Ou 0=Diamond?
-        // Assumindo 1-based no contrato para segurança, ou ajuste conforme seu contrato PublicSale.sol
-        // Se no contrato Diamond é ID 1, usamos id+1.
+        // Assume IDs 1-based (1..7) se o contrato foi deployado assim
         const tierResults = await Promise.all(tierIds.map(id => saleContract.tiers(id + 1).catch(e => null)));
 
         tierResults.forEach((data, index) => {
@@ -182,7 +207,7 @@ async function fetchAllTierData() {
                 tierConfig.mintedCount = Number(data.mintedCount);
                 if (data.priceInWei === 0n) tierConfig.isSoldOut = true;
             } else {
-                tierConfig.isSoldOut = true;
+                tierConfig.isSoldOut = true; 
             }
         });
 
@@ -240,36 +265,54 @@ function updateTotalPrice(card) {
     if(tier.priceInWei > 0n) {
         const total = tier.priceInWei * BigInt(qty);
         const fmt = parseFloat(ethers.formatUnits(total, 18)).toString();
-        btn.innerHTML = `BUY FOR ${fmt} BNB`;
+        btn.innerHTML = `MINT FOR ${fmt} BNB`;
     } 
 }
+
+// =================================================================
+// 4. EXPORT PRINCIPAL
+// =================================================================
 
 export const PresalePage = {
     render: () => {
         const t = PRESALE_CONFIG.translations.en;
         const html = `
-            <section id="sale" class="py-12 px-4">
-                <div class="text-center mb-12">
-                    <span class="inline-block py-1 px-3 rounded-full bg-amber-500/10 text-amber-500 text-xs font-bold tracking-widest mb-4 border border-amber-500/20">${t.saleTag}</span>
-                    <h2 class="text-4xl md:text-5xl font-black text-white mb-4">${t.saleTitle}</h2>
-                    <p class="text-zinc-400">${t.saleTimerTitle}</p>
+            <section id="sale" class="py-16 px-4 min-h-screen">
+                
+                <div class="text-center mb-16 max-w-4xl mx-auto">
+                    <span class="inline-block py-2 px-6 rounded-full bg-amber-500/20 text-amber-400 text-sm font-black tracking-[0.2em] mb-6 border border-amber-500/40 uppercase animate-pulse">
+                        ${t.saleTag}
+                    </span>
+                    <h2 class="text-5xl md:text-7xl font-black text-white mb-6 leading-tight drop-shadow-xl">
+                        ${t.saleTitle}
+                    </h2>
+                    
+                    <div class="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700 p-6 rounded-2xl shadow-2xl">
+                        <p class="text-lg md:text-xl text-zinc-300 leading-relaxed font-light">
+                            ${t.saleSubtitle}
+                        </p>
+                    </div>
                 </div>
 
-                <div id="countdown-container" class="grid grid-cols-4 gap-4 max-w-2xl mx-auto mb-16 text-center">
+                <div id="countdown-container" class="grid grid-cols-4 gap-4 max-w-3xl mx-auto mb-20 text-center">
                     ${['Days', 'Hours', 'Minutes', 'Seconds'].map(unit => `
-                        <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-                            <div id="${unit.toLowerCase()}" class="text-3xl font-bold text-white font-mono">00</div>
-                            <div class="text-xs text-zinc-500 uppercase mt-1">${unit}</div>
+                        <div class="bg-presale-bg-card border border-zinc-800 rounded-2xl p-4 shadow-lg">
+                            <div id="${unit.toLowerCase()}" class="text-4xl md:text-5xl font-black text-white font-mono tracking-tighter">00</div>
+                            <div class="text-[10px] text-zinc-500 uppercase font-bold mt-2 tracking-widest">${unit}</div>
                         </div>
                     `).join('')}
                 </div>
 
-                <div id="marketplace-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 max-w-7xl mx-auto">
+                <div id="marketplace-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 max-w-[1600px] mx-auto">
                     <div class="col-span-full text-center py-20">
-                        <div class="loader mx-auto mb-4"></div>
-                        <p class="text-zinc-500 animate-pulse">${t.loadingText}</p>
+                        <div class="loader mx-auto mb-6 w-16 h-16 border-4"></div>
+                        <p class="text-zinc-500 font-mono animate-pulse uppercase tracking-widest">${t.loadingText}</p>
                     </div>
                 </div>
+                
+                <a href="#sale" title="${t.anchorBtn}" class="md:hidden fixed bottom-6 right-6 z-40 bg-amber-500 text-black p-4 rounded-full shadow-2xl shadow-amber-500/50">
+                    <i class="fa-solid fa-key text-xl"></i>
+                </a>
             </section>
         `;
         

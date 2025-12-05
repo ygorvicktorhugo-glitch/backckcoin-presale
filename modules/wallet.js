@@ -13,8 +13,6 @@ import {
 } from '../config.js';
 
 import { loadPublicData, loadUserData } from './data.js';
-import { signIn } from './firebase-auth-service.js';
-
 const ethers = window.ethers; 
 
 // ============================================================================

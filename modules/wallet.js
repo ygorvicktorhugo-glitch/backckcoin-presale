@@ -1,81 +1,104 @@
-// modules/wallet.js
-// ✅ VERSÃO FINAL V4.1: Auto-Reconnect + Polling Adaptativo + Instâncias Públicas Essenciais
+// js/modules/wallet.js
+// ✅ VERSÃO FINAL MAINNET V1.1: Redirecionamento para backcoin.org corrigido
 
-import { ethers } from 'https://esm.sh/ethers@6.11.1';
-import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.0.3';
+import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.1.11?bundle';
 
 import { State } from '../state.js';
 import { showToast } from '../ui-feedback.js';
 import {
-    addresses, sepoliaRpcUrl, sepoliaChainId,
-    bkcTokenABI, delegationManagerABI, 
-    rewardBoosterABI, 
-    actionsManagerABI, 
-    publicSaleABI,
-    faucetABI,
-    ecosystemManagerABI,
-    decentralizedNotaryABI,
-    rentalManagerABI
+    addresses, bkcTokenABI, delegationManagerABI, 
+    rewardBoosterABI, actionsManagerABI, 
+    publicSaleABI, faucetABI, ecosystemManagerABI,
+    decentralizedNotaryABI, rentalManagerABI
 } from '../config.js';
+
 import { loadPublicData, loadUserData } from './data.js';
 import { signIn } from './firebase-auth-service.js';
 
+const ethers = window.ethers; 
+
 // ============================================================================
-// GLOBAL STATE & CONSTANTS
+// 1. CONFIGURAÇÃO DE REDES (Mainnet e Testnet)
 // ============================================================================
+
+// --- Arbitrum Mainnet (Rede Principal do DApp) ---
+const ARBITRUM_MAINNET_ID_DECIMAL = 42161;
+const ARBITRUM_MAINNET_ID_HEX = '0xa4b1'; // 42161 em Hex
+const ARBITRUM_MAINNET_RPC_URL = 'https://arb1.arbitrum.io/rpc'; 
+
+// --- Arbitrum Sepolia (Rede de Retorno) ---
+const ARBITRUM_SEPOLIA_ID_DECIMAL = 421614;
+const ARBITRUM_SEPOLIA_ID_HEX = '0x66eee'; 
+const ARBITRUM_SEPOLIA_RPC_URL = 'https://sepolia.arbitrum.io/rpc'; // Use seu RPC Sepolia preferido
+
 let balancePollingInterval = null;
-
-// Configuração Adaptativa
-let CURRENT_POLLING_MS = 5000; // Começa em 5s
-const FAST_POLLING_MS = 5000;
-const SLOW_POLLING_MS = 30000; // 30s se houver erro ou inatividade
+let CURRENT_POLLING_MS = 5000; 
 
 // ============================================================================
-// WEB3MODAL CONFIGURATION
+// 2. WEB3MODAL SETUP
 // ============================================================================
 const WALLETCONNECT_PROJECT_ID = 'cd4bdedee7a7e909ebd3df8bbc502aed';
 
-const sepolia = {
-    chainId: Number(sepoliaChainId),
-    name: 'Sepolia',
+// Configuração da Mainnet para o Web3Modal
+const arbitrumMainnetConfig = {
+    chainId: ARBITRUM_MAINNET_ID_DECIMAL,
+    name: 'Arbitrum One',
     currency: 'ETH',
-    explorerUrl: 'https://sepolia.etherscan.io',
-    rpcUrl: sepoliaRpcUrl
+    explorerUrl: 'https://arbiscan.io',
+    rpcUrl: ARBITRUM_MAINNET_RPC_URL 
 };
 
 const metadata = {
-    name: 'Backchain dApp',
-    description: 'Backchain Ecosystem',
+    name: 'Backcoin Presale', // Nome ajustado para a Pré-Venda
+    description: 'NFT Presale & Ecosystem Access',
     url: window.location.origin,
     icons: [window.location.origin + '/assets/bkc_logo_3d.png']
 };
 
 const ethersConfig = defaultConfig({
     metadata,
-    enableEIP6963: true,
-    enableInjected: true,
-    enableCoinbase: false, 
-    rpcUrl: sepoliaRpcUrl,
-    defaultChainId: Number(sepoliaChainId),
-    enableWeb3Js: false,
-    enableEns: false, // Previne erros 404
-    enableEmail: false
+    enableEIP6963: true,      
+    enableInjected: true,     
+    enableCoinbase: false,    
+    rpcUrl: ARBITRUM_MAINNET_RPC_URL,
+    defaultChainId: ARBITRUM_MAINNET_ID_DECIMAL,
+    enableEmail: true, 
+    enableEns: false,
+    auth: {
+        email: true,
+        showWallets: true,
+        walletFeatures: true
+    }
 });
 
 const web3modal = createWeb3Modal({
     ethersConfig,
-    chains: [sepolia],
+    chains: [arbitrumMainnetConfig], // Apenas Mainnet na inicialização
     projectId: WALLETCONNECT_PROJECT_ID,
-    enableAnalytics: false,
+    enableAnalytics: true,    
     themeMode: 'dark',
     themeVariables: {
-        '--w3m-accent': '#f59e0b',
+        '--w3m-accent': '#f59e0b', 
+        '--w3m-border-radius-master': '1px',
         '--w3m-z-index': 100
     }
 });
 
 // ============================================================================
-// HELPERS
+// 3. UI FORCER
+// ============================================================================
+
+function startUIEnforcer(address) {
+    if (!address) return;
+    State.userAddress = address;
+}
+
+function stopUIEnforcer() {
+    // Limpeza (Placeholder)
+}
+
+// ============================================================================
+// 4. LÓGICA CORE
 // ============================================================================
 
 function validateEthereumAddress(address) {
@@ -87,261 +110,243 @@ function isValidAddress(addr) {
     return addr && addr !== ethers.ZeroAddress && !addr.startsWith('0x...');
 }
 
-// Carrega saldo do Cache LocalStorage para UI instantânea
 function loadCachedBalance(address) {
     if (!address) return;
     const cached = localStorage.getItem(`balance_${address.toLowerCase()}`);
     if (cached) {
         try {
-            const balanceBigInt = BigInt(cached);
-            State.currentUserBalance = balanceBigInt;
+            State.currentUserBalance = BigInt(cached);
             if (window.updateUIState) window.updateUIState();
-            // console.log("⚡ Cached balance loaded.");
-        } catch (e) { console.warn("Cache invalid"); }
+        } catch (e) { }
     }
 }
 
 function instantiateContracts(signerOrProvider) {
     try {
-        if (isValidAddress(addresses.bkcToken))
-            State.bkcTokenContract = new ethers.Contract(addresses.bkcToken, bkcTokenABI, signerOrProvider);
-        if (isValidAddress(addresses.delegationManager))
-            State.delegationManagerContract = new ethers.Contract(addresses.delegationManager, delegationManagerABI, signerOrProvider);
-        if (isValidAddress(addresses.actionsManager))
-            State.actionsManagerContract = new ethers.Contract(addresses.actionsManager, actionsManagerABI, signerOrProvider);
-        if (isValidAddress(addresses.rewardBoosterNFT))
-            State.rewardBoosterContract = new ethers.Contract(addresses.rewardBoosterNFT, rewardBoosterABI, signerOrProvider);
-        if (isValidAddress(addresses.publicSale))
-            State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
-        if (isValidAddress(addresses.faucet))
-            State.faucetContract = new ethers.Contract(addresses.faucet, faucetABI, signerOrProvider);
-        if (isValidAddress(addresses.ecosystemManager))
-            State.ecosystemManagerContract = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, signerOrProvider);
-        if (isValidAddress(addresses.decentralizedNotary))
-            State.decentralizedNotaryContract = new ethers.Contract(addresses.decentralizedNotary, decentralizedNotaryABI, signerOrProvider);
-        if (isValidAddress(addresses.rentalManager))
-            State.rentalManagerContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, signerOrProvider);
-            
-    } catch (e) {
-        console.error("Error instantiating contracts:", e);
-    }
+        // NOTA: Contratos devem ser ajustados para a Mainnet no config.js
+        if (isValidAddress(addresses.bkcToken)) State.bkcTokenContract = new ethers.Contract(addresses.bkcToken, bkcTokenABI, signerOrProvider);
+        if (isValidAddress(addresses.delegationManager)) State.delegationManagerContract = new ethers.Contract(addresses.delegationManager, delegationManagerABI, signerOrProvider);
+        if (isValidAddress(addresses.rewardBoosterNFT)) State.rewardBoosterContract = new ethers.Contract(addresses.rewardBoosterNFT, rewardBoosterABI, signerOrProvider);
+        if (isValidAddress(addresses.publicSale)) State.publicSaleContract = new ethers.Contract(addresses.publicSale, publicSaleABI, signerOrProvider);
+        if (isValidAddress(addresses.faucet)) State.faucetContract = new ethers.Contract(addresses.faucet, faucetABI, signerOrProvider);
+        if (isValidAddress(addresses.rentalManager)) State.rentalManagerContract = new ethers.Contract(addresses.rentalManager, rentalManagerABI, signerOrProvider);
+        if (isValidAddress(addresses.actionsManager)) State.actionsManagerContract = new ethers.Contract(addresses.actionsManager, actionsManagerABI, signerOrProvider);
+        if (isValidAddress(addresses.decentralizedNotary)) State.decentralizedNotaryContract = new ethers.Contract(addresses.decentralizedNotary, decentralizedNotaryABI, signerOrProvider);
+        if (isValidAddress(addresses.ecosystemManager)) State.ecosystemManagerContract = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, signerOrProvider);
+    } catch (e) { console.warn("Contract init partial failure"); }
 }
 
-// 🛡️ Lógica de Polling Inteligente (Anti-Spam RPC)
 function startBalancePolling() {
-    if (balancePollingInterval) {
-        clearInterval(balancePollingInterval);
-        balancePollingInterval = null;
-    }
-
+    if (balancePollingInterval) clearInterval(balancePollingInterval);
     if (!State.bkcTokenContractPublic || !State.userAddress) return;
-
-    // console.log(`🚀 Polling balance every ${CURRENT_POLLING_MS / 1000}s`);
-    checkBalance(); // Executa imediatamente
-    balancePollingInterval = setInterval(checkBalance, CURRENT_POLLING_MS); 
+    
+    checkBalance(); 
+    let currentPollingMS = 5000;
+    balancePollingInterval = setInterval(checkBalance, currentPollingMS); 
 }
 
 async function checkBalance() {
-    // 1. Se a aba não está visível, não gasta RPC
-    if (document.hidden) return;
-
+    if (document.hidden) return; 
     try {
-        if (!State.isConnected || !State.userAddress) {
-            if(balancePollingInterval) clearInterval(balancePollingInterval);
-            return;
-        }
+        if (!State.isConnected || !State.userAddress) return;
 
+        // Assumindo que o token BKC existe na Mainnet
         const newBalance = await State.bkcTokenContractPublic.balanceOf(State.userAddress);
         
-        // Só atualiza se mudou
         if (newBalance !== State.currentUserBalance) {
             State.currentUserBalance = newBalance;
             localStorage.setItem(`balance_${State.userAddress.toLowerCase()}`, newBalance.toString());
             if (window.updateUIState) window.updateUIState(true);
-            
-            // Se estava lento, volta a ficar rápido pois houve atividade
-            if (CURRENT_POLLING_MS !== FAST_POLLING_MS) {
-                CURRENT_POLLING_MS = FAST_POLLING_MS;
-                startBalancePolling(); 
-            }
         }
-    } catch (error) {
-        // 2. Se der erro 429 (Too Many Requests), desacelera automaticamente
-        if (error.code === 429 || (error.message && error.message.includes("429"))) {
-            console.warn("⚠️ RPC Rate Limit. Desacelerando polling para 30s...");
-            if (CURRENT_POLLING_MS !== SLOW_POLLING_MS) {
-                CURRENT_POLLING_MS = SLOW_POLLING_MS;
-                startBalancePolling();
-            }
+    } catch (error) { 
+        // Fallback para 0 em caso de erro de RPC
+        if (State.currentUserBalance !== 0n) {
+             State.currentUserBalance = 0n;
+             if (window.updateUIState) window.updateUIState(true);
         }
+    }
+}
+
+// Garante que o usuário está na Arbitrum Mainnet
+async function ensureNetwork(provider) {
+    try {
+        const network = await provider.getNetwork();
+        if (Number(network.chainId) === ARBITRUM_MAINNET_ID_DECIMAL) return true;
+        
+        try {
+            await provider.send("wallet_switchEthereumChain", [{ chainId: ARBITRUM_MAINNET_ID_HEX }]);
+            return true;
+        } catch (switchError) { 
+            // Permite continuar mesmo se o switch falhar (pode ser read-only)
+            return true; 
+        }
+    } catch (e) { 
+        // Permite continuar
+        return true; 
     }
 }
 
 async function setupSignerAndLoadData(provider, address) {
     try {
-        if (!validateEthereumAddress(address)) throw new Error('INVALID_ADDRESS');
+        if (!validateEthereumAddress(address)) return false;
 
-        // Se já está configurado, não recarrega tudo (Otimização)
-        if (State.userAddress === address && State.signer) {
-            return true;
-        }
+        await ensureNetwork(provider);
 
         State.provider = provider;
-        State.signer = await provider.getSigner();
+        
+        // Garante que State.signer nunca seja nulo.
+        try {
+            State.signer = await provider.getSigner(); 
+        } catch(signerError) {
+            State.signer = provider; 
+            console.warn(`Could not get standard Signer. Using Provider as read-only. Warning: ${signerError.message}`);
+        }
+        
         State.userAddress = address;
+        State.isConnected = true; 
 
-        // UI Instantânea via Cache
         loadCachedBalance(address);
-
-        // Login Firebase silencioso (Não bloqueia o fluxo)
-        try { signIn(State.userAddress); } catch (e) { console.warn('Auth warning:', e.message); }
-
         instantiateContracts(State.signer);
         
-        // Carregamento de dados críticos via RPC
-        await loadUserData(); 
-        
-        if (State.currentUserBalance) {
-            localStorage.setItem(`balance_${address.toLowerCase()}`, State.currentUserBalance.toString());
-        }
+        try { signIn(State.userAddress); } catch (e) { }
+
+        loadUserData().then(() => {
+            if (window.updateUIState) window.updateUIState(true);
+        }).catch(() => {});
 
         startBalancePolling();
         
-        State.isConnected = true;
         return true;
+
     } catch (error) {
-        console.error("Setup error:", error);
+        console.error("Setup warning:", error);
+        if (address) return true;
         return false;
     }
 }
 
 // ============================================================================
-// EXPORTED FUNCTIONS
+// 5. EXPORTS
 // ============================================================================
 
 export async function initPublicProvider() {
     try {
-        State.publicProvider = new ethers.JsonRpcProvider(sepoliaRpcUrl);
+        State.publicProvider = new ethers.JsonRpcProvider(ARBITRUM_MAINNET_RPC_URL);
 
-        if (isValidAddress(addresses.bkcToken))
-            State.bkcTokenContractPublic = new ethers.Contract(addresses.bkcToken, bkcTokenABI, State.publicProvider);
-        if (isValidAddress(addresses.delegationManager))
-            State.delegationManagerContractPublic = new ethers.Contract(addresses.delegationManager, delegationManagerABI, State.publicProvider);
-        if (isValidAddress(addresses.faucet))
-            State.faucetContractPublic = new ethers.Contract(addresses.faucet, faucetABI, State.publicProvider);
-        if (isValidAddress(addresses.rentalManager))
-            State.rentalManagerContractPublic = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.publicProvider);
+        if (isValidAddress(addresses.bkcToken)) State.bkcTokenContractPublic = new ethers.Contract(addresses.bkcToken, bkcTokenABI, State.publicProvider);
+        if (isValidAddress(addresses.delegationManager)) State.delegationManagerContractPublic = new ethers.Contract(addresses.delegationManager, delegationManagerABI, State.publicProvider);
+        if (isValidAddress(addresses.faucet)) State.faucetContractPublic = new ethers.Contract(addresses.faucet, faucetABI, State.publicProvider);
+        if (isValidAddress(addresses.rentalManager)) State.rentalManagerContractPublic = new ethers.Contract(addresses.rentalManager, rentalManagerABI, State.publicProvider);
+        if (isValidAddress(addresses.ecosystemManager)) State.ecosystemManagerContractPublic = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, State.publicProvider);
+        if (isValidAddress(addresses.actionsManager)) State.actionsManagerContractPublic = new ethers.Contract(addresses.actionsManager, actionsManagerABI, State.publicProvider);
         
-        // 🚨 NOVO: Instância pública do HUB (EcosystemManager) para ler FEES/PSTAKE/REGRAS
-        if (isValidAddress(addresses.ecosystemManager))
-            State.ecosystemManagerContractPublic = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, State.publicProvider);
-        
-        // 🚨 NOVO: Instância pública do FORTUNE POOL (ActionsManager) para ler PRIZE POOL
-        if (isValidAddress(addresses.actionsManager))
-            State.actionsManagerContractPublic = new ethers.Contract(addresses.actionsManager, actionsManagerABI, State.publicProvider);
-        
-        // Carrega dados públicos (Supply, etc) em background
         loadPublicData().then(() => {
              if (window.updateUIState) window.updateUIState();
         });
-        
-        console.log("✅ Public provider initialized.");
-    } catch (e) {
-        console.error("❌ Public provider error:", e);
-    }
+    } catch (e) { console.error("Public provider error:", e); }
 }
 
-/**
- * Inicializa os ouvintes do Web3Modal.
- * Inclui lógica de RECONEXÃO AUTOMÁTICA robusta (F5).
- */
 export function initWalletSubscriptions(callback) {
+    let currentAddress = web3modal.getAddress();
     
-    // 1. Verifica imediatamente se já existe uma conexão ativa no Web3Modal (LocalStorage)
-    if (web3modal.getIsConnected()) {
-        const address = web3modal.getAddress();
+    if (web3modal.getIsConnected() && currentAddress) {
         const walletProvider = web3modal.getWalletProvider();
-        
-        if (address && walletProvider) {
-            // console.log("🔄 Auto-reconnecting session...");
+        if (walletProvider) {
             const ethersProvider = new ethers.BrowserProvider(walletProvider);
             State.web3Provider = walletProvider;
             
-            setupSignerAndLoadData(ethersProvider, address).then(success => {
-                if (success) {
-                    callback({ isConnected: true, address, isNewConnection: false });
-                }
-            });
+            // Callback IMEDIATO
+            callback({ isConnected: true, address: currentAddress, isNewConnection: false });
+            setupSignerAndLoadData(ethersProvider, currentAddress);
         }
     }
 
-    // 2. Configura o Listener para mudanças futuras (Troca de conta, Desconexão manual)
-    let isHandlingChange = false;
-
     const handler = async ({ provider, address, chainId, isConnected }) => {
-        if (isHandlingChange) return; // Debounce para evitar duplicação
-        isHandlingChange = true;
-        
         try {
             if (isConnected) {
-                // Se a rede estiver errada, pede para trocar
-                if (chainId !== Number(sepoliaChainId)) {
-                    showToast(`Wrong network. Switch to Sepolia.`, 'error');
+                let activeAddress = address || web3modal.getAddress();
+                if (!activeAddress && provider) {
                     try {
-                        await provider.request({
-                            method: 'wallet_switchEthereumChain',
-                            params: [{ chainId: '0x' + (Number(sepoliaChainId)).toString(16) }],
-                        });
-                    } catch (e) {}
-                    isHandlingChange = false;
-                    return;
+                        const tempProvider = new ethers.BrowserProvider(provider);
+                        const signer = await tempProvider.getSigner();
+                        activeAddress = await signer.getAddress();
+                    } catch(e) {}
                 }
 
-                const ethersProvider = new ethers.BrowserProvider(provider);
-                State.web3Provider = provider; 
+                if (activeAddress) {
+                    const ethersProvider = new ethers.BrowserProvider(provider);
+                    State.web3Provider = provider; 
 
-                const success = await setupSignerAndLoadData(ethersProvider, address);
-                
-                if (success) {
-                    callback({ isConnected: true, address, chainId, isNewConnection: true });
+                    callback({ isConnected: true, address: activeAddress, chainId, isNewConnection: true });
+                    await setupSignerAndLoadData(ethersProvider, activeAddress);
+
                 } else {
-                    try { await web3modal.disconnect(); } catch(e){}
+                    if (balancePollingInterval) clearInterval(balancePollingInterval);
+                    State.isConnected = false;
+                    State.userAddress = null;
+                    State.signer = null;
+                    stopUIEnforcer();
+                    callback({ isConnected: false });
                 }
-
             } else {
-                // Lógica de Desconexão Real
-                if (balancePollingInterval) {
-                    clearInterval(balancePollingInterval);
-                    balancePollingInterval = null;
-                }
-                
+                if (balancePollingInterval) clearInterval(balancePollingInterval);
                 State.isConnected = false;
                 State.userAddress = null;
                 State.signer = null;
-                State.currentUserBalance = 0n;
-                
+                stopUIEnforcer();
                 callback({ isConnected: false });
             }
-        } catch (err) {
-            console.error("Wallet subscription error:", err);
-        } finally {
-            setTimeout(() => { isHandlingChange = false; }, 500);
-        }
+        } catch (err) { }
     };
     
-    try {
-        web3modal.subscribeProvider(handler);
-    } catch(e) { console.error("Web3Modal subscribe error:", e); }
+    web3modal.subscribeProvider(handler);
 }
 
-export function openConnectModal() { 
-    try { web3modal.open(); } catch(e) { console.error("Open modal error", e); }
-}
-
-export async function disconnectWallet() {
-    if (balancePollingInterval) {
-        clearInterval(balancePollingInterval);
-        balancePollingInterval = null;
+export async function switchToTestnet() {
+    if (!State.isConnected || !State.web3Provider) {
+        showToast("Connect your wallet first.", "warning");
+        return false;
     }
-    try { await web3modal.disconnect(); } catch(e) {}
+    
+    try {
+        const provider = new ethers.BrowserProvider(State.web3Provider);
+        
+        // 1. Tenta trocar de rede (pode falhar se a rede não estiver adicionada)
+        await provider.send("wallet_switchEthereumChain", [{ chainId: ARBITRUM_SEPOLIA_ID_HEX }]);
+        
+    } catch (switchError) {
+        if (switchError.code === 4902 || switchError.code === -32603) { // Rede não existe
+            try {
+                // 2. Se falhar na troca, tenta adicionar a rede
+                await window.ethereum.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [{
+                        chainId: ARBITRUM_SEPOLIA_ID_HEX,
+                        chainName: 'Arbitrum Sepolia',
+                        rpcUrls: [ARBITRUM_SEPOLIA_RPC_URL],
+                        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                        blockExplorerUrls: ['https://sepolia.arbiscan.io/']
+                    }]
+                });
+            } catch (addError) {
+                showToast("Failed to switch/add Arbitrum Sepolia Testnet. Please add it manually.", "error");
+                return false;
+            }
+        } else {
+             showToast("Failed to switch network: Permission denied or wallet rejected.", "error");
+             return false;
+        }
+    }
+    
+    // 3. Redireciona para o DApp da Testnet - AJUSTE APLICADO AQUI
+    showToast("Redirecting to Backcoin Testnet DApp...", "info");
+    
+    // 🔥 CORREÇÃO: Redireciona para a URL principal do projeto, conforme solicitado.
+    window.location.href = 'https://backcoin.org';
+    
+    return true;
 }
+
+
+export function openConnectModal() { web3modal.open(); }
+export async function disconnectWallet() { await web3modal.disconnect(); }

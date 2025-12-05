@@ -1,14 +1,38 @@
-// config.js
-// ✅ VERSÃO FINAL V9.1: Fortune Pool V2 Fix (ABI Update) + Full Ecosystem Support
+// js/config.js
+// ✅ VERSÃO FINAL MAINNET V1.0: Configuração para Arbitrum ONE (Mainnet)
 
 // ============================================================================
-// 1. ENVIRONMENT DETECTION
+// 1. ENVIRONMENT & ALCHEMY CONFIG
 // ============================================================================
 const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 console.log(`Environment: ${isDevelopment ? 'DEVELOPMENT' : 'PRODUCTION'}`);
 
+// ⚠️ CONFIGURAÇÃO ALCHEMY (Mantida sua API Key e Policy ID)
+export const CONFIG = {
+    alchemy: {
+        apiKey: "OXcpAI1M17gLgjZJJ8VC3", // Sua API Key
+        // Mantemos o Policy ID, mas o patrocínio de gás EIP-4337 deve ser configurado no SDK Mainnet.
+        gasPolicyId: "54c32e74-c1d4-4e14-a7bf-db28f18e6c29" // Seu Policy ID
+    }
+};
+
 // ============================================================================
-// 2. CONTRACT ADDRESSES (Dynamic Loader)
+// 2. NETWORK CONFIGURATION (MAINNET)
+// ============================================================================
+
+// RPC Otimizado da Alchemy (Arbitrum ONE Mainnet)
+export const mainnetRpcUrl = `https://arb-mainnet.g.alchemy.com/v2/${CONFIG.alchemy.apiKey}`;
+export const mainnetWssUrl = `wss://arb-mainnet.g.alchemy.com/v2/${CONFIG.alchemy.apiKey}`;
+export const mainnetChainId = 42161n; // Arbitrum One Chain ID
+
+// Renomeando para mainnet
+export const sepoliaRpcUrl = mainnetRpcUrl; // Usado como fallback em alguns módulos (agora é Mainnet)
+export const sepoliaChainId = mainnetChainId; 
+
+export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/"; // Mantido
+
+// ============================================================================
+// 3. CONTRACT ADDRESSES (Dynamic Loader)
 // ============================================================================
 export const addresses = {};
 
@@ -22,25 +46,20 @@ export async function loadAddresses() {
         
         const jsonAddresses = await response.json();
 
-        // Validação básica de integridade
-        const requiredAddresses = ['bkcToken', 'delegationManager', 'ecosystemManager', 'miningManager'];
+        // Validação básica: Na Mainnet, precisamos do Presale e do Token
+        const requiredAddresses = ['bkcToken', 'presaleNFTContract'];
         const missingAddresses = requiredAddresses.filter(key => !jsonAddresses[key]);
         
         if (missingAddresses.length > 0) {
             throw new Error(`Missing required addresses: ${missingAddresses.join(', ')}`);
         }
 
-        // Mapeamento Principal
         Object.assign(addresses, jsonAddresses);
 
-        // ALIASES CRÍTICOS (Compatibilidade com código legado)
-        // Garante que 'fortunePool' e 'actionsManager' apontem para o mesmo contrato
-        addresses.actionsManager = jsonAddresses.fortunePool; 
-        addresses.fortunePool = jsonAddresses.fortunePool;
-
-        // Fallbacks de segurança
-        addresses.rentalManager = jsonAddresses.rentalManager || null;
-        addresses.bkcDexPoolAddress = jsonAddresses.bkcDexPoolAddress || "#";
+        // Aliases específicos para a Pré-Venda
+        addresses.presaleContract = jsonAddresses.presaleNFTContract; // Novo contrato de Pré-Venda
+        addresses.presaleNFT = jsonAddresses.presaleNFTContract;
+        // Endereços de Testnet (Faucets, Managers) são removidos ou mantidos como null aqui.
 
         console.log("✅ Contract addresses loaded successfully.");
         return true;
@@ -52,21 +71,9 @@ export async function loadAddresses() {
 }
 
 // ============================================================================
-// 3. NETWORK CONFIGURATION
-// ============================================================================
-// ⚠️ OBS: Substitua pela sua chave NOVA se esta estiver bloqueada.
-const INFURA_KEY = "7d31b7dd70ab4d4da293c96bf983f1f1"; 
-
-export const sepoliaWssUrl = `wss://sepolia.infura.io/ws/v3/${INFURA_KEY}`;
-export const sepoliaRpcUrl = `https://sepolia.infura.io/v3/${INFURA_KEY}`;
-export const sepoliaChainId = 11155111n;
-export const ipfsGateway = "https://white-defensive-eel-240.mypinata.cloud/ipfs/";
-
-// ============================================================================
 // 4. APPLICATION CONSTANTS
 // ============================================================================
-export const FAUCET_AMOUNT_WEI = 100n * 10n**18n;
-
+// Removemos FAUCET_AMOUNT_WEI
 export const boosterTiers = [
     { name: "Diamond", boostBips: 7000, color: "text-cyan-400", img: `${ipfsGateway}bafybeicgip72jcqgsirlrhn3tq5cc226vmko6etnndzl6nlhqrktfikafq/diamond_booster.json`, realImg: `${ipfsGateway}bafybeicgip72jcqgsirlrhn3tq5cc226vmko6etnndzl6nlhqrktfikafq`, borderColor: "border-cyan-400/50", glowColor: "bg-cyan-500/10" },
     { name: "Platinum", boostBips: 6000, color: "text-gray-300", img: `${ipfsGateway}bafybeigc2wgkccckhnjotejve7qyxa2o2z4fsgswfmsxyrbp5ncpc7plei/platinum_booster.json`, realImg: `${ipfsGateway}bafybeigc2wgkccckhnjotejve7qyxa2o2z4fsgswfmsxyrbp5ncpc7plei`, borderColor: "border-gray-300/50", glowColor: "bg-gray-400/10" },
@@ -75,10 +82,10 @@ export const boosterTiers = [
     { name: "Bronze", boostBips: 3000, color: "text-yellow-600", img: `${ipfsGateway}bafybeiclqidb67rt3tchhjpsib62s624li7j2bpxnr6b5w5mfp4tomhu7m/bronze_booster.json`, realImg: `${ipfsGateway}bafybeiclqidb67rt3tchhjpsib62s624li7j2bpxnr6b5w5mfp4tomhu7m`, borderColor: "border-yellow-600/50", glowColor: "bg-yellow-600/10" },
     { name: "Iron", boostBips: 2000, color: "text-slate-500", img: `${ipfsGateway}bafybeiaxhv3ere2hyto4dlb5xqn46ehfglxqf3yzehpy4tvdnifyzpp4wu/iron_booster.json`, realImg: `${ipfsGateway}bafybeiaxhv3ere2hyto4dlb5xqn46ehfglxqf3yzehpy4tvdnifyzpp4wu`, borderColor: "border-slate-500/50", glowColor: "bg-slate-600/10" },
     { name: "Crystal", boostBips: 1000, color: "text-indigo-300", img: `${ipfsGateway}bafybeib6nacggrhgcp72xksbhsqcofg3lzhfb576kuebj5ioxpk2id5m7u/crystal_booster.json`, realImg: `${ipfsGateway}bafybeib6nacggrhgcp72xksbhsqcofg3lzhfb576kuebj5ioxpk2id5m7u`, borderColor: "border-indigo-300/50", glowColor: "bg-indigo-300/10" }
-];
+]; // Mantido
 
 // ============================================================================
-// 5. CONTRACT ABIs
+// 5. CONTRACT ABIs (Adicionado Presale ABI)
 // ============================================================================
 
 export const bkcTokenABI = [
@@ -149,12 +156,10 @@ export const nftPoolABI = [
     "event NFTSold(address indexed seller, uint256 indexed boostBips, uint256 tokenId, uint256 payout, uint256 taxPaid)"
 ];
 
-// --- [UPDATED] FORTUNE POOL V2 ABI ---
-// CORREÇÃO CRÍTICA APLICADA: gameResults agora pede (gameId, index) para suportar Arrays em Mappings
 export const actionsManagerABI = [
     "function participate(uint256 _amount, uint8[3] _guesses, bool _isCumulative) payable", 
     "function oracleFeeInWei() view returns (uint256)",
-    "function gameResults(uint256, uint256) view returns (uint256)", // <-- FIX AQUI!
+    "function gameResults(uint256, uint256) view returns (uint256)", 
     "function gameCounter() view returns (uint256)",
     "function prizePoolBalance() view returns (uint256)",
     "event GameRequested(uint256 indexed gameId, address indexed user, uint256 purchaseAmount, uint8[3] guesses, bool isCumulative)",
@@ -162,12 +167,18 @@ export const actionsManagerABI = [
     "function setOracleAddress(address _oracle)"
 ];
 
-export const publicSaleABI = [
-    "function tiers(uint256) view returns (uint256 priceInWei, uint64 maxSupply, uint64 mintedCount, uint16 boostBips, bool isConfigured, string metadataFile)",
+// ABI de Pré-Venda ajustada para o contexto da venda de NFT
+export const presaleNFTABI = [
+    "function getTierInfo(uint256 _tierId) view returns (uint256 priceInWei, uint64 maxSupply, uint64 mintedCount, uint16 boostBips, bool isConfigured)",
     "function buyNFT(uint256 _tierId) payable",
     "function buyMultipleNFTs(uint256 _tierId, uint256 _quantity) payable",
+    "function getNFTMetadata(uint256 _tierId) view returns (string memory)",
+    "function isWhitelistEnabled() view returns (bool)",
+    "function isWhitelisted(address _user) view returns (bool)",
     "event NFTSold(address indexed buyer, uint256 indexed tierId, uint256 indexed tokenId, uint256 price)"
 ];
+
+export const publicSaleABI = presaleNFTABI; // Reutilizando a ABI de Pré-Venda
 
 export const decentralizedNotaryABI = [
     "event NotarizationEvent(uint256 indexed tokenId, address indexed owner, string indexed documentMetadataHash, uint256 feePaid)",

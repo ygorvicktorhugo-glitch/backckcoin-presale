@@ -1,5 +1,5 @@
 // js/modules/data.js
-// ✅ VERSÃO FINAL V5.0: API-First Architecture + RPC Fallback + Smart Caching
+// ✅ VERSÃO FINAL V6.0 (CORRIGIDA E COMPLETA): Endpoint Vercel + Fix BigInt + Cache
 
 const ethers = window.ethers;
 
@@ -38,15 +38,18 @@ async function fetchWithTimeout(url, timeoutMs) {
     }
 }
 
-// ENDPOINTS DA SUA API (Firebase Functions)
+// ENDPOINTS DA SUA API (Firebase Functions + Vercel Fix)
 export const API_ENDPOINTS = {
     getHistory: 'https://gethistory-4wvdcuoouq-uc.a.run.app',
     getBoosters: 'https://getboosters-4wvdcuoouq-uc.a.run.app',
     getSystemData: 'https://getsystemdata-4wvdcuoouq-uc.a.run.app',
     getNotaryHistory: 'https://getnotaryhistory-4wvdcuoouq-uc.a.run.app',
-    getRentalListings: 'https://getrentallistings-4wvdcuoouq-uc.a.run.app', // NOVO ENDPOINT
-    getUserRentals: 'https://getuserrentals-4wvdcuoouq-uc.a.run.app',       // NOVO ENDPOINT
-    uploadFileToIPFS: 'https://uploadfiletoipfs-4wvdcuoouq-uc.a.run.app',   
+    getRentalListings: 'https://getrentallistings-4wvdcuoouq-uc.a.run.app', 
+    getUserRentals: 'https://getuserrentals-4wvdcuoouq-uc.a.run.app',       
+    
+    // 👇 CORREÇÃO 1: Endpoint relativo para usar o Vercel Local e evitar CORS
+    uploadFileToIPFS: '/api/upload',   
+    
     claimAirdrop: 'https://us-central1-airdropbackchainnew.cloudfunctions.net/claimAirdrop'
 };
 
@@ -78,7 +81,12 @@ export const safeContractCall = async (contract, method, args = [], fallbackValu
     if (!contract) return fallbackValue;
     
     const contractAddr = contract.target || contract.address;
-    const cacheKey = `${contractAddr}-${method}-${JSON.stringify(args)}`;
+    
+    // 👇 CORREÇÃO 2: Serialização segura de BigInt na chave de cache para evitar crash
+    const serializedArgs = JSON.stringify(args, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+    );
+    const cacheKey = `${contractAddr}-${method}-${serializedArgs}`;
     const now = Date.now();
 
     const cacheableMethods = [
@@ -447,7 +455,7 @@ export async function calculateClaimDetails() {
     const { totalRewards } = await calculateUserTotalRewards();
     if (totalRewards === 0n) return { netClaimAmount: 0n, feeAmount: 0n, discountPercent: 0, totalRewards: 0n };
     
-    let baseFeeBips = State.systemFees?.CLAIM_REWARD_FEE_BIPS || 5000n;
+    let baseFeeBips = State.systemFees?.CLAIM_REWARD_FEE_BIPS || 500n; // Default 5% se falhar API
     const boosterData = await getHighestBoosterBoostFromAPI(); 
     let discountBips = State.boosterDiscounts?.[boosterData.highestBoost] || 0n;
 
@@ -524,7 +532,7 @@ export async function loadMyBoostersFromAPI(forceRefresh = false) {
         return State.myBoosters;
 
     } catch (e) { 
-        console.error("Error fetching boosters:", e);
+        // console.error("Error fetching boosters:", e); // Opcional: silenciar para user
         return []; 
     }
 }

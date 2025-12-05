@@ -17,8 +17,6 @@ typechain-types/
 .env
 .env.local
 # Arquivos de deployment específicos
-deployment-addresses.json
-# --- FIM DAS ADIÇÕES HARDHAT/ETHEREUM ---
 
 # Firebase cache
 .firebase/

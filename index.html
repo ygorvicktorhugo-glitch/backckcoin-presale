@@ -6,6 +6,12 @@
     
     <title>Backcoin Presale | Arbitrum One</title>
 
+    <script>
+        if (window.location.hostname === 'backcoin.org' && window.location.pathname === '/presale') {
+            window.location.replace(window.location.href + '/');
+        }
+    </script>
+
     <script src="https://cdn.tailwindcss.com"></script>
     
     <meta http-equiv="Content-Security-Policy" content="
@@ -85,7 +91,7 @@
         <header class="sticky top-0 z-20 flex justify-between items-center p-4 bg-presale-bg-darker/80 backdrop-blur-sm border-b border-zinc-800">
             <div class="flex items-center gap-4">
                 <img src="./assets/bkc_logo_3d.png" alt="Backcoin Presale Logo" class="h-8 w-auto rounded-full">
-                <span id="mobileAppDisplay" class="text-xl font-bold text-amber-400">Backcoin Presale</span>
+                <span id="mobileAppDisplay" class="text-xl font-bold text-amber-400 hidden sm:inline">Backcoin Presale</span>
             </div>
             
             <div class="flex items-center ml-auto gap-3">
@@ -102,10 +108,13 @@
         
         <main class="flex-1 overflow-y-auto bg-presale-bg-main p-4 sm:p-6 lg:p-10">
             <div class="container mx-auto max-w-7xl">
-
-                <section id="presale" class=""></section>
-                
-                </div>
+                <section id="presale" class="">
+                    <div class="flex flex-col items-center justify-center h-96">
+                        <div class="loader w-12 h-12 border-4 border-amber-500/30 border-t-amber-500 mb-4"></div>
+                        <p class="text-zinc-500 animate-pulse">Loading Presale Data...</p>
+                    </div>
+                </section>
+            </div>
         </main>
 
         <footer class="bg-presale-bg-darker/80 border-t border-zinc-800 p-4 text-center">

@@ -1,5 +1,5 @@
 // js/modules/wallet.js
-// ✅ VERSÃO FINAL MAINNET V1.1: Redirecionamento para backcoin.org corrigido
+// ✅ VERSÃO FINAL MAINNET V1.2: Isolamento de Cache e Redirecionamento Otimizado
 
 import { createWeb3Modal, defaultConfig } from 'https://esm.sh/@web3modal/ethers@5.1.11?bundle';
 
@@ -16,7 +16,7 @@ import { loadPublicData, loadUserData } from './data.js';
 const ethers = window.ethers; 
 
 // ============================================================================
-// 1. CONFIGURAÇÃO DE REDES (Mainnet e Testnet)
+// 1. CONFIGURAÇÃO DE REDES & CONSTANTES
 // ============================================================================
 
 // --- Arbitrum Mainnet (Rede Principal do DApp) ---
@@ -24,10 +24,8 @@ const ARBITRUM_MAINNET_ID_DECIMAL = 42161;
 const ARBITRUM_MAINNET_ID_HEX = '0xa4b1'; // 42161 em Hex
 const ARBITRUM_MAINNET_RPC_URL = 'https://arb1.arbitrum.io/rpc'; 
 
-// --- Arbitrum Sepolia (Rede de Retorno) ---
-const ARBITRUM_SEPOLIA_ID_DECIMAL = 421614;
-const ARBITRUM_SEPOLIA_ID_HEX = '0x66eee'; 
-const ARBITRUM_SEPOLIA_RPC_URL = 'https://sepolia.arbitrum.io/rpc'; // Use seu RPC Sepolia preferido
+// --- Configuração de Isolamento (Evita conflito com Testnet App) ---
+const STORAGE_PREFIX = 'presale_v1_'; 
 
 let balancePollingInterval = null;
 let CURRENT_POLLING_MS = 5000; 
@@ -47,7 +45,7 @@ const arbitrumMainnetConfig = {
 };
 
 const metadata = {
-    name: 'Backcoin Presale', // Nome ajustado para a Pré-Venda
+    name: 'Backcoin Presale', 
     description: 'NFT Presale & Ecosystem Access',
     url: window.location.origin,
     icons: [window.location.origin + '/assets/bkc_logo_3d.png']
@@ -71,7 +69,7 @@ const ethersConfig = defaultConfig({
 
 const web3modal = createWeb3Modal({
     ethersConfig,
-    chains: [arbitrumMainnetConfig], // Apenas Mainnet na inicialização
+    chains: [arbitrumMainnetConfig], 
     projectId: WALLETCONNECT_PROJECT_ID,
     enableAnalytics: true,    
     themeMode: 'dark',
@@ -108,9 +106,10 @@ function isValidAddress(addr) {
     return addr && addr !== ethers.ZeroAddress && !addr.startsWith('0x...');
 }
 
+// 🔥 FIX: Usa chave prefixada para não ler saldo da Testnet
 function loadCachedBalance(address) {
     if (!address) return;
-    const cached = localStorage.getItem(`balance_${address.toLowerCase()}`);
+    const cached = localStorage.getItem(`${STORAGE_PREFIX}balance_${address.toLowerCase()}`);
     if (cached) {
         try {
             State.currentUserBalance = BigInt(cached);
@@ -121,7 +120,6 @@ function loadCachedBalance(address) {
 
 function instantiateContracts(signerOrProvider) {
     try {
-        // NOTA: Contratos devem ser ajustados para a Mainnet no config.js
         if (isValidAddress(addresses.bkcToken)) State.bkcTokenContract = new ethers.Contract(addresses.bkcToken, bkcTokenABI, signerOrProvider);
         if (isValidAddress(addresses.delegationManager)) State.delegationManagerContract = new ethers.Contract(addresses.delegationManager, delegationManagerABI, signerOrProvider);
         if (isValidAddress(addresses.rewardBoosterNFT)) State.rewardBoosterContract = new ethers.Contract(addresses.rewardBoosterNFT, rewardBoosterABI, signerOrProvider);
@@ -148,16 +146,16 @@ async function checkBalance() {
     try {
         if (!State.isConnected || !State.userAddress) return;
 
-        // Assumindo que o token BKC existe na Mainnet
         const newBalance = await State.bkcTokenContractPublic.balanceOf(State.userAddress);
         
         if (newBalance !== State.currentUserBalance) {
             State.currentUserBalance = newBalance;
-            localStorage.setItem(`balance_${State.userAddress.toLowerCase()}`, newBalance.toString());
+            // 🔥 FIX: Salva cache isolado
+            localStorage.setItem(`${STORAGE_PREFIX}balance_${State.userAddress.toLowerCase()}`, newBalance.toString());
             if (window.updateUIState) window.updateUIState(true);
         }
     } catch (error) { 
-        // Fallback para 0 em caso de erro de RPC
+        // Fallback para 0
         if (State.currentUserBalance !== 0n) {
              State.currentUserBalance = 0n;
              if (window.updateUIState) window.updateUIState(true);
@@ -175,11 +173,9 @@ async function ensureNetwork(provider) {
             await provider.send("wallet_switchEthereumChain", [{ chainId: ARBITRUM_MAINNET_ID_HEX }]);
             return true;
         } catch (switchError) { 
-            // Permite continuar mesmo se o switch falhar (pode ser read-only)
             return true; 
         }
     } catch (e) { 
-        // Permite continuar
         return true; 
     }
 }
@@ -192,7 +188,6 @@ async function setupSignerAndLoadData(provider, address) {
 
         State.provider = provider;
         
-        // Garante que State.signer nunca seja nulo.
         try {
             State.signer = await provider.getSigner(); 
         } catch(signerError) {
@@ -229,6 +224,7 @@ async function setupSignerAndLoadData(provider, address) {
 
 export async function initPublicProvider() {
     try {
+        // Inicializa provedor público (Leitura sem carteira)
         State.publicProvider = new ethers.JsonRpcProvider(ARBITRUM_MAINNET_RPC_URL);
 
         if (isValidAddress(addresses.bkcToken)) State.bkcTokenContractPublic = new ethers.Contract(addresses.bkcToken, bkcTokenABI, State.publicProvider);
@@ -238,6 +234,7 @@ export async function initPublicProvider() {
         if (isValidAddress(addresses.ecosystemManager)) State.ecosystemManagerContractPublic = new ethers.Contract(addresses.ecosystemManager, ecosystemManagerABI, State.publicProvider);
         if (isValidAddress(addresses.actionsManager)) State.actionsManagerContractPublic = new ethers.Contract(addresses.actionsManager, actionsManagerABI, State.publicProvider);
         
+        // 🔥 Carrega dados da Landpage imediatamente
         loadPublicData().then(() => {
              if (window.updateUIState) window.updateUIState();
         });
@@ -253,7 +250,6 @@ export function initWalletSubscriptions(callback) {
             const ethersProvider = new ethers.BrowserProvider(walletProvider);
             State.web3Provider = walletProvider;
             
-            // Callback IMEDIATO
             callback({ isConnected: true, address: currentAddress, isNewConnection: false });
             setupSignerAndLoadData(ethersProvider, currentAddress);
         }
@@ -300,51 +296,22 @@ export function initWalletSubscriptions(callback) {
     web3modal.subscribeProvider(handler);
 }
 
+// 🔥 FIX: Redirecionamento limpo para a Home (Testnet) sem tentar mudar a rede na wallet
 export async function switchToTestnet() {
-    if (!State.isConnected || !State.web3Provider) {
-        showToast("Connect your wallet first.", "warning");
-        return false;
-    }
+    // 1. Feedback visual
+    showToast("Redirecting to Main Ecosystem (Testnet)...", "info");
     
-    try {
-        const provider = new ethers.BrowserProvider(State.web3Provider);
-        
-        // 1. Tenta trocar de rede (pode falhar se a rede não estiver adicionada)
-        await provider.send("wallet_switchEthereumChain", [{ chainId: ARBITRUM_SEPOLIA_ID_HEX }]);
-        
-    } catch (switchError) {
-        if (switchError.code === 4902 || switchError.code === -32603) { // Rede não existe
-            try {
-                // 2. Se falhar na troca, tenta adicionar a rede
-                await window.ethereum.request({
-                    method: 'wallet_addEthereumChain',
-                    params: [{
-                        chainId: ARBITRUM_SEPOLIA_ID_HEX,
-                        chainName: 'Arbitrum Sepolia',
-                        rpcUrls: [ARBITRUM_SEPOLIA_RPC_URL],
-                        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-                        blockExplorerUrls: ['https://sepolia.arbiscan.io/']
-                    }]
-                });
-            } catch (addError) {
-                showToast("Failed to switch/add Arbitrum Sepolia Testnet. Please add it manually.", "error");
-                return false;
-            }
-        } else {
-             showToast("Failed to switch network: Permission denied or wallet rejected.", "error");
-             return false;
-        }
-    }
+    // 2. Limpeza de estado local
+    if (balancePollingInterval) clearInterval(balancePollingInterval);
+    State.isConnected = false;
     
-    // 3. Redireciona para o DApp da Testnet - AJUSTE APLICADO AQUI
-    showToast("Redirecting to Backcoin Testnet DApp...", "info");
-    
-    // 🔥 CORREÇÃO: Redireciona para a URL principal do projeto, conforme solicitado.
-    window.location.href = 'https://backcoin.org';
+    // 3. Redirecionamento forçado para a raiz (Home/Testnet)
+    setTimeout(() => {
+        window.location.href = 'https://backcoin.org';
+    }, 1000);
     
     return true;
 }
-
 
 export function openConnectModal() { web3modal.open(); }
 export async function disconnectWallet() { await web3modal.disconnect(); }

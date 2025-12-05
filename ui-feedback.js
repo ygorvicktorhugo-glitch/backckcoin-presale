@@ -1,10 +1,10 @@
 // js/ui-feedback.js
-// ✅ VERSÃO FINAL LANDPAGE V3.5: Anel CSS Removido do Modal Welcome
+// ✅ VERSÃO FINAL PRESALE V1.2: Isolamento de Sessão e UX Mainnet
 
 import { DOMElements } from './dom-elements.js';
 import { State } from './state.js';
 
-// Variáveis de estado e timer simplificadas
+// Variáveis de estado
 let hasShownWelcomeModal = false; 
 
 // --- BASIC UI FUNCTIONS (Toast & Modal) ---
@@ -36,7 +36,6 @@ export const showToast = (message, type = 'info', txHash = null) => {
     `;
 
     if (txHash) {
-        // Link correto para Arbiscan (Arbitrum One)
         const explorerUrl = `${explorerBaseUrl}${txHash}`;
         content += `<a href="${explorerUrl}" target="_blank" title="View on Arbiscan" class="ml-3 flex-shrink-0 text-white/80 hover:text-white transition-colors">
                         <i class="fa-solid fa-arrow-up-right-from-square text-sm"></i>
@@ -81,7 +80,6 @@ export const closeModal = () => {
 export const openModal = (content, maxWidth = 'max-w-md', allowCloseOnBackdrop = true) => {
     if (!DOMElements.modalContainer) return;
     
-    // Simplificando estilos embutidos
     const style = 
         '<style>' +
             '@keyframes fade-in-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }' +
@@ -122,11 +120,17 @@ export const openModal = (content, maxWidth = 'max-w-md', allowCloseOnBackdrop =
 // --- WELCOME MODAL (Final Landpage Version) ---
 
 export function showWelcomeModal() {
+    // 🔥 FIX: Verifica SessionStorage isolado
+    const SESSION_KEY = 'presale_welcome_shown_v1';
+    
+    if (sessionStorage.getItem(SESSION_KEY)) return; // Já viu nesta sessão
     if (hasShownWelcomeModal) return;
-    hasShownWelcomeModal = true;
 
-    // 🔥 CTA ÚNICO: Fecha o modal atual e abre o modal de conexão
-    const PRESALE_ACTION = "closeModal(); window.openConnectModal();"; 
+    hasShownWelcomeModal = true;
+    sessionStorage.setItem(SESSION_KEY, 'true'); // Marca como visto
+
+    // Ação: Fecha modal e chama função global de conectar
+    const PRESALE_ACTION = "closeModal(); if(window.openConnectModal) window.openConnectModal();"; 
 
     const content = `
         <div class="text-center pt-2 pb-4">
@@ -186,11 +190,11 @@ export function showWelcomeModal() {
                 arb.style.opacity = '0';
             }
             isBkcVisible = !isBkcVisible;
-        }, 1500); // Troca a cada 1.5 segundos
+        }, 1500); 
     }
 }
 
-// 🔥 CORREÇÃO: Expondo funções ao escopo global para o HTML
+// Expõe ao escopo global para que o HTML inline possa chamar
 window.closeModal = closeModal;
 window.openModal = openModal;
 window.showToast = showToast;
